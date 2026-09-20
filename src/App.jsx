@@ -165,7 +165,24 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-18.5";
+const APP_BUILD_VERSION = "2026-09-20.1";
+
+// Shown to everyone (admins and visitors) as a "What's New" popup the first
+// time their browser sees a given build. Newest entry first. Keep entries
+// short and feature-level — this is for testers, not a technical log.
+const CHANGELOG = [
+  {
+    version: "2026-09-20.1",
+    date: "2026-09-20",
+    items: [
+      "Το \"Χ αποχώρησε\" δεν αποκλείει πια αυτόματα τον παίκτη από τους επόμενους γύρους — μένει μόνο ένδειξη.",
+      "Νέο κουμπί \"Απόσυρση / Επαναφορά\" στον πίνακα βαθμολογίας, για να αποσύρεις ρητά κάποιον από το τουρνουά.",
+      "Νέα επιλογή \"Και οι δύο αποχώρησαν\" για τη σπάνια περίπτωση διπλού Α.Α. στο ίδιο ματς.",
+    ],
+  },
+];
+
+const WHATS_NEW_SEEN_KEY = "bgfed_whatsnew_seen_build";
 
 const ELO_INITIAL = 1500;
 const ELO_K_BASE = 4;
@@ -964,6 +981,7 @@ export default function TournamentManager() {
       })()
   ).current;
   const [deviceUnlocked, setDeviceUnlocked] = useState(initiallyUnlocked);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
   const isAdmin = role === "admin";
   const [adminPasswordPrompt, setAdminPasswordPrompt] = useState(false);
@@ -1082,6 +1100,26 @@ export default function TournamentManager() {
   const [newMembershipYear, setNewMembershipYear] = useState(new Date().getFullYear());
   const [nameDisplayMode, setNameDisplayMode] = useState("normal"); // normal | upper | greeklish
   const [eloData, setEloData] = useState({ players: {} });
+
+  // Show the "What's New" popup once per browser per build — pure
+  // localStorage, no Firestore round-trip, works for admins and visitors.
+  useEffect(() => {
+    try {
+      const seen = window.localStorage.getItem(WHATS_NEW_SEEN_KEY);
+      if (seen !== APP_BUILD_VERSION) setShowWhatsNew(true);
+    } catch {
+      // localStorage unavailable (private mode, etc.) — just skip silently.
+    }
+  }, []);
+
+  function dismissWhatsNew() {
+    setShowWhatsNew(false);
+    try {
+      window.localStorage.setItem(WHATS_NEW_SEEN_KEY, APP_BUILD_VERSION);
+    } catch {
+      // ignore
+    }
+  }
 
   useEffect(() => {
     async function init() {
@@ -2410,6 +2448,14 @@ export default function TournamentManager() {
           <span style={{ fontFamily: "'Source Sans 3', sans-serif", fontWeight: 400, fontSize: 11, color: "var(--muted)", marginLeft: 10, letterSpacing: 0 }}>
             build {APP_BUILD_VERSION}
           </span>
+          <button
+            className="btn-ghost"
+            onClick={() => setShowWhatsNew(true)}
+            style={{ marginLeft: 6, fontSize: 11, padding: "2px 8px" }}
+            title="What's new"
+          >
+            <Info size={13} /> News
+          </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <button className="btn-ghost" onClick={() => setPhase("season")}>
@@ -2473,6 +2519,28 @@ export default function TournamentManager() {
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button className="btn-secondary" onClick={() => setAdminPasswordPrompt(false)}>Cancel</button>
               <button className="btn-primary" onClick={submitAdminPassword}>Unlock</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWhatsNew && (
+        <div className="modal-overlay" onClick={dismissWhatsNew}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+            <p style={{ margin: "0 0 4px 0", fontWeight: 600 }}>Τι νέο υπάρχει</p>
+            <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 14px 0" }}>build {APP_BUILD_VERSION}</p>
+            {CHANGELOG.map((entry) => (
+              <div key={entry.version} style={{ marginBottom: 14 }}>
+                <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 6px 0" }}>{entry.date}</p>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
+                  {entry.items.map((it, idx) => (
+                    <li key={idx} style={{ marginBottom: 4 }}>{it}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
+              <button className="btn-primary" onClick={dismissWhatsNew}>Κατάλαβα</button>
             </div>
           </div>
         </div>
