@@ -822,7 +822,7 @@ function shuffleWithinScoreGroups(sortedDesc) {
  * Forced rematches (rare) are flagged via rematchCount.
  */
 function generatePairings(players, roundNumber) {
-  const active = players.filter((p) => !p.withdrawn);
+  const active = players.filter((p) => !p.excludedFromTournament);
   let pool = [...active];
   let bye = null;
 
@@ -871,6 +871,18 @@ function replayPlayersFromHistory(basePlayers, history) {
     entry.pairs.forEach((pr) => {
       if (!pr.result) return;
       const { winnerId, loserId, method } = pr.result;
+      if (method === "double_retirement") {
+        const a = byId[pr.p1];
+        const b = byId[pr.p2];
+        if (!a || !b) return;
+        a.opponents.push(pr.p2);
+        b.opponents.push(pr.p1);
+        a.matchLog.push({ round: entry.round, opponentId: pr.p2, method: "double_retirement", result: "loss" });
+        b.matchLog.push({ round: entry.round, opponentId: pr.p1, method: "double_retirement", result: "loss" });
+        a.withdrawn = true; a.withdrawnRound = entry.round;
+        b.withdrawn = true; b.withdrawnRound = entry.round;
+        return;
+      }
       const w = byId[winnerId];
       const l = byId[loserId];
       if (!w || !l) return;
@@ -1283,7 +1295,7 @@ export default function TournamentManager() {
     const newId = makeId();
     setPlayers((prev) => [
       ...prev,
-      { id: newId, name: canonicalName, wins: 0, opponents: [], hadBye: false, withdrawn: false, withdrawnRound: null, matchLog: [], hasDiscount: isDiscounted, discountAmount: discountAmt, wantsCup: false },
+      { id: newId, name: canonicalName, wins: 0, opponents: [], hadBye: false, withdrawn: false, withdrawnRound: null, excludedFromTournament: false, matchLog: [], hasDiscount: isDiscounted, discountAmount: discountAmt, wantsCup: false },
     ]);
     if (addToSideBet) {
       setSideBets((prev) => {
@@ -1315,6 +1327,16 @@ export default function TournamentManager() {
 
   function toggleWantsCup(id) {
     const updated = players.map((p) => (p.id === id ? { ...p, wantsCup: !p.wantsCup } : p));
+    setPlayers(updated);
+    persistCurrent(phase, round, updated, currentPairings, history);
+  }
+
+  // Explicit, admin-driven exclusion from future pairings — deliberately
+  // separate from "retired in a match" (withdrawn/withdrawnRound), which is
+  // set automatically and is purely informational. A player who retires in
+  // one round is NOT auto-excluded from the next; the admin decides here.
+  function toggleExclusion(id) {
+    const updated = players.map((p) => (p.id === id ? { ...p, excludedFromTournament: !p.excludedFromTournament } : p));
     setPlayers(updated);
     persistCurrent(phase, round, updated, currentPairings, history);
   }
@@ -1411,7 +1433,7 @@ export default function TournamentManager() {
         if (existingNames.has(key)) return;
         existingNames.add(key);
         additions.push({
-          id: makeId(), name, wins: 0, opponents: [], hadBye: false, withdrawn: false, withdrawnRound: null, matchLog: [], hasDiscount, discountAmount: discountAmount ?? 32, wantsCup: false,
+          id: makeId(), name, wins: 0, opponents: [], hadBye: false, withdrawn: false, withdrawnRound: null, excludedFromTournament: false, matchLog: [], hasDiscount, discountAmount: discountAmount ?? 32, wantsCup: false,
         });
       });
       return [...prev, ...additions];
@@ -1548,6 +1570,17 @@ export default function TournamentManager() {
 
     currentPairings.pairs.forEach((pr) => {
       const { winnerId, loserId, method } = pr.result;
+      if (method === "double_retirement") {
+        const a = byId[pr.p1];
+        const b = byId[pr.p2];
+        a.opponents.push(pr.p2);
+        b.opponents.push(pr.p1);
+        a.matchLog.push({ round, opponentId: pr.p2, method: "double_retirement", result: "loss" });
+        b.matchLog.push({ round, opponentId: pr.p1, method: "double_retirement", result: "loss" });
+        a.withdrawn = true; a.withdrawnRound = round;
+        b.withdrawn = true; b.withdrawnRound = round;
+        return;
+      }
       const w = byId[winnerId];
       const l = byId[loserId];
       w.wins += 1;
@@ -3452,10 +3485,22 @@ export default function TournamentManager() {
                             <button className="btn-ghost" onClick={() => doSetResult(p2.id, p1.id, "retirement")}><UserX size={13} /> {p1.name} retired</button>
                             <button className="btn-ghost" onClick={() => doSetResult(p1.id, p2.id, "retirement")}><UserX size={13} /> {p2.name} retired</button>
                           </div>
+                          <div className="retire-row">
+                            <button className="btn-ghost" style={{ color: "var(--muted)" }} onClick={() => doSetResult(null, null, "double_retirement")}><UserX size={13} /> Both retired (no winner)</button>
+                          </div>
                         </>
                       )}
 
-                      {result && (
+                      {result && result.method === "double_retirement" && (
+                        <div className="result-line">
+                          <span className="result-text" style={{ color: "var(--muted)" }}>
+                            <UserX size={15} />
+                            Both {p1.name} and {p2.name} retired — no winner
+                          </span>
+                          {canEdit && <button className="btn-ghost" onClick={doClearResult}>Undo</button>}
+                        </div>
+                      )}
+                      {result && result.method !== "double_retirement" && (
                         <div className="result-line">
                           <span className="result-text">
                             <Check size={15} color="var(--win)" />
@@ -3509,7 +3554,7 @@ export default function TournamentManager() {
               </>
             )}
 
-            {view === "standings" && <StandingsTable standings={standings} buchholz={null} totalRounds={totalRounds} sideBets={sideBets} />}
+            {view === "standings" && <StandingsTable standings={standings} buchholz={null} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} />}
             {view === "finance" && isAdmin && (
               <FinanceTab
               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
@@ -3632,7 +3677,7 @@ export default function TournamentManager() {
               </>
             )}
 
-            {view === "standings" && <StandingsTable standings={standings} buchholz={buchholz} totalRounds={totalRounds} sideBets={sideBets} />}
+            {view === "standings" && <StandingsTable standings={standings} buchholz={buchholz} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} />}
             {view === "finance" && isAdmin && (
               <FinanceTab
               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
@@ -4097,7 +4142,7 @@ function DeleteTournamentControl({ confirming, onStart, onCancel, onConfirm }) {
   );
 }
 
-function StandingsTable({ standings, buchholz, totalRounds, sideBets }) {
+function StandingsTable({ standings, buchholz, totalRounds, sideBets, isAdmin, onToggleExclusion }) {
   const rounds = Array.from({ length: totalRounds || 0 }, (_, i) => i + 1);
   const inAnySideBet = (playerId) => (sideBets || []).some((b) => b.participantIds.includes(playerId));
   return (
@@ -4126,7 +4171,21 @@ function StandingsTable({ standings, buchholz, totalRounds, sideBets }) {
               ))}
               <td style={{ textAlign: "center" }}><span className="wins-highlight">{p.wins}</span></td>
               {buchholz && <td className="buchholz-cell">{buchholz[p.id] ?? "—"}</td>}
-              <td className="withdrawn-tag">{p.withdrawn ? `Retired (R${p.withdrawnRound})` : "Active"}</td>
+              <td className="withdrawn-tag">
+                <span style={p.withdrawn ? { color: "var(--danger, #c0392b)" } : undefined}>
+                  {p.withdrawn ? `Retired (R${p.withdrawnRound})` : "Active"}
+                </span>
+                {p.excludedFromTournament && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--muted)" }}>· Out of tournament</span>}
+                {isAdmin && onToggleExclusion && (
+                  <button
+                    className="btn-ghost"
+                    style={{ marginLeft: 8, fontSize: 11, padding: "2px 6px" }}
+                    onClick={() => onToggleExclusion(p.id)}
+                  >
+                    {p.excludedFromTournament ? "Επαναφορά" : "Απόσυρση"}
+                  </button>
+                )}
+              </td>
               <td style={{ textAlign: "center" }}>
                 <span style={{ display: "flex", justifyContent: "center" }}>
                   {inAnySideBet(p.id) ? <Check size={15} color="var(--win)" /> : "—"}
