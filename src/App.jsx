@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-20.3";
+const APP_BUILD_VERSION = "2026-09-20.4";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -188,12 +188,13 @@ const FEATURES_SUMMARY = [
 
 const CHANGELOG = [
   {
-    version: "2026-09-20.1",
+    version: "2026-09-20.1 – .4",
     date: "2026-09-20",
     items: [
-      "Το \"Χ αποχώρησε\" δεν αποκλείει πια αυτόματα τον παίκτη από τους επόμενους γύρους — μένει μόνο ένδειξη.",
-      "Νέο κουμπί \"Απόσυρση / Επαναφορά\" στον πίνακα βαθμολογίας, για να αποσύρεις ρητά κάποιον από το τουρνουά.",
-      "Νέα επιλογή \"Και οι δύο αποχώρησαν\" για τη σπάνια περίπτωση διπλού Α.Α. στο ίδιο ματς.",
+      "[.1] Το \"Χ αποχώρησε\" δεν αποκλείει πια αυτόματα τον παίκτη από τους επόμενους γύρους — μένει μόνο ένδειξη. Νέο κουμπί \"Απόσυρση / Επαναφορά\" στον πίνακα βαθμολογίας για ρητή απόσυρση. Νέα επιλογή \"Και οι δύο αποχώρησαν\" για διπλό Α.Α.",
+      "[.2] Το κουμπί ενημερώσεων δείχνει τώρα και μόνιμη σύνοψη όλων των βασικών λειτουργιών της εφαρμογής.",
+      "[.3] Το κουμπί μετονομάστηκε σε \"Changelog\", έγινε πιο ευδιάκριτο, και δείχνει κόκκινη κουκκίδα όταν υπάρχει κάτι νέο.",
+      "[.4] Διόρθωση: σε ματς που κρίθηκε με Α.Α., το ματς μετράει στο σύνολο αγώνων του χαμένου αλλά όχι του νικητή.",
     ],
   },
 ];
@@ -310,7 +311,11 @@ async function pushSeasonUpdate(year, tournamentId, tournamentName, date, player
     const wins = p.matchLog.filter((m) => m.method === "normal" && m.result === "win").length;
     const aa = p.matchLog.filter((m) => m.method === "retirement_win").length;
     const bye = p.matchLog.filter((m) => m.method === "bye").length;
-    const matches = p.matchLog.filter((m) => m.method !== "bye").length;
+    // Retirement wins don't count toward the winner's matches-played total
+    // (they get the standings point, but the match itself doesn't "count"
+    // for them); a retirement loss, a double retirement, and every normal
+    // match do count, for whoever played them.
+    const matches = p.matchLog.filter((m) => m.method !== "bye" && m.method !== "retirement_win").length;
     // Matches actually decided on the board — excludes bye AND any match
     // ended by a retirement, whether won or lost. Used for the win % only.
     const normalMatches = p.matchLog.filter((m) => m.method === "normal").length;
@@ -2104,7 +2109,11 @@ export default function TournamentManager() {
           const wins = p.matchLog.filter((m) => m.method === "normal" && m.result === "win").length;
           const aa = p.matchLog.filter((m) => m.method === "retirement_win").length;
           const bye = p.matchLog.filter((m) => m.method === "bye").length;
-          const matches = p.matchLog.filter((m) => m.method !== "bye").length;
+          // Retirement wins don't count toward the winner's matches-played total
+    // (they get the standings point, but the match itself doesn't "count"
+    // for them); a retirement loss, a double retirement, and every normal
+    // match do count, for whoever played them.
+    const matches = p.matchLog.filter((m) => m.method !== "bye" && m.method !== "retirement_win").length;
           const normalMatches = p.matchLog.filter((m) => m.method === "normal").length;
           season.players[key].entries[t.id] = {
             tournamentName: data.tournamentName, date: data.createdAt, points: p.wins, wins, aa, bye, matches, normalMatches,
