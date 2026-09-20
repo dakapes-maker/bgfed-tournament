@@ -165,11 +165,27 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-20.1";
+const APP_BUILD_VERSION = "2026-09-20.3";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
 // short and feature-level — this is for testers, not a technical log.
+// Standing overview of the app's main capabilities — always shown at the top
+// of the "What's New" popup, above the build-by-build history, so a first-
+// time visitor understands the whole tool at a glance. Update this whenever
+// a major capability is added; keep it feature-level, not a build log.
+const FEATURES_SUMMARY = [
+  "Διοργάνωση τουρνουά Swiss-system, με αυτόματο ζευγάρωμα κάθε γύρου.",
+  "Μητρώο παικτών με στοιχεία επικοινωνίας, συνδρομή και ιστορικό συμμετοχών.",
+  "ELO rating για κάθε παίκτη, με γράφημα εξέλιξης και ιστορικό αγώνων.",
+  "Πρόβλεψη νικητή (βάσει ELO) σε κάθε ζευγάρι πριν παιχτεί ο αγώνας.",
+  "Season Standings — ετήσια κατάταξη με άθροισμα των καλύτερων εμφανίσεων.",
+  "Διαχείριση Α.Α. (αποχώρηση παίκτη), με ρητή απόσυρση από το τουρνουά και ένδειξη διπλού Α.Α.",
+  "Σημαία \"Official League Day\" και Recompute ELO/Standings από την αρχή, μόνο για επίσημες μέρες.",
+  "Πλήρες Export / Import δεδομένων (backup) από το Dashboard.",
+  "Ρόλοι Admin / Visitor με κωδικό πρόσβασης για διαχειριστή.",
+];
+
 const CHANGELOG = [
   {
     version: "2026-09-20.1",
@@ -982,6 +998,7 @@ export default function TournamentManager() {
   ).current;
   const [deviceUnlocked, setDeviceUnlocked] = useState(initiallyUnlocked);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [hasUnseenUpdate, setHasUnseenUpdate] = useState(false);
   const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
   const isAdmin = role === "admin";
   const [adminPasswordPrompt, setAdminPasswordPrompt] = useState(false);
@@ -1106,7 +1123,10 @@ export default function TournamentManager() {
   useEffect(() => {
     try {
       const seen = window.localStorage.getItem(WHATS_NEW_SEEN_KEY);
-      if (seen !== APP_BUILD_VERSION) setShowWhatsNew(true);
+      if (seen !== APP_BUILD_VERSION) {
+        setShowWhatsNew(true);
+        setHasUnseenUpdate(true);
+      }
     } catch {
       // localStorage unavailable (private mode, etc.) — just skip silently.
     }
@@ -1114,6 +1134,7 @@ export default function TournamentManager() {
 
   function dismissWhatsNew() {
     setShowWhatsNew(false);
+    setHasUnseenUpdate(false);
     try {
       window.localStorage.setItem(WHATS_NEW_SEEN_KEY, APP_BUILD_VERSION);
     } catch {
@@ -2449,12 +2470,20 @@ export default function TournamentManager() {
             build {APP_BUILD_VERSION}
           </span>
           <button
-            className="btn-ghost"
+            className="btn-secondary"
             onClick={() => setShowWhatsNew(true)}
-            style={{ marginLeft: 6, fontSize: 11, padding: "2px 8px" }}
-            title="What's new"
+            style={{ marginLeft: 10, fontSize: 13, padding: "6px 12px", position: "relative" }}
+            title="Changelog"
           >
-            <Info size={13} /> News
+            <Info size={15} /> Changelog
+            {hasUnseenUpdate && (
+              <span
+                style={{
+                  position: "absolute", top: -3, right: -3, width: 9, height: 9,
+                  borderRadius: "50%", background: "#c0392b", border: "1.5px solid var(--card-bg, #fff)",
+                }}
+              />
+            )}
           </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -2526,9 +2555,18 @@ export default function TournamentManager() {
 
       {showWhatsNew && (
         <div className="modal-overlay" onClick={dismissWhatsNew}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: "80vh", overflowY: "auto" }}>
             <p style={{ margin: "0 0 4px 0", fontWeight: 600 }}>Τι νέο υπάρχει</p>
             <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 14px 0" }}>build {APP_BUILD_VERSION}</p>
+
+            <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 6px 0" }}>Τι περιλαμβάνει η εφαρμογή</p>
+            <ul style={{ margin: "0 0 18px 0", paddingLeft: 18, fontSize: 13, color: "var(--muted)" }}>
+              {FEATURES_SUMMARY.map((it, idx) => (
+                <li key={idx} style={{ marginBottom: 4 }}>{it}</li>
+              ))}
+            </ul>
+
+            <p style={{ fontSize: 13, fontWeight: 600, margin: "0 0 6px 0" }}>Πρόσφατες αλλαγές</p>
             {CHANGELOG.map((entry) => (
               <div key={entry.version} style={{ marginBottom: 14 }}>
                 <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 6px 0" }}>{entry.date}</p>
