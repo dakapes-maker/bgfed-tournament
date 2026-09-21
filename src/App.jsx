@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-21.1";
+const APP_BUILD_VERSION = "2026-09-21.3";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -187,6 +187,23 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-21.3",
+    date: "2026-09-21",
+    items: [
+      "Η στήλη \"Status\" έγινε \"Active\", με ένα σαφές on/off διακόπτη αντί για κείμενο/κουμπί — πιο ξεκάθαρο ότι είναι ενέργεια.",
+      "Θεμελιώδης αλλαγή: ένας ανενεργός (\"Inactive\") παίκτης μπαίνει πλέον κανονικά στην κλήρωση κάθε γύρου· το ζευγάρι του καταγράφεται αυτόματα ως νίκη του αντιπάλου με Α.Α., πλήρως ορατό στον πίνακα — δεν εξαφανίζεται πια \"υπόγεια\" από το pool.",
+    ],
+  },
+  {
+    version: "2026-09-21.2",
+    date: "2026-09-21",
+    items: [
+      "Το \"Σχετικά\" προστέθηκε και ως κάρτα στο Dashboard, και το \"Tournaments\" προστέθηκε και στο πάνω μενού — τώρα συμπίπτουν πλήρως.",
+      "Η ενότητα \"Τεχνικά στοιχεία\" αφαιρέθηκε το κομμάτι \"Γενική λογική\".",
+      "Τα ζευγαρώματα εκμεταλλεύονται τώρα περισσότερο πλάτος οθόνης (έως 1600px) — χωράνε περισσότερες στήλες σε μεγάλη οθόνη.",
+    ],
+  },
   {
     version: "2026-09-21.1",
     date: "2026-09-21",
@@ -228,10 +245,6 @@ const TECHNICAL_SUMMARY = [
   {
     title: "Πού είναι ο κώδικας",
     body: "Ο πηγαίος κώδικας φυλάσσεται στο GitHub (github.com/dakapes-maker/bgfed-tournament). Κάθε νέα έκδοση ανεβαίνει εκεί, και το Vercel την παραλαμβάνει αυτόματα και την δημοσιεύει.",
-  },
-  {
-    title: "Η γενική λογική",
-    body: "Ο Giannis (Πρόεδρος) περιγράφει την ανάγκη, ο Claude γράφει και δοκιμάζει τον κώδικα, και ο Giannis τον ανεβάζει στο GitHub — το Vercel κάνει τα υπόλοιπα αυτόματα, χωρίς να χρειάζεται τεχνική γνώση προγραμματισμού από τη μεριά της Ομοσπονδίας.",
   },
 ];
 
@@ -893,13 +906,30 @@ function shuffleWithinScoreGroups(sortedDesc) {
  * vs. full FIDE Swiss (no backtracking) — adequate for club-size fields.
  * Forced rematches (rare) are flagged via rematchCount.
  */
+/**
+ * Round 1: fully random. Round 2+: players ordered by score (ties shuffled),
+ * then greedily paired with the nearest not-yet-played opponent. Simplified
+ * vs. full FIDE Swiss (no backtracking) — adequate for club-size fields.
+ * Forced rematches (rare) are flagged via rematchCount.
+ *
+ * Inactive players (excludedFromTournament) stay IN the pairing pool like
+ * anyone else — they get a real opponent drawn normally — but any pair
+ * involving one is auto-resolved right here as a retirement (or, if both
+ * sides are inactive, a double retirement with no winner). This keeps the
+ * bracket fully visible and honest: nothing is hidden from the pool, the
+ * outcome is just already decided when the pairing appears.
+ */
 function generatePairings(players, roundNumber) {
-  const active = players.filter((p) => !p.excludedFromTournament);
-  let pool = [...active];
+  const byId = {};
+  players.forEach((p) => { byId[p.id] = p; });
+
+  let pool = [...players];
   let bye = null;
 
   if (pool.length % 2 === 1) {
-    const ascByWins = [...pool].sort((a, b) => a.wins - b.wins);
+    const eligible = pool.filter((p) => !p.excludedFromTournament);
+    const byeCandidates = eligible.length > 0 ? eligible : pool;
+    const ascByWins = [...byeCandidates].sort((a, b) => a.wins - b.wins);
     bye = ascByWins.find((p) => !p.hadBye) || ascByWins[0];
     pool = pool.filter((p) => p.id !== bye.id);
   }
@@ -921,7 +951,19 @@ function generatePairings(players, roundNumber) {
       rematchCount++;
     }
     const opp = remaining.splice(idx, 1)[0];
-    pairs.push({ p1: p.id, p2: opp.id, result: null });
+
+    const p1Inactive = !!byId[p.id]?.excludedFromTournament;
+    const p2Inactive = !!byId[opp.id]?.excludedFromTournament;
+    let result = null;
+    if (p1Inactive && p2Inactive) {
+      result = { winnerId: null, loserId: null, method: "double_retirement" };
+    } else if (p1Inactive) {
+      result = { winnerId: opp.id, loserId: p.id, method: "retirement" };
+    } else if (p2Inactive) {
+      result = { winnerId: p.id, loserId: opp.id, method: "retirement" };
+    }
+
+    pairs.push({ p1: p.id, p2: opp.id, result });
   }
 
   return { pairs, bye: bye ? bye.id : null, rematchCount };
@@ -2464,7 +2506,15 @@ export default function TournamentManager() {
         td { padding: 9px 10px; border-bottom: 1px solid var(--border); }
         tr:last-child td { border-bottom: none; }
         .rank { color: var(--muted); width: 32px; }
-        .withdrawn-tag { font-size: 12px; color: var(--muted); }
+        .withdrawn-tag { font-size: 12px; color: var(--muted); display: flex; align-items: center; }
+        .active-toggle { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+        .active-toggle input { display: none; }
+        .active-toggle-slider { position: relative; width: 30px; height: 16px; background: var(--border); border-radius: 10px; transition: background 0.15s ease; flex-shrink: 0; }
+        .active-toggle-slider::before { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform 0.15s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+        .active-toggle input:checked + .active-toggle-slider { background: var(--win); }
+        .active-toggle input:checked + .active-toggle-slider::before { transform: translateX(14px); }
+        .active-toggle input:disabled + .active-toggle-slider { opacity: 0.45; cursor: not-allowed; }
+        .active-toggle-label { font-size: 12px; font-weight: 700; color: var(--ink); }
         .round-cell { font-size: 15px; font-weight: 700; }
         .round-cell.win { color: var(--win); }
         .round-cell.loss { color: var(--loss); }
@@ -2537,6 +2587,9 @@ export default function TournamentManager() {
                 }}
               />
             )}
+          </button>
+          <button className="btn-ghost" onClick={() => setPhase("archive")}>
+            <Trophy size={14} /> Tournaments
           </button>
           <button className="btn-ghost" onClick={() => setPhase("season")}>
             <TrendingUp size={14} /> Season Standings
@@ -3308,6 +3361,11 @@ export default function TournamentManager() {
                   <span className="dashboard-card-desc">Registry, contact info, membership</span>
                 </button>
               )}
+              <button className="dashboard-card" onClick={() => { setPhase("about"); dismissWhatsNew(); }}>
+                <Info size={26} />
+                <span className="dashboard-card-title">Σχετικά</span>
+                <span className="dashboard-card-desc">Λειτουργικότητες, τεχνικά στοιχεία, changelog</span>
+              </button>
             </div>
             <div className="footer-actions" style={{ marginTop: 24 }}>
               <button className="btn-secondary" onClick={exportAllData}>
@@ -3568,7 +3626,7 @@ export default function TournamentManager() {
               ))}
             </div>
           </div>
-          <div className="content">
+          <div className="content" style={{ maxWidth: 1600 }}>
             {notice && (
               <div className="notice">
                 <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -3763,7 +3821,7 @@ export default function TournamentManager() {
               ))}
             </div>
           </div>
-          <div className="content">
+          <div className="content" style={{ maxWidth: 1600 }}>
             {notice && (
               <div className="notice">
                 <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -4337,7 +4395,7 @@ function StandingsTable({ standings, buchholz, totalRounds, sideBets, isAdmin, o
             ))}
             <th style={{ textAlign: "center" }}>Wins</th>
             {buchholz && <th className="buchholz-header">Buchholz</th>}
-            <th>Status</th>
+            <th>Active</th>
             <th style={{ textAlign: "center" }}>Side bet</th>
           </tr>
         </thead>
@@ -4352,18 +4410,18 @@ function StandingsTable({ standings, buchholz, totalRounds, sideBets, isAdmin, o
               <td style={{ textAlign: "center" }}><span className="wins-highlight">{p.wins}</span></td>
               {buchholz && <td className="buchholz-cell">{buchholz[p.id] ?? "—"}</td>}
               <td className="withdrawn-tag">
-                <span style={p.withdrawn ? { color: "var(--danger, #c0392b)" } : undefined}>
-                  {p.withdrawn ? `Retired (R${p.withdrawnRound})` : "Active"}
-                </span>
-                {p.excludedFromTournament && <span style={{ marginLeft: 6, fontSize: 11, color: "var(--muted)" }}>· Out of tournament</span>}
-                {isAdmin && onToggleExclusion && (
-                  <button
-                    className="btn-ghost"
-                    style={{ marginLeft: 8, fontSize: 11, padding: "2px 6px" }}
-                    onClick={() => onToggleExclusion(p.id)}
-                  >
-                    {p.excludedFromTournament ? "Επαναφορά" : "Απόσυρση"}
-                  </button>
+                <label className="active-toggle" title={p.excludedFromTournament ? "Ανενεργός — πάτα για να ξαναμπεί στις κληρώσεις" : "Ενεργός — πάτα για να τον αποσύρεις από τις επόμενες κληρώσεις"}>
+                  <input
+                    type="checkbox"
+                    checked={!p.excludedFromTournament}
+                    disabled={!isAdmin || !onToggleExclusion}
+                    onChange={() => onToggleExclusion && onToggleExclusion(p.id)}
+                  />
+                  <span className="active-toggle-slider" />
+                  <span className="active-toggle-label">{p.excludedFromTournament ? "Inactive" : "Active"}</span>
+                </label>
+                {p.withdrawn && (
+                  <span style={{ marginLeft: 8, fontSize: 11, color: "var(--loss)" }}>Α.Α. σε R{p.withdrawnRound}</span>
                 )}
               </td>
               <td style={{ textAlign: "center" }}>
