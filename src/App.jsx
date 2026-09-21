@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-21.4";
+const APP_BUILD_VERSION = "2026-09-21.5";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -187,6 +187,14 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-21.5",
+    date: "2026-09-21",
+    items: [
+      "Νέο κουμπί \"Δημιούργησε σύνοψη ανακοίνωσης\" σε κάθε τελειωμένο τουρνουά (Admin) — έτοιμο κείμενο copy/paste με νικητή ημέρας, κίνηση στην κορυφή του Season Standings και του ELO, με links προς την εφαρμογή.",
+      "Τα links Season Standings / ELO Ratings ανοίγουν πλέον κατευθείαν στη σωστή καρτέλα (deep-link).",
+    ],
+  },
   {
     version: "2026-09-21.4",
     date: "2026-09-21",
@@ -1088,6 +1096,8 @@ export default function TournamentManager() {
   const [hasUnseenUpdate, setHasUnseenUpdate] = useState(false);
   const [aboutTab, setAboutTab] = useState("features");
   const [expandedMatch, setExpandedMatch] = useState(null);
+  const [recapText, setRecapText] = useState(null);
+  const [recapLoading, setRecapLoading] = useState(false);
   const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
   const isAdmin = role === "admin";
   const [adminPasswordPrompt, setAdminPasswordPrompt] = useState(false);
@@ -1206,6 +1216,16 @@ export default function TournamentManager() {
   const [newMembershipYear, setNewMembershipYear] = useState(new Date().getFullYear());
   const [nameDisplayMode, setNameDisplayMode] = useState("normal"); // normal | upper | greeklish
   const [eloData, setEloData] = useState({ players: {} });
+
+  // Minimal deep-link support: a link ending in #season or #elo opens
+  // straight into that tab, instead of always landing on the Dashboard.
+  // Read once on load only — normal in-app navigation stays state-based.
+  useEffect(() => {
+    const hash = window.location.hash.replace("#", "");
+    if (hash === "season") setPhase("season");
+    else if (hash === "elo") setPhase("elo");
+    else if (hash === "about") setPhase("about");
+  }, []);
 
   // Flag the "Σχετικά" nav button with a red dot once per browser per build,
   // instead of forcing an interruption — pure localStorage, no Firestore.
@@ -2214,6 +2234,100 @@ export default function TournamentManager() {
     showToast("ELO and Season Standings recomputed from official League days.");
   }
 
+  /** Builds a ready-to-paste Greek recap of this tournament: top finishers,
+   * movement at the top of Season Standings, and ELO movement at the top —
+   * with plain-text links back into the app (deep-linking via #season/#elo)
+   * for anyone who wants the full detail. Pure text generation; nothing is
+   * posted or sent anywhere — the admin copies and pastes it themselves. */
+  async function generateRecap() {
+    setRecapLoading(true);
+    try {
+      const APP_URL = "https://bgfed-tournament.vercel.app";
+      const thisEntry = archive.find((t) => t.id === tournamentId);
+      const dateLabel = thisEntry
+        ? new Date(thisEntry.date).toLocaleDateString("el-GR", { day: "numeric", month: "long", year: "numeric" })
+        : "";
+
+      // 1. Top finishers of this specific tournament.
+      const dayTop = [...players].sort((a, b) => b.wins - a.wins).slice(0, 3);
+
+      // 2. Season Standings: compare with vs. without this tournament's entries.
+      const seasonFull = await loadSeason(seasonYear);
+      const afterStandings = computeSeasonStandings(seasonFull, SEASON_BEST_OF);
+      const seasonBefore = JSON.parse(JSON.stringify(seasonFull));
+      Object.values(seasonBefore.players).forEach((p) => { delete p.entries[tournamentId]; });
+      const beforeStandings = computeSeasonStandings(seasonBefore, SEASON_BEST_OF);
+      const beforeRank = {};
+      beforeStandings.forEach((p, i) => { beforeRank[p.name] = i + 1; });
+      const top5Season = afterStandings.slice(0, 5).map((p, i) => {
+        const prev = beforeRank[p.name];
+        let move = "νέος στην κορυφή";
+        if (prev) {
+          const diff = prev - (i + 1);
+          move = diff > 0 ? `▲ από #${prev}` : diff < 0 ? `▼ από #${prev}` : "παραμένει";
+        }
+        return `${i + 1}. ${p.name} — ${p.total}β (${move})`;
+      });
+
+      // 3. ELO: replay every earlier tournament (by date) to get a clean
+      // "before today" snapshot, then diff against the current live ratings.
+      const chronological = [...archive].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const selfIdx = chronological.findIndex((t) => t.id === tournamentId);
+      const priorTournaments = selfIdx >= 0 ? chronological.slice(0, selfIdx) : [];
+      const eloBefore = { players: {} };
+      for (const t of priorTournaments) {
+        const data = await fetchTournamentData(t.id);
+        if (!data || !data.history) continue;
+        data.history.forEach((entry) => {
+          const roundMatches = [];
+          entry.pairs.forEach((pr) => {
+            if (!pr.result) return;
+            const w = data.players.find((p) => p.id === pr.result.winnerId);
+            const l = data.players.find((p) => p.id === pr.result.loserId);
+            if (!w || !l) return;
+            roundMatches.push({ w: w.name, l: l.name, ret: pr.result.method === "retirement" });
+          });
+          applyEloRoundBatch(eloBefore, roundMatches, data.matchLength || 7);
+        });
+      }
+      const eloNow = await loadElo();
+      const top5Elo = Object.values(eloNow.players)
+        .sort((a, b) => b.rating - a.rating)
+        .slice(0, 5)
+        .map((p, i) => {
+          const key = normalizeName(p.name);
+          const before = eloBefore.players[key]?.rating ?? ELO_INITIAL;
+          const delta = Math.round(p.rating - before);
+          const deltaLabel = delta > 0 ? `Δ +${delta}` : delta < 0 ? `Δ ${delta}` : "χωρίς μεταβολή σήμερα";
+          return `${i + 1}. ${p.name} — ${Math.round(p.rating)} (${deltaLabel})`;
+        });
+
+      const lines = [
+        `📊 Αποτελέσματα: ${tournamentName}${dateLabel ? " — " + dateLabel : ""}`,
+        "",
+        `🏆 Νικητής της ημέρας: ${dayTop[0]?.name ?? "—"} (${dayTop[0]?.wins ?? 0} νίκες)`,
+        dayTop[1] ? `🥈 ${dayTop[1].name} (${dayTop[1].wins} νίκες)` : "",
+        dayTop[2] ? `🥉 ${dayTop[2].name} (${dayTop[2].wins} νίκες)` : "",
+        "",
+        "📈 Κορυφή Season Standings:",
+        ...top5Season,
+        "",
+        "⭐ Κορυφή ELO Ratings:",
+        ...top5Elo,
+        "",
+        "Δείτε αναλυτικά:",
+        `👉 Season Standings: ${APP_URL}#season`,
+        `👉 ELO Ratings: ${APP_URL}#elo`,
+      ].filter((l) => l !== "");
+
+      setRecapText(lines.join("\n"));
+    } catch (err) {
+      showToast("Αποτυχία δημιουργίας σύνοψης — δοκίμασε ξανά.");
+    } finally {
+      setRecapLoading(false);
+    }
+  }
+
   async function loadPlayerMatchStats(name) {
     const key = normalizeName(name);
     const myRating = eloData.players?.[key]?.rating ?? ELO_INITIAL;
@@ -2715,6 +2829,37 @@ export default function TournamentManager() {
             )}
           </div>
         </>
+      )}
+
+      {recapText !== null && (
+        <div className="modal-overlay" onClick={() => setRecapText(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520, maxHeight: "80vh", overflowY: "auto" }}>
+            <p style={{ margin: "0 0 10px 0", fontWeight: 600 }}>Σύνοψη ανακοίνωσης — copy/paste έτοιμο</p>
+            <textarea
+              readOnly
+              value={recapText}
+              rows={16}
+              style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 14, padding: 10, border: "1px solid var(--border)", borderRadius: 7, resize: "vertical" }}
+              onFocus={(e) => e.target.select()}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+              <button className="btn-secondary" onClick={() => setRecapText(null)}>Κλείσιμο</button>
+              <button
+                className="btn-primary"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(recapText);
+                    showToast("Αντιγράφηκε!");
+                  } catch {
+                    showToast("Δεν ήταν δυνατή η αντιγραφή — επίλεξε και κάνε Ctrl+C.");
+                  }
+                }}
+              >
+                Αντιγραφή
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {confirmingFinish && (
@@ -3845,6 +3990,14 @@ export default function TournamentManager() {
                 <p className="sub">Decided by Buchholz (tie on wins)</p>
               )}
             </div>
+
+            {isAdmin && (
+              <div className="footer-actions" style={{ marginTop: 0, marginBottom: 20 }}>
+                <button className="btn-secondary" disabled={recapLoading} onClick={generateRecap}>
+                  <Info size={15} /> {recapLoading ? "Δημιουργία…" : "Δημιούργησε σύνοψη ανακοίνωσης"}
+                </button>
+              </div>
+            )}
 
             <div className="tabs">
               <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Pairings</button>
