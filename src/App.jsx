@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-21.5";
+const APP_BUILD_VERSION = "2026-09-21.6";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -187,6 +187,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-21.6",
+    date: "2026-09-21",
+    items: [
+      "Διόρθωση απόδοσης: τα 11 ιστορικά τουρνουά ξαναγράφονταν στη βάση σε ΚΑΘΕ φόρτωση της εφαρμογής — τώρα γράφονται μόνο μία φορά (μόνο όσα λείπουν), πολύ ταχύτερη εκκίνηση.",
+    ],
+  },
   {
     version: "2026-09-21.5",
     date: "2026-09-21",
@@ -1284,41 +1291,44 @@ export default function TournamentManager() {
       }
 
       const days = Object.values(HISTORICAL_TOURNAMENTS_2026);
-      // Sequential, not Promise.all: avoids firing many concurrent storage
-      // writes at once (which risks silent failures/rate limiting). Always
-      // re-saves every one of the 11 (idempotent, static data, cheap) rather
-      // than trusting a single sample check — a partial failure on one day
-      // must never leave the rest silently broken.
-      let allOk = true;
-      for (const t of days) {
-        const result = await saveTournamentData(t.tournamentId, {
-          tournamentName: t.tournamentName,
+      // Only (re)save days that are actually missing from the index — not
+      // all 11, every single time the app loads. A day already present is
+      // trusted as saved; this keeps the original per-day safety (no single
+      // boolean flag deciding for all 11) without the cost of rewriting
+      // static, unchanging data on every load.
+      const missingDays = days.filter((t) => !index.some((idx) => idx.id === t.tournamentId));
+      if (missingDays.length > 0) {
+        let allOk = true;
+        for (const t of missingDays) {
+          const result = await saveTournamentData(t.tournamentId, {
+            tournamentName: t.tournamentName,
+            totalRounds: t.totalRounds,
+            matchLength: t.matchLength,
+            seasonYear: t.seasonYear,
+            liveStandingsEnabled: t.liveStandingsEnabled,
+            isOfficial: true,
+            phase: t.phase,
+            players: t.players,
+            round: t.round,
+            currentPairings: t.currentPairings,
+            history: t.history,
+            createdAt: t.createdAt,
+          });
+          if (!result) allOk = false;
+        }
+        const newIndexEntries = missingDays.map((t) => ({
+          id: t.tournamentId,
+          name: t.tournamentName,
+          date: t.createdAt,
+          status: "Completed",
           totalRounds: t.totalRounds,
-          matchLength: t.matchLength,
-          seasonYear: t.seasonYear,
-          liveStandingsEnabled: t.liveStandingsEnabled,
           isOfficial: true,
-          phase: t.phase,
-          players: t.players,
-          round: t.round,
-          currentPairings: t.currentPairings,
-          history: t.history,
-          createdAt: t.createdAt,
-        });
-        if (!result) allOk = false;
-      }
-      const newIndexEntries = days.map((t) => ({
-        id: t.tournamentId,
-        name: t.tournamentName,
-        date: t.createdAt,
-        status: "Completed",
-        totalRounds: t.totalRounds,
-        isOfficial: true,
-      }));
-      index = [...index.filter((t) => !t.id.startsWith("hist-day")), ...newIndexEntries];
-      await saveIndex(index);
-      if (!allOk) {
-        setNotice("Some historical tournaments failed to save — try reloading the app.");
+        }));
+        index = [...index, ...newIndexEntries];
+        await saveIndex(index);
+        if (!allOk) {
+          setNotice("Some historical tournaments failed to save — try reloading the app.");
+        }
       }
 
       setArchive(index);
