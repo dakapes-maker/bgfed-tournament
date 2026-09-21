@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-21.3";
+const APP_BUILD_VERSION = "2026-09-21.4";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -187,6 +187,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-21.4",
+    date: "2026-09-21",
+    items: [
+      "Διόρθωση σφάλματος: διπλό Α.Α. σε γύρο θα έκανε κρασάρισμα κατά την ενημέρωση ELO — τώρα εξαιρείται σωστά, όπως και το απλό Α.Α.",
+    ],
+  },
   {
     version: "2026-09-21.3",
     date: "2026-09-21",
@@ -1746,11 +1753,13 @@ export default function TournamentManager() {
     setPlayers(updatedPlayers);
     setHistory(newHistory);
 
-    const eloRoundMatches = currentPairings.pairs.map((pr) => ({
-      w: byId[pr.result.winnerId].name,
-      l: byId[pr.result.loserId].name,
-      ret: pr.result.method === "retirement",
-    }));
+    const eloRoundMatches = currentPairings.pairs
+      .filter((pr) => pr.result && pr.result.method !== "double_retirement")
+      .map((pr) => ({
+        w: byId[pr.result.winnerId].name,
+        l: byId[pr.result.loserId].name,
+        ret: pr.result.method === "retirement",
+      }));
     loadElo().then((elo) => {
       applyEloRoundBatch(elo, eloRoundMatches, matchLength);
       saveElo(elo);
