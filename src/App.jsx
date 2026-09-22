@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-21.9";
+const APP_BUILD_VERSION = "2026-09-22.01";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -189,7 +189,21 @@ const FEATURES_SUMMARY = [
 
 const CHANGELOG = [
   {
-    version: "2026-09-21.9",
+    version: "2026-09-22.01",
+    date: "2026-09-22",
+    items: [
+      "Το checkbox \"live ενημέρωση\" ελέγχει τώρα και το ELO, όχι μόνο το Season Standings — αν είναι off, το ELO ενημερώνεται μόνο στο τέλος του τουρνουά (όλοι οι γύροι μαζί), για ασφαλέστερη διαχείριση επαναλήψεων/διορθώσεων στη μέση.",
+    ],
+  },
+  {
+    version: "2026-09-21.10",
+    date: "2026-09-21",
+    items: [
+      "Σημαντική διόρθωση διαφάνειας: όταν διορθώνεις/αναιρείς αποτέλεσμα σε ήδη τελειωμένο γύρο, εμφανίζεται πλέον σαφής προειδοποίηση ότι το ELO δεν συγχρονίζεται αυτόματα και χρειάζεται Recompute — πριν έμενε σιωπηλά ασυγχρόνιστο.",
+    ],
+  },
+  {
+    version: "2026-09-21.09",
     date: "2026-09-21",
     items: [
       "Ο νικητής σε κάθε ζευγάρι εμφανίζεται τώρα μέσα σε χρωματιστό πλαίσιο (μαζί με το ✓) για να ξεχωρίζει πιο έντονα.",
@@ -197,28 +211,28 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "2026-09-21.8",
+    version: "2026-09-21.08",
     date: "2026-09-21",
     items: [
       "Το \"Recompute ELO & Season Standings\" έγινε πολύ πιο ευδιάκριτο (ξεχωριστό, ορατό panel αντί για κρυμμένο link) και εμφανίζεται πλέον και στο Season Standings και στο ELO Ratings, ψηλά στη σελίδα.",
     ],
   },
   {
-    version: "2026-09-21.7",
+    version: "2026-09-21.07",
     date: "2026-09-21",
     items: [
       "Νέο: σελίδα \"Head-to-Head\" — επιλέγεις δύο παίκτες και βλέπεις όλο το ιστορικό των μεταξύ τους αναμετρήσεων (νίκες, ημερομηνίες, τουρνουά), σε όλη τη διάρκεια της Ομοσπονδίας.",
     ],
   },
   {
-    version: "2026-09-21.6",
+    version: "2026-09-21.06",
     date: "2026-09-21",
     items: [
       "Διόρθωση απόδοσης: τα 11 ιστορικά τουρνουά ξαναγράφονταν στη βάση σε ΚΑΘΕ φόρτωση της εφαρμογής — τώρα γράφονται μόνο μία φορά (μόνο όσα λείπουν), πολύ ταχύτερη εκκίνηση.",
     ],
   },
   {
-    version: "2026-09-21.5",
+    version: "2026-09-21.05",
     date: "2026-09-21",
     items: [
       "Νέο κουμπί \"Δημιούργησε σύνοψη ανακοίνωσης\" σε κάθε τελειωμένο τουρνουά (Admin) — έτοιμο κείμενο copy/paste με νικητή ημέρας, κίνηση στην κορυφή του Season Standings και του ELO, με links προς την εφαρμογή.",
@@ -226,14 +240,14 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "2026-09-21.4",
+    version: "2026-09-21.04",
     date: "2026-09-21",
     items: [
       "Διόρθωση σφάλματος: διπλό Α.Α. σε γύρο θα έκανε κρασάρισμα κατά την ενημέρωση ELO — τώρα εξαιρείται σωστά, όπως και το απλό Α.Α.",
     ],
   },
   {
-    version: "2026-09-21.3",
+    version: "2026-09-21.03",
     date: "2026-09-21",
     items: [
       "Η στήλη \"Status\" έγινε \"Active\", με ένα σαφές on/off διακόπτη αντί για κείμενο/κουμπί — πιο ξεκάθαρο ότι είναι ενέργεια.",
@@ -241,7 +255,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "2026-09-21.2",
+    version: "2026-09-21.02",
     date: "2026-09-21",
     items: [
       "Το \"Σχετικά\" προστέθηκε και ως κάρτα στο Dashboard, και το \"Tournaments\" προστέθηκε και στο πάνω μενού — τώρα συμπίπτουν πλήρως.",
@@ -250,7 +264,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "2026-09-21.1",
+    version: "2026-09-21.01",
     date: "2026-09-21",
     items: [
       "Το \"Σχετικά/Changelog\" έγινε πλήρης σελίδα (με sub-tabs: Λειτουργικότητες, Τεχνικά στοιχεία, Changelog), μετακινήθηκε στο κύριο μενού.",
@@ -259,7 +273,7 @@ const CHANGELOG = [
     ],
   },
   {
-    version: "2026-09-20.1 – .4",
+    version: "2026-09-20.01 – .04",
     date: "2026-09-20",
     items: [
       "[.1] Το \"Χ αποχώρησε\" δεν αποκλείει πια αυτόματα τον παίκτη από τους επόμενους γύρους — μένει μόνο ένδειξη. Νέο κουμπί \"Απόσυρση / Επαναφορά\" στον πίνακα βαθμολογίας για ρητή απόσυρση. Νέα επιλογή \"Και οι δύο αποχώρησαν\" για διπλό Α.Α.",
@@ -346,6 +360,20 @@ function applyEloRoundBatch(elo, roundMatches, matchLength) {
   Object.entries(deltas).forEach(([key, d]) => {
     elo.players[key].rating += d;
   });
+}
+
+/** Converts one round's pairs into the {w, l, ret} shape applyEloRoundBatch
+ * expects. Shared by the live per-round path and the end-of-tournament
+ * batch-replay path, so both stay in exact agreement. Double retirements
+ * carry no winner and are skipped, same as a single-sided retirement. */
+function buildEloRoundMatches(pairs, byId) {
+  return pairs
+    .filter((pr) => pr.result && pr.result.method !== "double_retirement")
+    .map((pr) => ({
+      w: byId[pr.result.winnerId].name,
+      l: byId[pr.result.loserId].name,
+      ret: pr.result.method === "retirement",
+    }));
 }
 
 
@@ -1718,6 +1746,7 @@ export default function TournamentManager() {
     setHistory(updatedHistory);
     setPlayers(recomputed);
     persistCurrent(phase, round, recomputed, currentPairings, updatedHistory);
+    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα \"Recompute ELO & Season Standings\" (στο ELO Ratings ή Season Standings) για να συγχρονιστεί.");
   }
 
   function clearHistoricalResult(roundNumber, pairIndex) {
@@ -1730,6 +1759,7 @@ export default function TournamentManager() {
     setHistory(updatedHistory);
     setPlayers(recomputed);
     persistCurrent(phase, round, recomputed, currentPairings, updatedHistory);
+    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα \"Recompute ELO & Season Standings\" (στο ELO Ratings ή Season Standings) για να συγχρονιστεί.");
   }
 
   /** Redraws the live round. For round 1, that means deleting the round
@@ -1756,6 +1786,7 @@ export default function TournamentManager() {
     setRound(lastEntry.round);
     setCurrentPairings(restoredPairing);
     persistCurrent(phase, lastEntry.round, recomputed, restoredPairing, remainingHistory);
+    setNotice("Ο γύρος αναιρέθηκε — αλλά το ELO ΔΕΝ αναιρέθηκε αυτόματα μαζί του. Πάτα \"Recompute ELO & Season Standings\" (στο ELO Ratings ή Season Standings) για να συγχρονιστεί, μόλις τελειώσεις τις διορθώσεις.");
   }
 
   const roundComplete = currentPairings && currentPairings.pairs.every((pr) => pr.result !== null);
@@ -1818,17 +1849,13 @@ export default function TournamentManager() {
     setPlayers(updatedPlayers);
     setHistory(newHistory);
 
-    const eloRoundMatches = currentPairings.pairs
-      .filter((pr) => pr.result && pr.result.method !== "double_retirement")
-      .map((pr) => ({
-        w: byId[pr.result.winnerId].name,
-        l: byId[pr.result.loserId].name,
-        ret: pr.result.method === "retirement",
-      }));
-    loadElo().then((elo) => {
-      applyEloRoundBatch(elo, eloRoundMatches, matchLength);
-      saveElo(elo);
-    });
+    const eloRoundMatches = buildEloRoundMatches(currentPairings.pairs, byId);
+    if (liveStandingsEnabled) {
+      loadElo().then((elo) => {
+        applyEloRoundBatch(elo, eloRoundMatches, matchLength);
+        saveElo(elo);
+      });
+    }
 
     // Retries once on failure — saveSeason now honestly reports success/failure
     // instead of silently swallowing a storage hiccup, so we can tell the
@@ -1851,6 +1878,13 @@ export default function TournamentManager() {
       setPhase("finished");
       setCurrentPairings(null);
       await persistCurrent("finished", round, updatedPlayers, null, newHistory);
+      if (!liveStandingsEnabled) {
+        const elo = await loadElo();
+        newHistory.forEach((entry) => {
+          applyEloRoundBatch(elo, buildEloRoundMatches(entry.pairs, byId), matchLength);
+        });
+        await saveElo(elo);
+      }
       if (updateSeason) {
         const seasonOk = await pushSeasonUpdateWithRetry();
         if (seasonOk) {
@@ -4040,7 +4074,7 @@ export default function TournamentManager() {
                     checked={liveStandingsEnabled}
                     onChange={(e) => setLiveStandingsEnabled(e.target.checked)}
                   />
-                  Update season standings live, after every round (not just at the end)
+                  Update ELO &amp; season standings live, after every round (not just at the end)
                 </label>
 
                 <div className="round-pills">
