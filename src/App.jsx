@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-21.6";
+const APP_BUILD_VERSION = "2026-09-21.9";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -183,10 +183,33 @@ const FEATURES_SUMMARY = [
   "Διαχείριση Α.Α. (αποχώρηση παίκτη), με ρητή απόσυρση από το τουρνουά και ένδειξη διπλού Α.Α.",
   "Σημαία \"Official League Day\" και Recompute ELO/Standings από την αρχή, μόνο για επίσημες μέρες.",
   "Πλήρες Export / Import δεδομένων (backup) από το Dashboard.",
+  "Head-to-Head ιστορικό μεταξύ δύο παικτών, σε όλη τη διάρκεια της Ομοσπονδίας.",
   "Ρόλοι Admin / Visitor με κωδικό πρόσβασης για διαχειριστή.",
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-21.9",
+    date: "2026-09-21",
+    items: [
+      "Ο νικητής σε κάθε ζευγάρι εμφανίζεται τώρα μέσα σε χρωματιστό πλαίσιο (μαζί με το ✓) για να ξεχωρίζει πιο έντονα.",
+      "Το bye εμφανίζεται πλέον μέσα στο ίδιο grid των ζευγαρωμάτων, σαν ένα ακόμα \"ματς\" (χωρίς αντίπαλο), για ομοιομορφία — όχι πια ξεχωριστό μήνυμα.",
+    ],
+  },
+  {
+    version: "2026-09-21.8",
+    date: "2026-09-21",
+    items: [
+      "Το \"Recompute ELO & Season Standings\" έγινε πολύ πιο ευδιάκριτο (ξεχωριστό, ορατό panel αντί για κρυμμένο link) και εμφανίζεται πλέον και στο Season Standings και στο ELO Ratings, ψηλά στη σελίδα.",
+    ],
+  },
+  {
+    version: "2026-09-21.7",
+    date: "2026-09-21",
+    items: [
+      "Νέο: σελίδα \"Head-to-Head\" — επιλέγεις δύο παίκτες και βλέπεις όλο το ιστορικό των μεταξύ τους αναμετρήσεων (νίκες, ημερομηνίες, τουρνουά), σε όλη τη διάρκεια της Ομοσπονδίας.",
+    ],
+  },
   {
     version: "2026-09-21.6",
     date: "2026-09-21",
@@ -248,6 +271,14 @@ const CHANGELOG = [
 ];
 
 const WHATS_NEW_SEEN_KEY = "bgfed_whatsnew_seen_build";
+
+// Real calendar dates for the 11 historical "hist-dayN" tournaments — shared
+// by the ELO timeline and the Head-to-Head lookup so both agree on dates.
+const HISTORICAL_DAY_DATES = {
+  1: "2025-09-27", 2: "2025-10-18", 3: "2025-11-08", 4: "2025-11-29",
+  5: "2026-01-10", 6: "2026-02-14", 7: "2026-03-14", 8: "2026-03-28",
+  9: "2026-04-25", 10: "2026-05-17", 11: "2026-06-13",
+};
 
 // Plain-language description of how the app is built, for the "Τεχνικά
 // στοιχεία" tab — written for a board member, not a developer.
@@ -1105,6 +1136,10 @@ export default function TournamentManager() {
   const [expandedMatch, setExpandedMatch] = useState(null);
   const [recapText, setRecapText] = useState(null);
   const [recapLoading, setRecapLoading] = useState(false);
+  const [h2hPlayerA, setH2hPlayerA] = useState("");
+  const [h2hPlayerB, setH2hPlayerB] = useState("");
+  const [h2hResult, setH2hResult] = useState(null);
+  const [h2hLoading, setH2hLoading] = useState(false);
   const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
   const isAdmin = role === "admin";
   const [adminPasswordPrompt, setAdminPasswordPrompt] = useState(false);
@@ -2123,11 +2158,7 @@ export default function TournamentManager() {
    * player card — recomputing per player would repeat the same replay. */
   async function computeEloTimeline() {
     setEloTimelineLoading(true);
-    const realDates = {
-      1: "2025-09-27", 2: "2025-10-18", 3: "2025-11-08", 4: "2025-11-29",
-      5: "2026-01-10", 6: "2026-02-14", 7: "2026-03-14", 8: "2026-03-28",
-      9: "2026-04-25", 10: "2026-05-17", 11: "2026-06-13",
-    };
+    const realDates = HISTORICAL_DAY_DATES;
     const working = { players: {} };
     const timeline = {};
 
@@ -2338,6 +2369,73 @@ export default function TournamentManager() {
     }
   }
 
+  /** Full head-to-head history between two players by name, across the 11
+   * historical days and every other saved tournament. Matched by normalized
+   * name (same approach as ELO/season aggregation elsewhere in the app). */
+  async function computeHeadToHead(nameA, nameB) {
+    setH2hLoading(true);
+    setH2hResult(null);
+    try {
+      const keyA = normalizeName(nameA);
+      const keyB = normalizeName(nameB);
+      const meetings = [];
+
+      for (let day = 1; day <= 11; day++) {
+        const dayRounds = HISTORICAL_ELO_ROUNDS_2026.slice((day - 1) * 5, day * 5);
+        dayRounds.forEach((roundMatches) => {
+          roundMatches.forEach((m) => {
+            const wKey = normalizeName(m.w);
+            const lKey = normalizeName(m.l);
+            if ((wKey === keyA && lKey === keyB) || (wKey === keyB && lKey === keyA)) {
+              meetings.push({
+                date: HISTORICAL_DAY_DATES[day],
+                tournamentName: `Ημέρα ${day}`,
+                winner: m.w,
+                loser: m.l,
+                method: m.ret ? "retirement" : "normal",
+              });
+            }
+          });
+        });
+      }
+
+      const others = archive.filter((t) => !t.id.startsWith("hist-day")).sort((a, b) => new Date(a.date) - new Date(b.date));
+      for (const t of others) {
+        const data = await fetchTournamentData(t.id);
+        if (!data || !data.history || !data.players) continue;
+        data.history.forEach((entry) => {
+          entry.pairs.forEach((pr) => {
+            if (!pr.result) return;
+            const p1 = data.players.find((p) => p.id === pr.p1);
+            const p2 = data.players.find((p) => p.id === pr.p2);
+            if (!p1 || !p2) return;
+            const k1 = normalizeName(p1.name);
+            const k2 = normalizeName(p2.name);
+            const isPair = (k1 === keyA && k2 === keyB) || (k1 === keyB && k2 === keyA);
+            if (!isPair) return;
+            if (pr.result.method === "double_retirement") {
+              meetings.push({ date: t.date, tournamentName: t.name, winner: null, loser: null, method: "double_retirement" });
+            } else {
+              const w = data.players.find((p) => p.id === pr.result.winnerId);
+              const l = data.players.find((p) => p.id === pr.result.loserId);
+              if (!w || !l) return;
+              meetings.push({ date: t.date, tournamentName: t.name, winner: w.name, loser: l.name, method: pr.result.method });
+            }
+          });
+        });
+      }
+
+      meetings.sort((a, b) => new Date(a.date) - new Date(b.date));
+      const winsA = meetings.filter((m) => m.winner && normalizeName(m.winner) === keyA).length;
+      const winsB = meetings.filter((m) => m.winner && normalizeName(m.winner) === keyB).length;
+      setH2hResult({ nameA, nameB, meetings, winsA, winsB, total: meetings.length });
+    } catch (err) {
+      showToast("Αποτυχία υπολογισμού head-to-head — δοκίμασε ξανά.");
+    } finally {
+      setH2hLoading(false);
+    }
+  }
+
   async function loadPlayerMatchStats(name) {
     const key = normalizeName(name);
     const myRating = eloData.players?.[key]?.rating ?? ELO_INITIAL;
@@ -2421,6 +2519,40 @@ export default function TournamentManager() {
   /* ---------------------------------------------------------------------- */
 
   const buchholz = phase === "finished" ? computeBuchholz(players) : null;
+
+  // Shared, visible "recompute" panel — used on both Season Standings and
+  // ELO Ratings so admins actually notice it, instead of a small hidden
+  // link at the very bottom of one page.
+  const recomputePanel = isAdmin && (
+    !confirmingRecompute ? (
+      <div className="recompute-panel">
+        <div>
+          <p style={{ fontWeight: 700, margin: "0 0 2px 0" }}>Χρειάζεσαι να ξαναχτίσεις τα δεδομένα;</p>
+          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Ξαναϋπολογίζει ELO και Season Standings από την αρχή, μόνο από τουρνουά "Official League day".</p>
+        </div>
+        <button className="btn-secondary" onClick={() => setConfirmingRecompute(true)}>
+          <RotateCcw size={15} /> Recompute ELO &amp; Season Standings
+        </button>
+      </div>
+    ) : (
+      <div className="delete-confirm">
+        <span>Rebuild ELO and the 2026 Season Standings from scratch, using only tournaments marked "Official League day" — any test tournament is ignored automatically, whether or not you've deleted it. This can't be undone.</span>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="btn-secondary" onClick={() => setConfirmingRecompute(false)}>Cancel</button>
+          <button
+            className="btn-primary"
+            style={{ background: "var(--accent)" }}
+            onClick={() => {
+              recomputeEloAndSeasonFromScratch();
+              setConfirmingRecompute(false);
+            }}
+          >
+            Yes, recompute
+          </button>
+        </div>
+      </div>
+    )
+  );
   const standings = sortStandings(players, buchholz);
   const byId = {};
   players.forEach((p) => (byId[p.id] = p));
@@ -2573,6 +2705,7 @@ export default function TournamentManager() {
         .buchholz-cell { color: var(--muted); font-size: 13px; }
 
         .delete-control { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+        .recompute-panel { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; flex-wrap: wrap; }
         .delete-confirm { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 14px; flex-wrap: wrap; }
 
         .name-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid var(--border); border-radius: 7px; box-shadow: 0 6px 16px rgba(0,0,0,0.12); z-index: 20; }
@@ -2590,7 +2723,7 @@ export default function TournamentManager() {
         .match-compact.clickable:hover { background: var(--accent-soft); }
         .match-compact-num { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.03em; margin-bottom: 2px; }
         .match-row-name { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; font-size: 16px; font-weight: 700; color: var(--ink); }
-        .match-row-name.winner { color: var(--win); }
+        .match-row-name.winner { color: var(--win); background: rgba(31, 92, 52, 0.14); border-radius: 5px; padding: 4px 8px; margin: 2px -4px; }
         .match-row-name.loser { color: var(--loss); opacity: 0.8; }
         .match-row-tag { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
         .match-expand { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
@@ -2730,6 +2863,9 @@ export default function TournamentManager() {
           <button className="btn-ghost" onClick={() => setPhase("elo")}>
             <Award size={14} /> ELO Ratings
           </button>
+          <button className="btn-ghost" onClick={() => setPhase("h2h")}>
+            <Users size={14} /> Head-to-Head
+          </button>
           {isAdmin && (
             <button className="btn-ghost" onClick={() => setPhase("players")}>
               <Users size={14} /> Players
@@ -2835,6 +2971,94 @@ export default function TournamentManager() {
                     </ul>
                   </div>
                 ))}
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {phase === "h2h" && (
+        <>
+          <div className="header">
+            <p className="eyebrow">Ιστορικό</p>
+            <h1>Head-to-Head</h1>
+          </div>
+          <div className="content" style={{ maxWidth: 640 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 24 }}>
+              <select
+                value={h2hPlayerA}
+                onChange={(e) => { setH2hPlayerA(e.target.value); setH2hResult(null); }}
+                style={{ fontSize: 15, border: "1px solid var(--border)", borderRadius: 7, padding: "8px 10px", background: "var(--surface)", flex: "1 1 200px" }}
+              >
+                <option value="">Επιλέξτε παίκτη Α</option>
+                {Object.values(registry.players || {}).map((p) => p.name).sort((a, b) => a.localeCompare(b, "el")).map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <span className="match-vs">vs</span>
+              <select
+                value={h2hPlayerB}
+                onChange={(e) => { setH2hPlayerB(e.target.value); setH2hResult(null); }}
+                style={{ fontSize: 15, border: "1px solid var(--border)", borderRadius: 7, padding: "8px 10px", background: "var(--surface)", flex: "1 1 200px" }}
+              >
+                <option value="">Επιλέξτε παίκτη Β</option>
+                {Object.values(registry.players || {}).map((p) => p.name).sort((a, b) => a.localeCompare(b, "el")).map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+              <button
+                className="btn-primary"
+                disabled={!h2hPlayerA || !h2hPlayerB || h2hPlayerA === h2hPlayerB || h2hLoading}
+                onClick={() => computeHeadToHead(h2hPlayerA, h2hPlayerB)}
+              >
+                {h2hLoading ? "Υπολογισμός…" : "Σύγκρινε"}
+              </button>
+            </div>
+
+            {h2hPlayerA && h2hPlayerB && h2hPlayerA === h2hPlayerB && (
+              <p style={{ color: "var(--muted)" }}>Επίλεξε δύο διαφορετικούς παίκτες.</p>
+            )}
+
+            {h2hResult && (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", textAlign: "center", marginBottom: 24, padding: "16px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+                  <div>
+                    <p style={{ fontWeight: 800, fontSize: 26, margin: 0, color: "var(--win)" }}>{h2hResult.winsA}</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{h2hResult.nameA}</p>
+                  </div>
+                  <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{h2hResult.total} συνολικά ματς</p>
+                  <div>
+                    <p style={{ fontWeight: 800, fontSize: 26, margin: 0, color: "var(--win)" }}>{h2hResult.winsB}</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{h2hResult.nameB}</p>
+                  </div>
+                </div>
+
+                {h2hResult.total === 0 ? (
+                  <p style={{ color: "var(--muted)" }}>Δεν έχουν παίξει ποτέ μεταξύ τους.</p>
+                ) : (
+                  <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 12 }}>
+                        <th style={{ padding: "4px 6px" }}>Ημερομηνία</th>
+                        <th style={{ padding: "4px 6px" }}>Τουρνουά</th>
+                        <th style={{ padding: "4px 6px" }}>Αποτέλεσμα</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {h2hResult.meetings.map((m, i) => (
+                        <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                          <td style={{ padding: "6px" }}>{new Date(m.date).toLocaleDateString("el-GR")}</td>
+                          <td style={{ padding: "6px" }}>{m.tournamentName}</td>
+                          <td style={{ padding: "6px", fontWeight: 700 }}>
+                            {m.method === "double_retirement"
+                              ? "Διπλό Α.Α. — χωρίς νικητή"
+                              : `${m.winner} νίκη${m.method === "retirement" ? " (Α.Α.)" : ""}`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </>
             )}
           </div>
@@ -2948,6 +3172,8 @@ export default function TournamentManager() {
               <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
               <span>Counts each player's best {SEASON_BEST_OF} tournament results this season. Names are matched by exact spelling across tournaments — keep spelling consistent when adding players.</span>
             </div>
+
+            {seasonBrowseYear === 2026 && recomputePanel}
 
             {isAdmin && seasonBrowseYear === 2026 && (
               <div className="footer-actions" style={{ marginTop: 0, marginBottom: 20 }}>
@@ -3103,32 +3329,7 @@ export default function TournamentManager() {
               </div>
             </div>
 
-            {isAdmin && (
-              !confirmingRecompute ? (
-                <div className="delete-control">
-                  <button className="btn-ghost" onClick={() => setConfirmingRecompute(true)}>
-                    <RotateCcw size={13} /> Recompute ELO &amp; Season Standings from scratch
-                  </button>
-                </div>
-              ) : (
-                <div className="delete-confirm">
-                  <span>Rebuild ELO and the 2026 Season Standings from scratch, using only tournaments marked "Official League day" — any test tournament is ignored automatically, whether or not you've deleted it. This can't be undone.</span>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <button className="btn-secondary" onClick={() => setConfirmingRecompute(false)}>Cancel</button>
-                    <button
-                      className="btn-primary"
-                      style={{ background: "var(--accent)" }}
-                      onClick={() => {
-                        recomputeEloAndSeasonFromScratch();
-                        setConfirmingRecompute(false);
-                      }}
-                    >
-                      Yes, recompute
-                    </button>
-                  </div>
-                </div>
-              )
-            )}
+            {recomputePanel}
 
             {(() => {
               const standings = Object.values(eloData.players || {}).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, "en"));
@@ -3518,6 +3719,11 @@ export default function TournamentManager() {
                 <span className="dashboard-card-title">ELO Ratings</span>
                 <span className="dashboard-card-desc">Lifetime skill rating for every player</span>
               </button>
+              <button className="dashboard-card" onClick={() => setPhase("h2h")}>
+                <Users size={26} />
+                <span className="dashboard-card-title">Head-to-Head</span>
+                <span className="dashboard-card-desc">Ιστορικό αναμετρήσεων μεταξύ δύο παικτών</span>
+              </button>
               {isAdmin && (
                 <button className="dashboard-card" onClick={() => setPhase("players")}>
                   <Users size={26} />
@@ -3849,14 +4055,20 @@ export default function TournamentManager() {
                   ))}
                 </div>
 
+                <div className="pairings-grid">
                 {roundData && roundData.bye && (
-                  <div className="bye-card">
-                    <Dice5 size={18} />
-                    <span><strong>{byId[roundData.bye]?.name}</strong> has a bye this round — automatic win.</span>
+                  <div className="match-compact decided">
+                    <div className="match-compact-num">BYE</div>
+                    <div className="match-row-name winner">
+                      <span>{byId[roundData.bye]?.name}</span>
+                      <Check size={14} />
+                    </div>
+                    <div className="match-row-name" style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                      <span>— κανένας αντίπαλος —</span>
+                    </div>
+                    <div className="match-row-tag">Αυτόματο ρεπό</div>
                   </div>
                 )}
-
-                <div className="pairings-grid">
                 {roundData && roundData.pairs.map((pr, i) => {
                   const p1 = byId[pr.p1];
                   const p2 = byId[pr.p2];
@@ -4051,14 +4263,20 @@ export default function TournamentManager() {
                   ))}
                 </div>
 
+                <div className="pairings-grid">
                 {roundData && roundData.bye && (
-                  <div className="bye-card">
-                    <Dice5 size={18} />
-                    <span><strong>{byId[roundData.bye]?.name}</strong> had a bye this round.</span>
+                  <div className="match-compact decided">
+                    <div className="match-compact-num">BYE</div>
+                    <div className="match-row-name winner">
+                      <span>{byId[roundData.bye]?.name}</span>
+                      <Check size={14} />
+                    </div>
+                    <div className="match-row-name" style={{ color: "var(--muted)", fontStyle: "italic" }}>
+                      <span>— κανένας αντίπαλος —</span>
+                    </div>
+                    <div className="match-row-tag">Αυτόματο ρεπό</div>
                   </div>
                 )}
-
-                <div className="pairings-grid">
                 {roundData && roundData.pairs.map((pr, i) => {
                   const p1 = byId[pr.p1];
                   const p2 = byId[pr.p2];
