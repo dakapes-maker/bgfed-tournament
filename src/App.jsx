@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-22.02";
+const APP_BUILD_VERSION = "2026-09-22.03";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -188,6 +188,15 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-22.03",
+    date: "2026-09-22",
+    items: [
+      "Το Statistics χωρίστηκε σε 4 sub-tabs: Σύγκριση παικτών, Σερί, Κατακτήσεις, Πρωτοπορία.",
+      "Διόρθωση σφάλματος: πιθανά διπλά tournament entries στο ευρετήριο μπορούσαν να μετρήσουν ίδιο σερί/αγώνα δύο φορές — τώρα εξαιρούνται αυτόματα.",
+      "Στην Πρωτοπορία, \"ημέρες\" έγινε \"αγωνιστικές\".",
+    ],
+  },
   {
     version: "2026-09-22.02",
     date: "2026-09-22",
@@ -1177,6 +1186,7 @@ export default function TournamentManager() {
   const [h2hLoading, setH2hLoading] = useState(false);
   const [statsResult, setStatsResult] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [statsTab, setStatsTab] = useState("h2h");
   const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
   const isAdmin = role === "admin";
   const [adminPasswordPrompt, setAdminPasswordPrompt] = useState(false);
@@ -2355,7 +2365,10 @@ export default function TournamentManager() {
 
       // 3. ELO: replay every earlier tournament (by date) to get a clean
       // "before today" snapshot, then diff against the current live ratings.
-      const chronological = [...archive].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const seenIds = new Set();
+      const chronological = [...archive]
+        .filter((t) => { if (seenIds.has(t.id)) return false; seenIds.add(t.id); return true; })
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
       const selfIdx = chronological.findIndex((t) => t.id === tournamentId);
       const priorTournaments = selfIdx >= 0 ? chronological.slice(0, selfIdx) : [];
       const eloBefore = { players: {} };
@@ -2490,7 +2503,10 @@ export default function TournamentManager() {
     setStatsLoading(true);
     setStatsResult(null);
     try {
-      const chronological = [...archive].sort((a, b) => new Date(a.date) - new Date(b.date));
+      const seenIds = new Set();
+      const chronological = [...archive]
+        .filter((t) => { if (seenIds.has(t.id)) return false; seenIds.add(t.id); return true; })
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
 
       const eloRunning = { players: {} };
       const seasonRunning = { players: {} };
@@ -3140,154 +3156,178 @@ export default function TournamentManager() {
           <div className="header">
             <p className="eyebrow">Ιστορικό</p>
             <h1>Statistics</h1>
+            <div className="tabs" style={{ marginTop: 14 }}>
+              <button className={`tab ${statsTab === "h2h" ? "active" : ""}`} onClick={() => setStatsTab("h2h")}>Σύγκριση παικτών</button>
+              <button className={`tab ${statsTab === "streaks" ? "active" : ""}`} onClick={() => setStatsTab("streaks")}>Σερί</button>
+              <button className={`tab ${statsTab === "titles" ? "active" : ""}`} onClick={() => setStatsTab("titles")}>Κατακτήσεις</button>
+              <button className={`tab ${statsTab === "leadership" ? "active" : ""}`} onClick={() => setStatsTab("leadership")}>Πρωτοπορία</button>
+            </div>
           </div>
           <div className="content" style={{ maxWidth: 780 }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 24 }}>
-              <select
-                value={h2hPlayerA}
-                onChange={(e) => { setH2hPlayerA(e.target.value); setH2hResult(null); }}
-                style={{ fontSize: 15, border: "1px solid var(--border)", borderRadius: 7, padding: "8px 10px", background: "var(--surface)", flex: "1 1 200px" }}
-              >
-                <option value="">Επιλέξτε παίκτη Α</option>
-                {Object.values(registry.players || {}).map((p) => p.name).sort((a, b) => a.localeCompare(b, "el")).map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-              <span className="match-vs">vs</span>
-              <select
-                value={h2hPlayerB}
-                onChange={(e) => { setH2hPlayerB(e.target.value); setH2hResult(null); }}
-                style={{ fontSize: 15, border: "1px solid var(--border)", borderRadius: 7, padding: "8px 10px", background: "var(--surface)", flex: "1 1 200px" }}
-              >
-                <option value="">Επιλέξτε παίκτη Β</option>
-                {Object.values(registry.players || {}).map((p) => p.name).sort((a, b) => a.localeCompare(b, "el")).map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-              <button
-                className="btn-primary"
-                disabled={!h2hPlayerA || !h2hPlayerB || h2hPlayerA === h2hPlayerB || h2hLoading}
-                onClick={() => computeHeadToHead(h2hPlayerA, h2hPlayerB)}
-              >
-                {h2hLoading ? "Υπολογισμός…" : "Σύγκρινε"}
-              </button>
-            </div>
-
-            {h2hPlayerA && h2hPlayerB && h2hPlayerA === h2hPlayerB && (
-              <p style={{ color: "var(--muted)" }}>Επίλεξε δύο διαφορετικούς παίκτες.</p>
-            )}
-
-            {h2hResult && (
+            {statsTab === "h2h" && (
               <>
-                <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", textAlign: "center", marginBottom: 24, padding: "16px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
-                  <div>
-                    <p style={{ fontWeight: 800, fontSize: 26, margin: 0, color: "var(--win)" }}>{h2hResult.winsA}</p>
-                    <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{h2hResult.nameA}</p>
-                  </div>
-                  <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{h2hResult.total} συνολικά ματς</p>
-                  <div>
-                    <p style={{ fontWeight: 800, fontSize: 26, margin: 0, color: "var(--win)" }}>{h2hResult.winsB}</p>
-                    <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{h2hResult.nameB}</p>
-                  </div>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 24 }}>
+                  <select
+                    value={h2hPlayerA}
+                    onChange={(e) => { setH2hPlayerA(e.target.value); setH2hResult(null); }}
+                    style={{ fontSize: 15, border: "1px solid var(--border)", borderRadius: 7, padding: "8px 10px", background: "var(--surface)", flex: "1 1 200px" }}
+                  >
+                    <option value="">Επιλέξτε παίκτη Α</option>
+                    {Object.values(registry.players || {}).map((p) => p.name).sort((a, b) => a.localeCompare(b, "el")).map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                  <span className="match-vs">vs</span>
+                  <select
+                    value={h2hPlayerB}
+                    onChange={(e) => { setH2hPlayerB(e.target.value); setH2hResult(null); }}
+                    style={{ fontSize: 15, border: "1px solid var(--border)", borderRadius: 7, padding: "8px 10px", background: "var(--surface)", flex: "1 1 200px" }}
+                  >
+                    <option value="">Επιλέξτε παίκτη Β</option>
+                    {Object.values(registry.players || {}).map((p) => p.name).sort((a, b) => a.localeCompare(b, "el")).map((name) => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn-primary"
+                    disabled={!h2hPlayerA || !h2hPlayerB || h2hPlayerA === h2hPlayerB || h2hLoading}
+                    onClick={() => computeHeadToHead(h2hPlayerA, h2hPlayerB)}
+                  >
+                    {h2hLoading ? "Υπολογισμός…" : "Σύγκρινε"}
+                  </button>
                 </div>
 
-                {h2hResult.total === 0 ? (
-                  <p style={{ color: "var(--muted)" }}>Δεν έχουν παίξει ποτέ μεταξύ τους.</p>
-                ) : (
-                  <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
-                    <thead>
-                      <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 12 }}>
-                        <th style={{ padding: "4px 6px" }}>Ημερομηνία</th>
-                        <th style={{ padding: "4px 6px" }}>Τουρνουά</th>
-                        <th style={{ padding: "4px 6px" }}>Αποτέλεσμα</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {h2hResult.meetings.map((m, i) => (
-                        <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
-                          <td style={{ padding: "6px" }}>{new Date(m.date).toLocaleDateString("el-GR")}</td>
-                          <td style={{ padding: "6px" }}>{m.tournamentName}</td>
-                          <td style={{ padding: "6px", fontWeight: 700 }}>
-                            {m.method === "double_retirement"
-                              ? "Διπλό Α.Α. — χωρίς νικητή"
-                              : `${m.winner} νίκη${m.method === "retirement" ? " (Α.Α.)" : ""}`}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                {h2hPlayerA && h2hPlayerB && h2hPlayerA === h2hPlayerB && (
+                  <p style={{ color: "var(--muted)" }}>Επίλεξε δύο διαφορετικούς παίκτες.</p>
+                )}
+
+                {h2hResult && (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", textAlign: "center", marginBottom: 24, padding: "16px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+                      <div>
+                        <p style={{ fontWeight: 800, fontSize: 26, margin: 0, color: "var(--win)" }}>{h2hResult.winsA}</p>
+                        <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{h2hResult.nameA}</p>
+                      </div>
+                      <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{h2hResult.total} συνολικά ματς</p>
+                      <div>
+                        <p style={{ fontWeight: 800, fontSize: 26, margin: 0, color: "var(--win)" }}>{h2hResult.winsB}</p>
+                        <p style={{ fontSize: 14, fontWeight: 700, margin: 0 }}>{h2hResult.nameB}</p>
+                      </div>
+                    </div>
+
+                    {h2hResult.total === 0 ? (
+                      <p style={{ color: "var(--muted)" }}>Δεν έχουν παίξει ποτέ μεταξύ τους.</p>
+                    ) : (
+                      <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
+                        <thead>
+                          <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 12 }}>
+                            <th style={{ padding: "4px 6px" }}>Ημερομηνία</th>
+                            <th style={{ padding: "4px 6px" }}>Τουρνουά</th>
+                            <th style={{ padding: "4px 6px" }}>Αποτέλεσμα</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {h2hResult.meetings.map((m, i) => (
+                            <tr key={i} style={{ borderTop: "1px solid var(--border)" }}>
+                              <td style={{ padding: "6px" }}>{new Date(m.date).toLocaleDateString("el-GR")}</td>
+                              <td style={{ padding: "6px" }}>{m.tournamentName}</td>
+                              <td style={{ padding: "6px", fontWeight: 700 }}>
+                                {m.method === "double_retirement"
+                                  ? "Διπλό Α.Α. — χωρίς νικητή"
+                                  : `${m.winner} νίκη${m.method === "retirement" ? " (Α.Α.)" : ""}`}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </>
                 )}
               </>
             )}
 
-            <div style={{ borderTop: "1px solid var(--border)", marginTop: 32, paddingTop: 24 }}>
+            {statsTab !== "h2h" && !statsResult && (
               <button className="btn-secondary" disabled={statsLoading} onClick={computeStatistics}>
                 <TrendingUp size={15} /> {statsLoading ? "Υπολογισμός…" : "Υπολόγισε στατιστικά"}
               </button>
+            )}
 
-              {statsResult && (
-                <div style={{ marginTop: 20, display: "grid", gap: 24 }}>
-                  <div>
-                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🔥 Μεγαλύτερα σερί νικών</p>
-                    {statsResult.topWinStreaks.length === 0 ? <p style={{ color: "var(--muted)" }}>—</p> : (
-                      <ol style={{ margin: 0, paddingLeft: 20 }}>
-                        {statsResult.topWinStreaks.map((s, i) => (
-                          <li key={i} style={{ marginBottom: 4 }}>
-                            <strong>{s.name}</strong> — {s.length} νίκες στη σειρά
-                            <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </div>
-
-                  <div>
-                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📉 Μεγαλύτερα σερί ηττών</p>
-                    {statsResult.topLossStreaks.length === 0 ? <p style={{ color: "var(--muted)" }}>—</p> : (
-                      <ol style={{ margin: 0, paddingLeft: 20 }}>
-                        {statsResult.topLossStreaks.map((s, i) => (
-                          <li key={i} style={{ marginBottom: 4 }}>
-                            <strong>{s.name}</strong> — {s.length} ήττες στη σειρά
-                            <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
-                          </li>
-                        ))}
-                      </ol>
-                    )}
-                  </div>
-
-                  <div>
-                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🏆 Κατακτήσεις τουρνουά</p>
+            {statsTab === "streaks" && statsResult && (
+              <div style={{ display: "grid", gap: 24 }}>
+                <div>
+                  <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🔥 Μεγαλύτερα σερί νικών</p>
+                  {statsResult.topWinStreaks.length === 0 ? <p style={{ color: "var(--muted)" }}>—</p> : (
                     <ol style={{ margin: 0, paddingLeft: 20 }}>
-                      {statsResult.titles.map((tt, i) => (
+                      {statsResult.topWinStreaks.map((s, i) => (
                         <li key={i} style={{ marginBottom: 4 }}>
-                          <strong>{tt.name}</strong> — {tt.count} {tt.count === 1 ? "τίτλος" : "τίτλοι"}
-                          <span style={{ color: "var(--muted)", fontSize: 13 }}> ({tt.tournaments.map((x) => x.name).join(", ")})</span>
+                          <strong>{s.name}</strong> — {s.length} νίκες στη σειρά
+                          <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
                         </li>
                       ))}
                     </ol>
-                  </div>
+                  )}
+                </div>
+                <div>
+                  <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📉 Μεγαλύτερα σερί ηττών</p>
+                  {statsResult.topLossStreaks.length === 0 ? <p style={{ color: "var(--muted)" }}>—</p> : (
+                    <ol style={{ margin: 0, paddingLeft: 20 }}>
+                      {statsResult.topLossStreaks.map((s, i) => (
+                        <li key={i} style={{ marginBottom: 4 }}>
+                          <strong>{s.name}</strong> — {s.length} ήττες στη σειρά
+                          <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+                <button className="btn-ghost" style={{ justifySelf: "start" }} disabled={statsLoading} onClick={computeStatistics}>
+                  <RotateCcw size={13} /> Ξαναϋπολόγισε
+                </button>
+              </div>
+            )}
 
-                  <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
-                    <div style={{ flex: "1 1 260px" }}>
-                      <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📈 Πρωτοπορία Season Standings</p>
-                      <ol style={{ margin: 0, paddingLeft: 20 }}>
-                        {statsResult.standingsLeaders.map((s, i) => (
-                          <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {s.days} {s.days === 1 ? "ημέρα" : "ημέρες"} #1</li>
-                        ))}
-                      </ol>
-                    </div>
-                    <div style={{ flex: "1 1 260px" }}>
-                      <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>⭐ Πρωτοπορία ELO</p>
-                      <ol style={{ margin: 0, paddingLeft: 20 }}>
-                        {statsResult.eloLeaders.map((s, i) => (
-                          <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {s.days} {s.days === 1 ? "ημέρα" : "ημέρες"} #1</li>
-                        ))}
-                      </ol>
-                    </div>
+            {statsTab === "titles" && statsResult && (
+              <div>
+                <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🏆 Κατακτήσεις τουρνουά</p>
+                <ol style={{ margin: 0, paddingLeft: 20 }}>
+                  {statsResult.titles.map((tt, i) => (
+                    <li key={i} style={{ marginBottom: 4 }}>
+                      <strong>{tt.name}</strong> — {tt.count} {tt.count === 1 ? "τίτλος" : "τίτλοι"}
+                      <span style={{ color: "var(--muted)", fontSize: 13 }}> ({tt.tournaments.map((x) => x.name).join(", ")})</span>
+                    </li>
+                  ))}
+                </ol>
+                <button className="btn-ghost" style={{ marginTop: 16 }} disabled={statsLoading} onClick={computeStatistics}>
+                  <RotateCcw size={13} /> Ξαναϋπολόγισε
+                </button>
+              </div>
+            )}
+
+            {statsTab === "leadership" && statsResult && (
+              <div>
+                <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 260px" }}>
+                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📈 Πρωτοπορία Season Standings</p>
+                    <ol style={{ margin: 0, paddingLeft: 20 }}>
+                      {statsResult.standingsLeaders.map((s, i) => (
+                        <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {s.days} {s.days === 1 ? "αγωνιστική" : "αγωνιστικές"} #1</li>
+                      ))}
+                    </ol>
+                  </div>
+                  <div style={{ flex: "1 1 260px" }}>
+                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>⭐ Πρωτοπορία ELO</p>
+                    <ol style={{ margin: 0, paddingLeft: 20 }}>
+                      {statsResult.eloLeaders.map((s, i) => (
+                        <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {s.days} {s.days === 1 ? "αγωνιστική" : "αγωνιστικές"} #1</li>
+                      ))}
+                    </ol>
                   </div>
                 </div>
-              )}
-            </div>
+                <button className="btn-ghost" style={{ marginTop: 16 }} disabled={statsLoading} onClick={computeStatistics}>
+                  <RotateCcw size={13} /> Ξαναϋπολόγισε
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}
