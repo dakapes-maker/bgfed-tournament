@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-22.07";
+const APP_BUILD_VERSION = "2026-09-22.08";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -184,10 +184,18 @@ const FEATURES_SUMMARY = [
   "Σημαία \"Official League Day\" και Recompute ELO/Standings από την αρχή, μόνο για επίσημες μέρες.",
   "Πλήρες Export / Import δεδομένων (backup) από το Dashboard.",
   "Statistics — Head-to-Head, σερί νικών/ηττών, κατακτήσεις τουρνουά, πρωτοπορία σε βαθμολογία/ELO.",
+  "Κύριο μενού και τίτλοι σελίδων στα Ελληνικά (προεπιλογή), με εναλλαγή σε Αγγλικά.",
   "Ρόλοι Admin / Visitor με κωδικό πρόσβασης για διαχειριστή.",
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-22.08",
+    date: "2026-09-22",
+    items: [
+      "Το κύριο μενού, οι κάρτες του Dashboard, και ο τίτλος κάθε σελίδας είναι πλέον στα Ελληνικά (προεπιλογή), με νέο κουμπί \"EN/ΕΛ\" πάνω-δεξιά για εναλλαγή γλώσσας. Η επιλογή θυμάται ανά browser.",
+    ],
+  },
   {
     version: "2026-09-22.07",
     date: "2026-09-22",
@@ -329,6 +337,35 @@ const CHANGELOG = [
 ];
 
 const WHATS_NEW_SEEN_KEY = "bgfed_whatsnew_seen_build";
+const LANG_STORAGE_KEY = "bgfed_lang";
+
+// Translations for the main nav, dashboard cards, and each page's header —
+// the scope we agreed on (not the whole app's every string, to keep this
+// maintainable). Default language is Greek.
+const TRANSLATIONS = {
+  el: {
+    navAbout: "Σχετικά", navTournaments: "Τουρνουά", navSeason: "Βαθμολογία",
+    navElo: "Βαθμολογία ELO", navStats: "Στατιστικά", navPlayers: "Παίκτες",
+    dashboardEyebrow: "Διαχείριση Τουρνουά", dashboardTitle: "Πίνακας Ελέγχου",
+    archiveEyebrow: "Τουρνουά Backgammon · Σύστημα Swiss", archiveTitle: "Αρχείο Τουρνουά",
+    seasonEyebrow: "Ετήσια Κατάταξη", seasonTitle: "Βαθμολογία Σεζόν",
+    eloEyebrow: "Διαχρονική Αξιολόγηση", eloTitle: "Βαθμολογία ELO",
+    playersEyebrow: "Μητρώο Παικτών", playersTitle: "Παίκτες",
+    statsEyebrow: "Ιστορικό", statsTitle: "Στατιστικά",
+    aboutEyebrow: "Πληροφορίες", aboutTitle: "Σχετικά με την εφαρμογή",
+  },
+  en: {
+    navAbout: "About", navTournaments: "Tournaments", navSeason: "Season Standings",
+    navElo: "ELO Ratings", navStats: "Statistics", navPlayers: "Players",
+    dashboardEyebrow: "Tournament Manager", dashboardTitle: "Dashboard",
+    archiveEyebrow: "Backgammon Tournament · Swiss System", archiveTitle: "Tournament Archive",
+    seasonEyebrow: "Annual Ranking", seasonTitle: "Season Standings",
+    eloEyebrow: "Lifetime Skill Rating", eloTitle: "ELO Ratings",
+    playersEyebrow: "Player Registry", playersTitle: "Players",
+    statsEyebrow: "History", statsTitle: "Statistics",
+    aboutEyebrow: "Information", aboutTitle: "About this app",
+  },
+};
 
 // Real calendar dates for the 11 historical "hist-dayN" tournaments — shared
 // by the ELO timeline and the Head-to-Head lookup so both agree on dates.
@@ -1215,6 +1252,23 @@ export default function TournamentManager() {
   const [statsResult, setStatsResult] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsTab, setStatsTab] = useState("h2h");
+  const [lang, setLang] = useState(() => {
+    try {
+      return window.localStorage.getItem(LANG_STORAGE_KEY) === "en" ? "en" : "el";
+    } catch {
+      return "el";
+    }
+  });
+  const L = TRANSLATIONS[lang];
+  function toggleLang() {
+    const next = lang === "el" ? "en" : "el";
+    setLang(next);
+    try {
+      window.localStorage.setItem(LANG_STORAGE_KEY, next);
+    } catch {
+      // ignore
+    }
+  }
   const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
   const isAdmin = role === "admin";
   const [adminPasswordPrompt, setAdminPasswordPrompt] = useState(false);
@@ -3046,7 +3100,7 @@ export default function TournamentManager() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <button className="btn-ghost" onClick={() => { setPhase("about"); dismissWhatsNew(); }} style={{ position: "relative" }}>
-            <Info size={14} /> Σχετικά
+            <Info size={14} /> {L.navAbout}
             {hasUnseenUpdate && (
               <span
                 style={{
@@ -3057,22 +3111,25 @@ export default function TournamentManager() {
             )}
           </button>
           <button className="btn-ghost" onClick={() => setPhase("archive")}>
-            <Trophy size={14} /> Tournaments
+            <Trophy size={14} /> {L.navTournaments}
           </button>
           <button className="btn-ghost" onClick={() => setPhase("season")}>
-            <TrendingUp size={14} /> Season Standings
+            <TrendingUp size={14} /> {L.navSeason}
           </button>
           <button className="btn-ghost" onClick={() => setPhase("elo")}>
-            <Award size={14} /> ELO Ratings
+            <Award size={14} /> {L.navElo}
           </button>
           <button className="btn-ghost" onClick={() => setPhase("h2h")}>
-            <Users size={14} /> Statistics
+            <Users size={14} /> {L.navStats}
           </button>
           {isAdmin && (
             <button className="btn-ghost" onClick={() => setPhase("players")}>
-              <Users size={14} /> Players
+              <Users size={14} /> {L.navPlayers}
             </button>
           )}
+          <button className="btn-ghost" onClick={toggleLang} title="Switch language" style={{ fontWeight: 700, fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 20 }}>
+            {lang === "el" ? "EN" : "ΕΛ"}
+          </button>
           {!inIframe && (
             <div className="role-toggle">
               <button
@@ -3131,8 +3188,8 @@ export default function TournamentManager() {
       {phase === "about" && (
         <>
           <div className="header">
-            <p className="eyebrow">Πληροφορίες</p>
-            <h1>Σχετικά με την εφαρμογή</h1>
+            <p className="eyebrow">{L.aboutEyebrow}</p>
+            <h1>{L.aboutTitle}</h1>
             <div className="tabs" style={{ marginTop: 14 }}>
               <button className={`tab ${aboutTab === "features" ? "active" : ""}`} onClick={() => setAboutTab("features")}>Λειτουργικότητες</button>
               <button className={`tab ${aboutTab === "technical" ? "active" : ""}`} onClick={() => setAboutTab("technical")}>Τεχνικά στοιχεία</button>
@@ -3182,8 +3239,8 @@ export default function TournamentManager() {
       {phase === "h2h" && (
         <>
           <div className="header">
-            <p className="eyebrow">Ιστορικό</p>
-            <h1>Statistics</h1>
+            <p className="eyebrow">{L.statsEyebrow}</p>
+            <h1>{L.statsTitle}</h1>
             <div className="tabs" style={{ marginTop: 14 }}>
               <button className={`tab ${statsTab === "h2h" ? "active" : ""}`} onClick={() => setStatsTab("h2h")}>Σύγκριση παικτών</button>
               <button className={`tab ${statsTab === "streaks" ? "active" : ""}`} onClick={() => setStatsTab("streaks")}>Σερί</button>
@@ -3443,9 +3500,9 @@ export default function TournamentManager() {
       {phase === "season" && (
         <>
           <div className="header">
-            <p className="eyebrow">Annual Ranking</p>
+            <p className="eyebrow">{L.seasonEyebrow}</p>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-              <h1>Season Standings</h1>
+              <h1>{L.seasonTitle}</h1>
               <select
                 value={seasonBrowseYear}
                 onChange={(e) => setSeasonBrowseYear(Number(e.target.value))}
@@ -3597,8 +3654,8 @@ export default function TournamentManager() {
       {phase === "elo" && (
         <>
           <div className="header">
-            <p className="eyebrow">Lifetime Skill Rating</p>
-            <h1>ELO Ratings</h1>
+            <p className="eyebrow">{L.eloEyebrow}</p>
+            <h1>{L.eloTitle}</h1>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
                 <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
@@ -3676,8 +3733,8 @@ export default function TournamentManager() {
       {phase === "players" && isAdmin && (
         <>
           <div className="header">
-            <p className="eyebrow">Player Registry</p>
-            <h1>Players</h1>
+            <p className="eyebrow">{L.playersEyebrow}</p>
+            <h1>{L.playersTitle}</h1>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
                 <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
@@ -3989,8 +4046,8 @@ export default function TournamentManager() {
       {phase === "dashboard" && (
         <>
           <div className="header">
-            <p className="eyebrow">Tournament Manager</p>
-            <h1>Dashboard</h1>
+            <p className="eyebrow">{L.dashboardEyebrow}</p>
+            <h1>{L.dashboardTitle}</h1>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
                 <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
@@ -4001,34 +4058,34 @@ export default function TournamentManager() {
             <div className="dashboard-grid">
               <button className="dashboard-card" onClick={() => setPhase("archive")}>
                 <Trophy size={26} />
-                <span className="dashboard-card-title">Tournaments</span>
+                <span className="dashboard-card-title">{L.navTournaments}</span>
                 <span className="dashboard-card-desc">Browse past tournaments or start a new one</span>
               </button>
               <button className="dashboard-card" onClick={() => setPhase("season")}>
                 <TrendingUp size={26} />
-                <span className="dashboard-card-title">Season Standings</span>
+                <span className="dashboard-card-title">{L.navSeason}</span>
                 <span className="dashboard-card-desc">Annual ranking across all tournaments</span>
               </button>
               <button className="dashboard-card" onClick={() => setPhase("elo")}>
                 <Award size={26} />
-                <span className="dashboard-card-title">ELO Ratings</span>
+                <span className="dashboard-card-title">{L.navElo}</span>
                 <span className="dashboard-card-desc">Lifetime skill rating for every player</span>
               </button>
               <button className="dashboard-card" onClick={() => setPhase("h2h")}>
                 <Users size={26} />
-                <span className="dashboard-card-title">Statistics</span>
+                <span className="dashboard-card-title">{L.navStats}</span>
                 <span className="dashboard-card-desc">Head-to-Head, σερί, τίτλοι, πρωτοπορία</span>
               </button>
               {isAdmin && (
                 <button className="dashboard-card" onClick={() => setPhase("players")}>
                   <Users size={26} />
-                  <span className="dashboard-card-title">Players</span>
+                  <span className="dashboard-card-title">{L.navPlayers}</span>
                   <span className="dashboard-card-desc">Registry, contact info, membership</span>
                 </button>
               )}
               <button className="dashboard-card" onClick={() => { setPhase("about"); dismissWhatsNew(); }}>
                 <Info size={26} />
-                <span className="dashboard-card-title">Σχετικά</span>
+                <span className="dashboard-card-title">{L.navAbout}</span>
                 <span className="dashboard-card-desc">Λειτουργικότητες, τεχνικά στοιχεία, changelog</span>
               </button>
             </div>
@@ -4049,8 +4106,8 @@ export default function TournamentManager() {
       {phase === "archive" && (
         <>
           <div className="header">
-            <p className="eyebrow">Backgammon Tournament · Swiss System</p>
-            <h1>Tournament Archive</h1>
+            <p className="eyebrow">{L.archiveEyebrow}</p>
+            <h1>{L.archiveTitle}</h1>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
                 <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
