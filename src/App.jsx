@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-22.03";
+const APP_BUILD_VERSION = "2026-09-22.07";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -188,6 +188,34 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-22.07",
+    date: "2026-09-22",
+    items: [
+      "Αλλαγή κανόνα: το ποσοστό νικών είναι πλέον απλά Νίκες ÷ Matches (τα ίδια νούμερα που ήδη βλέπεις) — η Α.Α. αποχώρησης μετράει πλέον στον παρονομαστή, \"τιμωρώντας\" όποιον αποχωρεί. Αφαιρέθηκε η στήλη \"Κανονικά ματς\", δεν χρειάζεται πια.",
+    ],
+  },
+  {
+    version: "2026-09-22.06",
+    date: "2026-09-22",
+    items: [
+      "Διόρθωση σφάλματος στο Statistics: οι λίστες \"Κατακτήσεις\" και \"Πρωτοπορία\" έκοβαν τεχνητά στους πρώτους 10 — τώρα δείχνουν όλους τους πραγματικούς νικητές/πρωτοπόρους, χωρίς τεχνητό όριο.",
+    ],
+  },
+  {
+    version: "2026-09-22.05",
+    date: "2026-09-22",
+    items: [
+      "Νέα στήλη \"Κανονικά ματς\" στο Season Standings — δείχνει πλέον ρητά τον (μέχρι τώρα κρυφό) παρονομαστή του ποσοστού νικών, ώστε να είναι ξεκάθαρο γιατί δύο παίκτες με ίδιο Wins/Matches μπορούν να έχουν διαφορετικό %.",
+    ],
+  },
+  {
+    version: "2026-09-22.04",
+    date: "2026-09-22",
+    items: [
+      "Διόρθωση σφάλματος στο Season Standings: σε ισοβαθμία μετά το total, η ταξινόμηση γινόταν αλφαβητικά (με αγγλικό αλφάβητο) αντί για ποσοστό νικών — τώρα σωστά βάσει ποσοστού νικών, με το όνομα (ελληνικά) μόνο ως τελική εφεδρική διάκριση.",
+    ],
+  },
   {
     version: "2026-09-22.03",
     date: "2026-09-22",
@@ -482,14 +510,14 @@ function computeSeasonStandings(season, bestOf) {
       const sumAll = entries.reduce((s, e) => s + e.points, 0);
       const normalWinsOnly = entries.reduce((s, e) => s + (e.wins ?? e.points ?? 0), 0);
       const totalMatches = entries.reduce((s, e) => s + (e.matches ?? 0), 0);
-      // % counts only results actually decided on the board: retirements
-      // (A.A.) and byes are excluded from both sides, not just byes —
-      // neither one demonstrates anything about how the game was played.
-      const normalMatchesOnly = entries.reduce((s, e) => s + (e.normalMatches ?? e.matches ?? 0), 0);
-      const pct = normalMatchesOnly > 0 ? Math.round((normalWinsOnly / normalMatchesOnly) * 1000) / 10 : null;
+      // % = regular wins ÷ total matches (the same numbers already shown in
+      // the Wins and Matches columns). A player who retires still has that
+      // match counted against them in Matches, so it drags their % down —
+      // deliberately, so retiring isn't "free" for the percentage.
+      const pct = totalMatches > 0 ? Math.round((normalWinsOnly / totalMatches) * 1000) / 10 : null;
       return { name: p.name, entries: sorted, countedIds, total, sumAll, totalWins: normalWinsOnly, totalMatches, pct, eventsPlayed: entries.length };
     })
-    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name, "en"));
+    .sort((a, b) => b.total - a.total || (b.pct ?? -1) - (a.pct ?? -1) || a.name.localeCompare(b.name, "el"));
 }
 
 
@@ -2599,9 +2627,9 @@ export default function TournamentManager() {
       setStatsResult({
         topWinStreaks: winStreaks.slice(0, 3),
         topLossStreaks: lossStreaks.slice(0, 3),
-        titles: titles.slice(0, 10),
-        eloLeaders: eloLeaders.slice(0, 10),
-        standingsLeaders: standingsLeaders.slice(0, 10),
+        titles,
+        eloLeaders,
+        standingsLeaders,
       });
     } catch (err) {
       showToast("Αποτυχία υπολογισμού στατιστικών — δοκίμασε ξανά.");
