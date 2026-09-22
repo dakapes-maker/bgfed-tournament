@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-22.01";
+const APP_BUILD_VERSION = "2026-09-22.02";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -183,11 +183,18 @@ const FEATURES_SUMMARY = [
   "Διαχείριση Α.Α. (αποχώρηση παίκτη), με ρητή απόσυρση από το τουρνουά και ένδειξη διπλού Α.Α.",
   "Σημαία \"Official League Day\" και Recompute ELO/Standings από την αρχή, μόνο για επίσημες μέρες.",
   "Πλήρες Export / Import δεδομένων (backup) από το Dashboard.",
-  "Head-to-Head ιστορικό μεταξύ δύο παικτών, σε όλη τη διάρκεια της Ομοσπονδίας.",
+  "Statistics — Head-to-Head, σερί νικών/ηττών, κατακτήσεις τουρνουά, πρωτοπορία σε βαθμολογία/ELO.",
   "Ρόλοι Admin / Visitor με κωδικό πρόσβασης για διαχειριστή.",
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-22.02",
+    date: "2026-09-22",
+    items: [
+      "Το \"Head-to-Head\" μετονομάστηκε σε \"Statistics\" και μεγάλωσε: νέο κουμπί \"Υπολόγισε στατιστικά\" δείχνει τα 3 μεγαλύτερα σερί νικών/ηττών, κατακτήσεις τουρνουά ανά παίκτη, και πόσες ημέρες κάθε παίκτης έχει σταθεί #1 στο Season Standings και στο ELO.",
+    ],
+  },
   {
     version: "2026-09-22.01",
     date: "2026-09-22",
@@ -1168,6 +1175,8 @@ export default function TournamentManager() {
   const [h2hPlayerB, setH2hPlayerB] = useState("");
   const [h2hResult, setH2hResult] = useState(null);
   const [h2hLoading, setH2hLoading] = useState(false);
+  const [statsResult, setStatsResult] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
   const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
   const isAdmin = role === "admin";
   const [adminPasswordPrompt, setAdminPasswordPrompt] = useState(false);
@@ -2470,6 +2479,121 @@ export default function TournamentManager() {
     }
   }
 
+  /** Federation-wide statistics: longest win/loss streaks, tournament title
+   * counts, and how many tournament-days each player has spent leading
+   * Season Standings and ELO. Replays every saved tournament in chronological
+   * order once; heavier than Head-to-Head, so it's triggered by a button
+   * rather than running automatically. Retirements and byes are excluded
+   * entirely from streaks (as if that match never happened), matching how
+   * they're already excluded from ELO and win%. */
+  async function computeStatistics() {
+    setStatsLoading(true);
+    setStatsResult(null);
+    try {
+      const chronological = [...archive].sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      const eloRunning = { players: {} };
+      const seasonRunning = { players: {} };
+      const perPlayerSequence = {};
+      const titleCounts = {};
+      const eloLeaderDays = {};
+      const standingsLeaderDays = {};
+
+      for (const t of chronological) {
+        const data = await fetchTournamentData(t.id);
+        if (!data || !data.players) continue;
+        const tPlayers = data.players;
+        const byId = {};
+        tPlayers.forEach((p) => { byId[p.id] = p; });
+
+        // Tournament title
+        const buch = computeBuchholz(tPlayers);
+        const standings = sortStandings(tPlayers, buch);
+        if (standings.length > 0) {
+          const winner = standings[0];
+          const key = normalizeName(winner.name);
+          if (!titleCounts[key]) titleCounts[key] = { name: winner.name, count: 0, tournaments: [] };
+          titleCounts[key].count += 1;
+          titleCounts[key].tournaments.push({ name: t.name, date: t.date });
+        }
+
+        // Per-player chronological sequence, normal matches only
+        tPlayers.forEach((p) => {
+          const key = normalizeName(p.name);
+          if (!perPlayerSequence[key]) perPlayerSequence[key] = { name: p.name, seq: [] };
+          (p.matchLog || []).forEach((m) => {
+            if (m.method !== "normal") return;
+            perPlayerSequence[key].seq.push({ date: t.date, tournamentName: t.name, result: m.result });
+          });
+        });
+
+        // ELO running total + leader snapshot for this tournament
+        if (data.history) {
+          data.history.forEach((entry) => {
+            applyEloRoundBatch(eloRunning, buildEloRoundMatches(entry.pairs, byId), data.matchLength || 7);
+          });
+        }
+        const eloValues = Object.entries(eloRunning.players);
+        if (eloValues.length > 0) {
+          const [leaderKey] = eloValues.reduce((a, b) => (b[1].rating > a[1].rating ? b : a));
+          eloLeaderDays[leaderKey] = (eloLeaderDays[leaderKey] || 0) + 1;
+        }
+
+        // Season Standings running total + leader snapshot
+        tPlayers.forEach((p) => {
+          const key = normalizeName(p.name);
+          if (!seasonRunning.players[key]) seasonRunning.players[key] = { name: p.name, entries: {} };
+          seasonRunning.players[key].name = p.name;
+          const wins = p.matchLog.filter((m) => m.method === "normal" && m.result === "win").length;
+          const matches = p.matchLog.filter((m) => m.method !== "bye" && m.method !== "retirement_win").length;
+          const normalMatches = p.matchLog.filter((m) => m.method === "normal").length;
+          seasonRunning.players[key].entries[t.id] = { points: p.wins, wins, matches, normalMatches };
+        });
+        const seasonStandingsNow = computeSeasonStandings(seasonRunning, SEASON_BEST_OF);
+        if (seasonStandingsNow.length > 0) {
+          const leaderKey = normalizeName(seasonStandingsNow[0].name);
+          standingsLeaderDays[leaderKey] = (standingsLeaderDays[leaderKey] || 0) + 1;
+        }
+      }
+
+      // Streaks: every maximal run per player, then take the global top 3.
+      const winStreaks = [];
+      const lossStreaks = [];
+      Object.values(perPlayerSequence).forEach(({ name, seq }) => {
+        let i = 0;
+        while (i < seq.length) {
+          let j = i;
+          while (j < seq.length && seq[j].result === seq[i].result) j++;
+          const record = { name, length: j - i, startDate: seq[i].date, endDate: seq[j - 1].date };
+          (seq[i].result === "win" ? winStreaks : lossStreaks).push(record);
+          i = j;
+        }
+      });
+      winStreaks.sort((a, b) => b.length - a.length);
+      lossStreaks.sort((a, b) => b.length - a.length);
+
+      const titles = Object.values(titleCounts).sort((a, b) => b.count - a.count);
+      const eloLeaders = Object.entries(eloLeaderDays)
+        .map(([key, days]) => ({ name: eloRunning.players[key]?.name || key, days }))
+        .sort((a, b) => b.days - a.days);
+      const standingsLeaders = Object.entries(standingsLeaderDays)
+        .map(([key, days]) => ({ name: seasonRunning.players[key]?.name || key, days }))
+        .sort((a, b) => b.days - a.days);
+
+      setStatsResult({
+        topWinStreaks: winStreaks.slice(0, 3),
+        topLossStreaks: lossStreaks.slice(0, 3),
+        titles: titles.slice(0, 10),
+        eloLeaders: eloLeaders.slice(0, 10),
+        standingsLeaders: standingsLeaders.slice(0, 10),
+      });
+    } catch (err) {
+      showToast("Αποτυχία υπολογισμού στατιστικών — δοκίμασε ξανά.");
+    } finally {
+      setStatsLoading(false);
+    }
+  }
+
   async function loadPlayerMatchStats(name) {
     const key = normalizeName(name);
     const myRating = eloData.players?.[key]?.rating ?? ELO_INITIAL;
@@ -2898,7 +3022,7 @@ export default function TournamentManager() {
             <Award size={14} /> ELO Ratings
           </button>
           <button className="btn-ghost" onClick={() => setPhase("h2h")}>
-            <Users size={14} /> Head-to-Head
+            <Users size={14} /> Statistics
           </button>
           {isAdmin && (
             <button className="btn-ghost" onClick={() => setPhase("players")}>
@@ -3015,9 +3139,9 @@ export default function TournamentManager() {
         <>
           <div className="header">
             <p className="eyebrow">Ιστορικό</p>
-            <h1>Head-to-Head</h1>
+            <h1>Statistics</h1>
           </div>
-          <div className="content" style={{ maxWidth: 640 }}>
+          <div className="content" style={{ maxWidth: 780 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 24 }}>
               <select
                 value={h2hPlayerA}
@@ -3095,6 +3219,75 @@ export default function TournamentManager() {
                 )}
               </>
             )}
+
+            <div style={{ borderTop: "1px solid var(--border)", marginTop: 32, paddingTop: 24 }}>
+              <button className="btn-secondary" disabled={statsLoading} onClick={computeStatistics}>
+                <TrendingUp size={15} /> {statsLoading ? "Υπολογισμός…" : "Υπολόγισε στατιστικά"}
+              </button>
+
+              {statsResult && (
+                <div style={{ marginTop: 20, display: "grid", gap: 24 }}>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🔥 Μεγαλύτερα σερί νικών</p>
+                    {statsResult.topWinStreaks.length === 0 ? <p style={{ color: "var(--muted)" }}>—</p> : (
+                      <ol style={{ margin: 0, paddingLeft: 20 }}>
+                        {statsResult.topWinStreaks.map((s, i) => (
+                          <li key={i} style={{ marginBottom: 4 }}>
+                            <strong>{s.name}</strong> — {s.length} νίκες στη σειρά
+                            <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📉 Μεγαλύτερα σερί ηττών</p>
+                    {statsResult.topLossStreaks.length === 0 ? <p style={{ color: "var(--muted)" }}>—</p> : (
+                      <ol style={{ margin: 0, paddingLeft: 20 }}>
+                        {statsResult.topLossStreaks.map((s, i) => (
+                          <li key={i} style={{ marginBottom: 4 }}>
+                            <strong>{s.name}</strong> — {s.length} ήττες στη σειρά
+                            <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🏆 Κατακτήσεις τουρνουά</p>
+                    <ol style={{ margin: 0, paddingLeft: 20 }}>
+                      {statsResult.titles.map((tt, i) => (
+                        <li key={i} style={{ marginBottom: 4 }}>
+                          <strong>{tt.name}</strong> — {tt.count} {tt.count === 1 ? "τίτλος" : "τίτλοι"}
+                          <span style={{ color: "var(--muted)", fontSize: 13 }}> ({tt.tournaments.map((x) => x.name).join(", ")})</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
+                    <div style={{ flex: "1 1 260px" }}>
+                      <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📈 Πρωτοπορία Season Standings</p>
+                      <ol style={{ margin: 0, paddingLeft: 20 }}>
+                        {statsResult.standingsLeaders.map((s, i) => (
+                          <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {s.days} {s.days === 1 ? "ημέρα" : "ημέρες"} #1</li>
+                        ))}
+                      </ol>
+                    </div>
+                    <div style={{ flex: "1 1 260px" }}>
+                      <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>⭐ Πρωτοπορία ELO</p>
+                      <ol style={{ margin: 0, paddingLeft: 20 }}>
+                        {statsResult.eloLeaders.map((s, i) => (
+                          <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {s.days} {s.days === 1 ? "ημέρα" : "ημέρες"} #1</li>
+                        ))}
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}
@@ -3755,8 +3948,8 @@ export default function TournamentManager() {
               </button>
               <button className="dashboard-card" onClick={() => setPhase("h2h")}>
                 <Users size={26} />
-                <span className="dashboard-card-title">Head-to-Head</span>
-                <span className="dashboard-card-desc">Ιστορικό αναμετρήσεων μεταξύ δύο παικτών</span>
+                <span className="dashboard-card-title">Statistics</span>
+                <span className="dashboard-card-desc">Head-to-Head, σερί, τίτλοι, πρωτοπορία</span>
               </button>
               {isAdmin && (
                 <button className="dashboard-card" onClick={() => setPhase("players")}>
