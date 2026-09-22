@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-22.08";
+const APP_BUILD_VERSION = "2026-09-22.09";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -189,6 +189,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-22.09",
+    date: "2026-09-22",
+    items: [
+      "Νέα στήλη \"Win % (all-time)\" στο ELO Ratings — παντοτινό ποσοστό νικών, ανεξάρτητο από τη σεζόν (σε αντίθεση με το Season Standings, που μηδενίζεται κάθε χρόνο). ΑΠΑΙΤΕΙ ένα Recompute μία φορά, για να συμπληρωθούν τα νέα νούμερα στα ήδη αποθηκευμένα ELO δεδομένα.",
+    ],
+  },
   {
     version: "2026-09-22.08",
     date: "2026-09-22",
@@ -412,23 +419,31 @@ function eloPointsAtStake(matchLength) {
 
 function ensureEloPlayer(elo, name) {
   const key = normalizeName(name);
-  if (!elo.players[key]) elo.players[key] = { name, rating: ELO_INITIAL, games: 0, experience: 0 };
+  if (!elo.players[key]) elo.players[key] = { name, rating: ELO_INITIAL, games: 0, experience: 0, wins: 0, matches: 0 };
   if (elo.players[key].experience === undefined) elo.players[key].experience = 0;
+  if (elo.players[key].wins === undefined) elo.players[key].wins = 0;
+  if (elo.players[key].matches === undefined) elo.players[key].matches = 0;
   elo.players[key].name = name;
   return key;
 }
 
 /** Applies one batch of simultaneous matches (e.g. one Swiss round) to the
  * ELO state in place. Each match: { w: winnerName, l: loserName, ret: bool }.
- * Retirement-decided matches (ret: true) are excluded entirely, per the
- * project's rule that a walkover isn't a real backgammon result. */
+ * Retirement-decided matches (ret: true) are excluded from rating entirely,
+ * per the project's rule that a walkover isn't a real backgammon result —
+ * but the loser's retirement still counts toward their all-time matches
+ * total (same rule as Season Standings' %), so it's tracked here too, in
+ * this same pass, rather than needing a separate heavy recompute. */
 function applyEloRoundBatch(elo, roundMatches, matchLength) {
   const S = eloPointsAtStake(matchLength);
   const deltas = {};
   roundMatches.forEach((m) => {
-    if (m.ret) return;
     const wKey = ensureEloPlayer(elo, m.w);
     const lKey = ensureEloPlayer(elo, m.l);
+    if (m.ret) {
+      elo.players[lKey].matches += 1;
+      return;
+    }
     const Pw = eloWinProbability(elo.players[wKey].rating, elo.players[lKey].rating, matchLength);
     const delta = (1 - Pw) * S;
     deltas[wKey] = (deltas[wKey] || 0) + delta;
@@ -437,6 +452,9 @@ function applyEloRoundBatch(elo, roundMatches, matchLength) {
     elo.players[lKey].games += 1;
     elo.players[wKey].experience += matchLength;
     elo.players[lKey].experience += matchLength;
+    elo.players[wKey].wins += 1;
+    elo.players[wKey].matches += 1;
+    elo.players[lKey].matches += 1;
   });
   Object.entries(deltas).forEach(([key, d]) => {
     elo.players[key].rating += d;
@@ -3702,6 +3720,7 @@ export default function TournamentManager() {
                         <th>Player</th>
                         <th>Rating</th>
                         <th>Matches</th>
+                        <th>Win %<br /><span className="th-sub">(all-time)</span></th>
                         <th>Experience<br /><span className="th-sub">(points played)</span></th>
                       </tr>
                     </thead>
@@ -3711,7 +3730,8 @@ export default function TournamentManager() {
                           <td className="rank">{i + 1}</td>
                           <td>{formatNameForDisplay(p.name, nameDisplayMode)}</td>
                           <td><strong>{Math.round(p.rating)}</strong></td>
-                          <td>{p.games}</td>
+                          <td>{p.matches ?? p.games}</td>
+                          <td style={{ fontWeight: 700 }}>{p.matches > 0 ? `${Math.round(((p.wins ?? 0) / p.matches) * 1000) / 10}%` : "—"}</td>
                           <td>{p.experience ?? p.games * 7}</td>
                         </tr>
                       ))}
