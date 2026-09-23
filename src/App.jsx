@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-23.05";
+const APP_BUILD_VERSION = "2026-09-23.06";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,15 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-23.06",
+    date: "2026-09-23",
+    items: [
+      "Διόρθωση: κάθε νέα σύνοψη στο RSS feed έχει τώρα μοναδικό link — πριν όλα μοιράζονταν το ίδιο link, οπότε το Feedzy τα θεωρούσε όλα \"ήδη γνωστά\" και δεν εισήγαγε τίποτα.",
+      "Διόρθωση γραμματικής: \"την Κυριακή/Δευτέρα/...\", \"το Σάββατο\" (σωστό άρθρο ανά μέρα, όχι πάντα \"το\").",
+      "Το κείμενο copy/paste έχει πλέον σωστά κενές γραμμές ανάμεσα σε κάθε ενότητα (νικητής, βαθμολογία, ELO, links) — πριν χάνονταν κατά λάθος.",
+    ],
+  },
   {
     version: "2026-09-23.05",
     date: "2026-09-23",
@@ -2473,12 +2482,21 @@ export default function TournamentManager() {
       const dateLabel = thisEntry
         ? new Date(thisEntry.date).toLocaleDateString("el-GR", { day: "numeric", month: "long", year: "numeric" })
         : "";
-      const dayNamesEl = ["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"];
-      const dayName = thisEntry ? dayNamesEl[new Date(thisEntry.date).getDay()] : "";
+      const dayNamesEl = [
+        { name: "Κυριακή", article: "την" },
+        { name: "Δευτέρα", article: "τη" },
+        { name: "Τρίτη", article: "την" },
+        { name: "Τετάρτη", article: "την" },
+        { name: "Πέμπτη", article: "την" },
+        { name: "Παρασκευή", article: "την" },
+        { name: "Σάββατο", article: "το" },
+      ];
+      const dayInfo = thisEntry ? dayNamesEl[new Date(thisEntry.date).getDay()] : null;
+      const dayName = dayInfo ? `${dayInfo.article} ${dayInfo.name}` : "";
       const ordinalMatch = tournamentName.match(/Ημέρα\s*(\d+)/) || tournamentName.match(/(\d+)/);
       const ordinalPhrase = ordinalMatch ? `το ${ordinalMatch[1]}ο τουρνουά` : "το τουρνουά αυτής της αγωνιστικής";
       const introLine = dayName && dateLabel
-        ? `Το ${dayName} ${dateLabel}, πραγματοποιήθηκε ${ordinalPhrase} της φετινής σεζόν. Είχε ${players.length} συμμετοχές, και τα αποτελέσματα έχουν ως εξής:`
+        ? `${dayName.charAt(0).toUpperCase()}${dayName.slice(1)} ${dateLabel}, πραγματοποιήθηκε ${ordinalPhrase} της φετινής σεζόν. Είχε ${players.length} συμμετοχές, και τα αποτελέσματα έχουν ως εξής:`
         : `Πραγματοποιήθηκε ${ordinalPhrase} της φετινής σεζόν, με ${players.length} συμμετοχές. Τα αποτελέσματα έχουν ως εξής:`;
 
       // 1. Top finishers of this specific tournament.
@@ -2543,8 +2561,8 @@ export default function TournamentManager() {
         introLine,
         "",
         `🏆 Νικητής της ημέρας: ${dayTop[0]?.name ?? "—"} (${dayTop[0]?.wins ?? 0} νίκες)`,
-        dayTop[1] ? `🥈 ${dayTop[1].name} (${dayTop[1].wins} νίκες)` : "",
-        dayTop[2] ? `🥉 ${dayTop[2].name} (${dayTop[2].wins} νίκες)` : "",
+        ...(dayTop[1] ? [`🥈 ${dayTop[1].name} (${dayTop[1].wins} νίκες)`] : []),
+        ...(dayTop[2] ? [`🥉 ${dayTop[2].name} (${dayTop[2].wins} νίκες)`] : []),
         "",
         "📈 Κορυφή Season Standings:",
         ...top5Season,
@@ -2555,7 +2573,7 @@ export default function TournamentManager() {
         "Δείτε αναλυτικά:",
         `👉 Season Standings: ${APP_URL}#season`,
         `👉 ELO Ratings: ${APP_URL}#elo`,
-      ].filter((l) => l !== "");
+      ];
 
       setRecapText(lines.join("\n"));
     } catch (err) {
@@ -2597,7 +2615,7 @@ export default function TournamentManager() {
         guid: `${tournamentId || "tournament"}-${Date.now()}`,
         title: `Αποτελέσματα: ${tournamentName}`,
         description: htmlDescription,
-        link: "https://bgfed-tournament.vercel.app",
+        link: `https://bgfed-tournament.vercel.app/?recap=${tournamentId || "tournament"}-${Date.now()}`,
         pubDate: new Date().toISOString(),
       };
       const updated = [newItem, ...items].slice(0, 20); // keep the feed small
