@@ -47,7 +47,20 @@ export default async function handler(req, res) {
       body: JSON.stringify(postBody),
     });
 
-    const data = await wpRes.json();
+    const rawText = await wpRes.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      // Not JSON — WordPress (or something in front of it, e.g. a security
+      // plugin) returned a full HTML page instead of an API response.
+      // Surface a slice of it so the real cause is visible, instead of
+      // failing opaquely on "Unexpected token '<'".
+      return res.status(502).json({
+        error: `WordPress δεν απάντησε με JSON (status ${wpRes.status}). Πρώτοι 300 χαρακτήρες: ${rawText.slice(0, 300)}`,
+      });
+    }
+
     if (!wpRes.ok) {
       return res.status(wpRes.status).json({ error: data?.message || "WordPress rejected the request." });
     }
