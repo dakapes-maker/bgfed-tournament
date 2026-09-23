@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-23.09";
+const APP_BUILD_VERSION = "2026-09-23.10";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-23.10",
+    date: "2026-09-23",
+    items: [
+      "Στη σύνοψη, αφαιρέθηκαν οι γραμμές 🥈/🥉 (4 νίκες, 3 νίκες κλπ.) — μένει μόνο ο/οι νικητές της ημέρας με τέλειο σκορ.",
+    ],
+  },
   {
     version: "2026-09-23.09",
     date: "2026-09-23",
@@ -2525,11 +2532,8 @@ export default function TournamentManager() {
         : `Πραγματοποιήθηκε ${ordinalPhrase} της φετινής σεζόν, με ${players.length} συμμετοχές. Τα αποτελέσματα έχουν ως εξής:`;
 
       // 1. Top finishers of this specific tournament. "Winner(s) of the
-      // day" = only players with a perfect record (wins === totalRounds)
-      // — not just whoever happens to have the most wins.
+      // day" = only players with a perfect record (wins === totalRounds).
       const perfectWinners = players.filter((p) => p.wins === totalRounds);
-      const winCounts = [...new Set(players.map((p) => p.wins))].sort((a, b) => b - a).slice(0, 3);
-      const dayTiers = winCounts.map((w) => players.filter((p) => p.wins === w));
 
       // 2. Season Standings: compare with vs. without this tournament's entries.
       const seasonFull = await loadSeason(seasonYear);
@@ -2592,8 +2596,6 @@ export default function TournamentManager() {
         perfectWinners.length > 0
           ? `🏆 ${perfectWinners.length > 1 ? "Νικητές της ημέρας" : "Νικητής της ημέρας"}: ${perfectWinners.map((p) => p.name).join(", ")} (${totalRounds} νίκες)`
           : `🏆 Κανείς με τέλειο σκορ σήμερα`,
-        ...(dayTiers[1] ? [`🥈 ${dayTiers[1].map((p) => p.name).join(", ")} (${winCounts[1]} νίκες)`] : []),
-        ...(dayTiers[2] ? [`🥉 ${dayTiers[2].map((p) => p.name).join(", ")} (${winCounts[2]} νίκες)`] : []),
         "",
         "📈 Βαθμολογία:",
         ...top5Season,
