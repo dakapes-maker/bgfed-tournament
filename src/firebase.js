@@ -111,6 +111,21 @@ export async function saveElo(data) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* RSS feed items — admin-approved recap summaries, read by the public    */
+/* /api/feed serverless function to build an RSS feed for WordPress'      */
+/* Feedzy plugin (or any other RSS reader) to pick up automatically.      */
+/* ---------------------------------------------------------------------- */
+
+export async function loadFeedItems() {
+  const data = await getDocData("meta", "rssFeed");
+  return data?.items || [];
+}
+
+export async function saveFeedItems(items) {
+  await setDocData("meta", "rssFeed", { items });
+}
+
+/* ---------------------------------------------------------------------- */
 /* Tournament archive index                                               */
 /* ---------------------------------------------------------------------- */
 
