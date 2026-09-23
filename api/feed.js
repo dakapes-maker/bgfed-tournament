@@ -52,16 +52,18 @@ export default async function handler(req, res) {
       .join("");
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
   <title>Ελληνική Ομοσπονδία Backgammon — Αποτελέσματα Τουρνουά</title>
   <link>https://bgfed-tournament.vercel.app</link>
+  <atom:link href="https://bgfed-tournament.vercel.app/api/feed" rel="self" type="application/rss+xml" />
   <description>Αυτόματη ροή αποτελεσμάτων από το Backgammon Premier League.</description>
   <language>el</language>${itemsXml}
 </channel>
 </rss>`;
 
     res.setHeader("Content-Type", "application/rss+xml; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store, max-age=0");
     return res.status(200).send(xml);
   } catch (err) {
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
