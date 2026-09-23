@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-23.07";
+const APP_BUILD_VERSION = "2026-09-23.08";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-23.08",
+    date: "2026-09-23",
+    items: [
+      "Νέο κουμπί \"Άδειασμα RSS feed\" στο Dashboard (με επιβεβαίωση) — καθαρίζει τη λίστα συνόψεων που περιμένουν να τις τραβήξει το Feedzy. Δεν επηρεάζει άρθρα που έχουν ήδη μπει στο bgfed.gr.",
+    ],
+  },
   {
     version: "2026-09-23.07",
     date: "2026-09-23",
@@ -1318,6 +1325,7 @@ export default function TournamentManager() {
   const [h2hLoading, setH2hLoading] = useState(false);
   const [statsResult, setStatsResult] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [confirmingClearFeed, setConfirmingClearFeed] = useState(false);
   const [statsTab, setStatsTab] = useState("h2h");
   const [lang, setLang] = useState(() => {
     try {
@@ -2646,6 +2654,18 @@ export default function TournamentManager() {
       setNotice(`Αποτυχία προσθήκης στο feed: ${err.message}`);
     } finally {
       setAddingToFeed(false);
+    }
+  }
+
+  /** Empties the RSS feed entirely — does not touch anything already
+   * imported into WordPress (those are now regular WP posts/drafts,
+   * independent of us); it only clears what /api/feed will show next. */
+  async function clearFeed() {
+    try {
+      await saveFeedItems([]);
+      showToast("Το RSS feed αδειάστηκε.");
+    } catch (err) {
+      setNotice(`Αποτυχία αδειάσματος feed: ${err.message}`);
     }
   }
 
@@ -4250,6 +4270,17 @@ export default function TournamentManager() {
                 <Upload size={15} /> Import All Data (restore backup)
               </button>
               <input type="file" accept="application/json" ref={fullBackupInputRef} onChange={importAllData} style={{ display: "none" }} />
+              {!confirmingClearFeed ? (
+                <button className="btn-ghost" onClick={() => setConfirmingClearFeed(true)}>
+                  <X size={15} /> Άδειασμα RSS feed
+                </button>
+              ) : (
+                <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)" }}>
+                  Σίγουρα; Δεν επηρεάζει άρθρα που έχουν ήδη μπει στο bgfed.gr.
+                  <button className="btn-ghost" onClick={() => setConfirmingClearFeed(false)}>Άκυρο</button>
+                  <button className="btn-secondary" onClick={() => { clearFeed(); setConfirmingClearFeed(false); }}>Ναι, άδειασμα</button>
+                </span>
+              )}
             </div>
           </div>
         </>
