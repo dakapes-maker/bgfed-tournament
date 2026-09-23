@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-23.08";
+const APP_BUILD_VERSION = "2026-09-23.09";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,15 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-23.09",
+    date: "2026-09-23",
+    items: [
+      "\"Νικητής/ες της ημέρας\" σημαίνει πλέον μόνο όσους έχουν τέλειο σκορ (όσες νίκες και οι γύροι), όχι απλά τους καλύτερους της ημέρας.",
+      "\"Κορυφή Season Standings/ELO Ratings\" → \"Βαθμολογία\"/\"Κατάταξη ELO\", και στα δύο σημεία (τίτλοι + links).",
+      "Στο WordPress: αφαιρέθηκαν τα πλαίσια/οριζόντιες γραμμές (δεν έβγαιναν ωραία) — αντικαταστάθηκαν με απλούς επικεφαλίδες. Τα links είναι πλέον πραγματικά clickable, όχι απλό κείμενο URL.",
+    ],
+  },
   {
     version: "2026-09-23.08",
     date: "2026-09-23",
@@ -2515,10 +2524,10 @@ export default function TournamentManager() {
         ? `${dayName.charAt(0).toUpperCase()}${dayName.slice(1)} ${dateLabel}, πραγματοποιήθηκε ${ordinalPhrase} της φετινής σεζόν. Είχε ${players.length} συμμετοχές, και τα αποτελέσματα έχουν ως εξής:`
         : `Πραγματοποιήθηκε ${ordinalPhrase} της φετινής σεζόν, με ${players.length} συμμετοχές. Τα αποτελέσματα έχουν ως εξής:`;
 
-      // 1. Top finishers of this specific tournament.
-      // Group by distinct win counts (not just array position), so a tie
-      // for 1st place shows as multiple "winners of the day" instead of
-      // arbitrarily crowning one and demoting the other to 🥈.
+      // 1. Top finishers of this specific tournament. "Winner(s) of the
+      // day" = only players with a perfect record (wins === totalRounds)
+      // — not just whoever happens to have the most wins.
+      const perfectWinners = players.filter((p) => p.wins === totalRounds);
       const winCounts = [...new Set(players.map((p) => p.wins))].sort((a, b) => b - a).slice(0, 3);
       const dayTiers = winCounts.map((w) => players.filter((p) => p.wins === w));
 
@@ -2580,19 +2589,21 @@ export default function TournamentManager() {
         `📊 Αποτελέσματα: ${tournamentName}${dateLabel ? " — " + dateLabel : ""}`,
         introLine,
         "",
-        `🏆 ${dayTiers[0]?.length > 1 ? "Νικητές της ημέρας" : "Νικητής της ημέρας"}: ${dayTiers[0]?.map((p) => p.name).join(", ") ?? "—"} (${winCounts[0] ?? 0} νίκες)`,
+        perfectWinners.length > 0
+          ? `🏆 ${perfectWinners.length > 1 ? "Νικητές της ημέρας" : "Νικητής της ημέρας"}: ${perfectWinners.map((p) => p.name).join(", ")} (${totalRounds} νίκες)`
+          : `🏆 Κανείς με τέλειο σκορ σήμερα`,
         ...(dayTiers[1] ? [`🥈 ${dayTiers[1].map((p) => p.name).join(", ")} (${winCounts[1]} νίκες)`] : []),
         ...(dayTiers[2] ? [`🥉 ${dayTiers[2].map((p) => p.name).join(", ")} (${winCounts[2]} νίκες)`] : []),
         "",
-        "📈 Κορυφή Season Standings:",
+        "📈 Βαθμολογία:",
         ...top5Season,
         "",
-        "⭐ Κορυφή ELO Ratings:",
+        "⭐ Κατάταξη ELO:",
         ...top5Elo,
         "",
         "Δείτε αναλυτικά:",
-        `👉 Season Standings: ${APP_URL}#season`,
-        `👉 ELO Ratings: ${APP_URL}#elo`,
+        `👉 Βαθμολογία: ${APP_URL}#season`,
+        `👉 Κατάταξη ELO: ${APP_URL}#elo`,
       ];
 
       setRecapText(lines.join("\n"));
@@ -2628,18 +2639,23 @@ export default function TournamentManager() {
         else groups[groups.length - 1].push(line);
       });
       // WordPress strips inline style="" attributes from imported content
-      // for security, so custom-colored boxes never survive. Use plain
-      // <blockquote> instead — every WP theme gives it a visible left
-      // border/indent by default, no styling attributes needed — plus
-      // <hr> between sections and <strong> on each section's first line.
+      // for security, so custom boxes never survive, and blockquote/hr
+      // didn't look good either. Use plain headings instead — every WP
+      // theme styles <h4> distinctly (bold, spaced) with zero custom CSS
+      // needed — and turn the "👉 Label: URL" lines into real clickable
+      // links back into the app instead of showing the raw URL as text.
+      const linkLineRe = /^👉 (.+?): (https?:\/\/\S+)$/;
       const htmlDescription = groups
-        .map(
-          (group) =>
-            `<blockquote>${group
-              .map((line, i) => (i === 0 ? `<p><strong>${line}</strong></p>` : `<p>${line}</p>`))
-              .join("")}</blockquote>`
+        .map((group) =>
+          group
+            .map((line, i) => {
+              const linkMatch = line.match(linkLineRe);
+              if (linkMatch) return `<p>👉 <a href="${linkMatch[2]}">${linkMatch[1]}</a></p>`;
+              return i === 0 ? `<h4>${line}</h4>` : `<p>${line}</p>`;
+            })
+            .join("")
         )
-        .join("<hr/>");
+        .join("");
       const newItem = {
         guid: `${tournamentId || "tournament"}-${Date.now()}`,
         title: `Αποτελέσματα: ${tournamentName}`,
