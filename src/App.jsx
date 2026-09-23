@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-23.06";
+const APP_BUILD_VERSION = "2026-09-23.07";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,14 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-23.07",
+    date: "2026-09-23",
+    items: [
+      "Στη σύνοψη, ισοβαθμία στην κορυφή δείχνει πλέον \"Νικητές της ημέρας\" με όλους τους ισόβαθμους — δεν \"στέφεται\" πια τυχαία μόνο ένας.",
+      "Διόρθωση: το WordPress αφαιρούσε τα δικά μας inline στυλ (πλαίσια), οπότε η μορφοποίηση χάνονταν. Αντικαταστάθηκε με <blockquote>/<hr> που κάθε θέμα WordPress σέβεται χωρίς στυλ.",
+    ],
+  },
   {
     version: "2026-09-23.06",
     date: "2026-09-23",
@@ -2500,7 +2508,11 @@ export default function TournamentManager() {
         : `Πραγματοποιήθηκε ${ordinalPhrase} της φετινής σεζόν, με ${players.length} συμμετοχές. Τα αποτελέσματα έχουν ως εξής:`;
 
       // 1. Top finishers of this specific tournament.
-      const dayTop = [...players].sort((a, b) => b.wins - a.wins).slice(0, 3);
+      // Group by distinct win counts (not just array position), so a tie
+      // for 1st place shows as multiple "winners of the day" instead of
+      // arbitrarily crowning one and demoting the other to 🥈.
+      const winCounts = [...new Set(players.map((p) => p.wins))].sort((a, b) => b - a).slice(0, 3);
+      const dayTiers = winCounts.map((w) => players.filter((p) => p.wins === w));
 
       // 2. Season Standings: compare with vs. without this tournament's entries.
       const seasonFull = await loadSeason(seasonYear);
@@ -2560,9 +2572,9 @@ export default function TournamentManager() {
         `📊 Αποτελέσματα: ${tournamentName}${dateLabel ? " — " + dateLabel : ""}`,
         introLine,
         "",
-        `🏆 Νικητής της ημέρας: ${dayTop[0]?.name ?? "—"} (${dayTop[0]?.wins ?? 0} νίκες)`,
-        ...(dayTop[1] ? [`🥈 ${dayTop[1].name} (${dayTop[1].wins} νίκες)`] : []),
-        ...(dayTop[2] ? [`🥉 ${dayTop[2].name} (${dayTop[2].wins} νίκες)`] : []),
+        `🏆 ${dayTiers[0]?.length > 1 ? "Νικητές της ημέρας" : "Νικητής της ημέρας"}: ${dayTiers[0]?.map((p) => p.name).join(", ") ?? "—"} (${winCounts[0] ?? 0} νίκες)`,
+        ...(dayTiers[1] ? [`🥈 ${dayTiers[1].map((p) => p.name).join(", ")} (${winCounts[1]} νίκες)`] : []),
+        ...(dayTiers[2] ? [`🥉 ${dayTiers[2].map((p) => p.name).join(", ")} (${winCounts[2]} νίκες)`] : []),
         "",
         "📈 Κορυφή Season Standings:",
         ...top5Season,
@@ -2607,10 +2619,19 @@ export default function TournamentManager() {
         if (isNewGroup || groups.length === 0) groups.push([line]);
         else groups[groups.length - 1].push(line);
       });
-      const boxStyle = "border:1px solid #D8C4A0;border-radius:8px;padding:14px 18px;margin:0 0 14px 0;background:#FFFCF5;";
+      // WordPress strips inline style="" attributes from imported content
+      // for security, so custom-colored boxes never survive. Use plain
+      // <blockquote> instead — every WP theme gives it a visible left
+      // border/indent by default, no styling attributes needed — plus
+      // <hr> between sections and <strong> on each section's first line.
       const htmlDescription = groups
-        .map((group) => `<div style="${boxStyle}">${group.map((line) => `<p style="margin:3px 0;">${line}</p>`).join("")}</div>`)
-        .join("");
+        .map(
+          (group) =>
+            `<blockquote>${group
+              .map((line, i) => (i === 0 ? `<p><strong>${line}</strong></p>` : `<p>${line}</p>`))
+              .join("")}</blockquote>`
+        )
+        .join("<hr/>");
       const newItem = {
         guid: `${tournamentId || "tournament"}-${Date.now()}`,
         title: `Αποτελέσματα: ${tournamentName}`,
