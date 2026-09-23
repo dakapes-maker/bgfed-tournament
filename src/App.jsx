@@ -165,7 +165,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-22.09";
+const APP_BUILD_VERSION = "2026-09-23.01";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -189,6 +189,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-23.01",
+    date: "2026-09-23",
+    items: [
+      "Νέο κουμπί \"Δημοσίευση στο bgfed.gr\" στη σύνοψη ανακοίνωσης — στέλνει τη σύνοψη κατευθείαν ως πρόχειρο (draft) στα Νέα του site, μέσω ασφαλούς serverless function (το κλειδί δεν εκτίθεται ποτέ στον browser).",
+    ],
+  },
   {
     version: "2026-09-22.09",
     date: "2026-09-22",
@@ -1270,6 +1277,7 @@ export default function TournamentManager() {
   const [statsResult, setStatsResult] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsTab, setStatsTab] = useState("h2h");
+  const [publishing, setPublishing] = useState(false);
   const [lang, setLang] = useState(() => {
     try {
       return window.localStorage.getItem(LANG_STORAGE_KEY) === "en" ? "en" : "el";
@@ -2525,6 +2533,38 @@ export default function TournamentManager() {
     }
   }
 
+  /** Sends the already-generated recap text to bgfed.gr as a WordPress
+   * post, via the /api/publish-news serverless function (which alone
+   * holds the WordPress credential). Publishes as a draft by default —
+   * nothing goes live on the site without a human clicking "Publish"
+   * inside WordPress afterwards. */
+  async function publishRecapToWordPress() {
+    if (!recapText) return;
+    setPublishing(true);
+    try {
+      const htmlContent = recapText
+        .split("\n")
+        .filter((line) => line.trim() !== "")
+        .map((line) => `<p>${line}</p>`)
+        .join("\n");
+      const res = await fetch("/api/publish-news", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `Αποτελέσματα: ${tournamentName}`,
+          content: htmlContent,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || "Άγνωστο σφάλμα");
+      showToast(data.status === "draft" ? "Αποθηκεύτηκε ως πρόχειρο στο bgfed.gr!" : "Δημοσιεύτηκε στο bgfed.gr!");
+    } catch (err) {
+      showToast(`Αποτυχία δημοσίευσης: ${err.message}`);
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   /** Full head-to-head history between two players by name, across the 11
    * historical days and every other saved tournament. Matched by normalized
    * name (same approach as ELO/season aggregation elsewhere in the app). */
@@ -3448,6 +3488,14 @@ export default function TournamentManager() {
             />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
               <button className="btn-secondary" onClick={() => setRecapText(null)}>Κλείσιμο</button>
+              <button
+                className="btn-secondary"
+                disabled={publishing}
+                onClick={publishRecapToWordPress}
+                title="Δημιουργεί πρόχειρο (draft) στα Νέα του bgfed.gr — δεν γίνεται ζωντανό αυτόματα"
+              >
+                {publishing ? "Δημοσίευση…" : "Δημοσίευση στο bgfed.gr"}
+              </button>
               <button
                 className="btn-primary"
                 onClick={async () => {
