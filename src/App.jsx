@@ -40,6 +40,8 @@ import {
   loadSeason,
   saveSeason,
   listSeasonYears,
+  loadFeedItems,
+  saveFeedItems,
 } from "./firebase.js";
 
 /* ---------------------------------------------------------------------- */
@@ -165,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-23.02";
+const APP_BUILD_VERSION = "2026-09-23.04";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -189,6 +191,21 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-23.04",
+    date: "2026-09-23",
+    items: [
+      "Νέο κουμπί \"Προσθήκη στο RSS feed\" στη σύνοψη ανακοίνωσης — αντί να στέλνουμε προς το bgfed.gr (που μπλόκαρε το Cloudflare), δημοσιεύουμε ένα δημόσιο RSS feed που το WordPress (μέσω plugin, π.χ. Feedzy) τραβάει μόνο του, χωρίς κανένα εξωτερικό αίτημα προς το site.",
+    ],
+  },
+  {
+    version: "2026-09-23.03",
+    date: "2026-09-23",
+    items: [
+      "Αναιρέθηκε το κουμπί \"Δημοσίευση στο bgfed.gr\" — το Cloudflare Bot Fight Mode του site μπλοκάρει τα αιτήματα, και η απενεργοποίησή του κρίθηκε πολύ ρίσκο για την ασφάλεια του site. Μένουμε στο copy/paste.",
+      "Το πλαίσιο της σύνοψης ανακοίνωσης μεγάλωσε και έγινε πιο ευανάγνωστο (πλατύτερο, μεγαλύτερα γράμματα, καλύτερη μορφοποίηση).",
+    ],
+  },
   {
     version: "2026-09-23.01",
     date: "2026-09-23",
@@ -1277,7 +1294,6 @@ export default function TournamentManager() {
   const [statsResult, setStatsResult] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsTab, setStatsTab] = useState("h2h");
-  const [publishing, setPublishing] = useState(false);
   const [lang, setLang] = useState(() => {
     try {
       return window.localStorage.getItem(LANG_STORAGE_KEY) === "en" ? "en" : "el";
@@ -2533,35 +2549,36 @@ export default function TournamentManager() {
     }
   }
 
-  /** Sends the already-generated recap text to bgfed.gr as a WordPress
-   * post, via the /api/publish-news serverless function (which alone
-   * holds the WordPress credential). Publishes as a draft by default —
-   * nothing goes live on the site without a human clicking "Publish"
-   * inside WordPress afterwards. */
-  async function publishRecapToWordPress() {
+  /** Adds the already-generated recap as a new item in the shared RSS
+   * feed (Firestore), which /api/feed turns into real RSS XML. WordPress
+   * (via a plugin like Feedzy) — or anything else that reads RSS — picks
+   * it up on its own schedule; nothing is pushed to bgfed.gr directly,
+   * so Cloudflare's bot protection never sees an incoming request from us. */
+  const [addingToFeed, setAddingToFeed] = useState(false);
+  async function addRecapToFeed() {
     if (!recapText) return;
-    setPublishing(true);
+    setAddingToFeed(true);
     try {
-      const htmlContent = recapText
+      const items = await loadFeedItems();
+      const htmlDescription = recapText
         .split("\n")
         .filter((line) => line.trim() !== "")
         .map((line) => `<p>${line}</p>`)
-        .join("\n");
-      const res = await fetch("/api/publish-news", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `Αποτελέσματα: ${tournamentName}`,
-          content: htmlContent,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) throw new Error(data.error || "Άγνωστο σφάλμα");
-      showToast(data.status === "draft" ? "Αποθηκεύτηκε ως πρόχειρο στο bgfed.gr!" : "Δημοσιεύτηκε στο bgfed.gr!");
+        .join("");
+      const newItem = {
+        guid: `${tournamentId || "tournament"}-${Date.now()}`,
+        title: `Αποτελέσματα: ${tournamentName}`,
+        description: htmlDescription,
+        link: "https://bgfed-tournament.vercel.app",
+        pubDate: new Date().toISOString(),
+      };
+      const updated = [newItem, ...items].slice(0, 20); // keep the feed small
+      await saveFeedItems(updated);
+      showToast("Προστέθηκε στο RSS feed!");
     } catch (err) {
-      setNotice(`Αποτυχία δημοσίευσης στο bgfed.gr: ${err.message}`);
+      setNotice(`Αποτυχία προσθήκης στο feed: ${err.message}`);
     } finally {
-      setPublishing(false);
+      setAddingToFeed(false);
     }
   }
 
@@ -3477,24 +3494,25 @@ export default function TournamentManager() {
 
       {recapText !== null && (
         <div className="modal-overlay" onClick={() => setRecapText(null)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520, maxHeight: "80vh", overflowY: "auto" }}>
-            <p style={{ margin: "0 0 10px 0", fontWeight: 600 }}>Σύνοψη ανακοίνωσης — copy/paste έτοιμο</p>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 680, width: "92vw", maxHeight: "85vh", overflowY: "auto", padding: "28px 32px" }}>
+            <p style={{ margin: "0 0 4px 0", fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 700, color: "var(--accent)" }}>Σύνοψη ανακοίνωσης</p>
+            <p style={{ margin: "0 0 16px 0", fontSize: 13, color: "var(--muted)" }}>Έτοιμο κείμενο copy/paste — για bgfed.gr, Facebook, ή όπου αλλού.</p>
             <textarea
               readOnly
               value={recapText}
-              rows={16}
-              style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 14, padding: 10, border: "1px solid var(--border)", borderRadius: 7, resize: "vertical" }}
+              rows={20}
+              style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, lineHeight: 1.6, padding: 16, border: "1px solid var(--border)", borderRadius: 9, background: "var(--surface)", resize: "vertical" }}
               onFocus={(e) => e.target.select()}
             />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
               <button className="btn-secondary" onClick={() => setRecapText(null)}>Κλείσιμο</button>
               <button
                 className="btn-secondary"
-                disabled={publishing}
-                onClick={publishRecapToWordPress}
-                title="Δημιουργεί πρόχειρο (draft) στα Νέα του bgfed.gr — δεν γίνεται ζωντανό αυτόματα"
+                disabled={addingToFeed}
+                onClick={addRecapToFeed}
+                title="Προσθέτει στο RSS feed — το WordPress (μέσω plugin) το τραβάει μόνο του, χωρίς εμάς να στέλνουμε τίποτα προς το bgfed.gr"
               >
-                {publishing ? "Δημοσίευση…" : "Δημοσίευση στο bgfed.gr"}
+                {addingToFeed ? "Προσθήκη…" : "Προσθήκη στο RSS feed"}
               </button>
               <button
                 className="btn-primary"
