@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-23.04";
+const APP_BUILD_VERSION = "2026-09-23.05";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,14 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-23.05",
+    date: "2026-09-23",
+    items: [
+      "Η σύνοψη ανακοίνωσης έχει τώρα εισαγωγική πρόταση (μέρα, ημερομηνία, αριθμός τουρνουά, συμμετοχές) πριν τα αποτελέσματα.",
+      "Στο RSS feed / bgfed.gr, η σύνοψη εμφανίζεται πλέον σε ξεχωριστά, όμορφα πλαίσια ανά ενότητα (νικητής, βαθμολογία, ELO, links) — η έκδοση copy/paste παραμένει απλό κείμενο.",
+    ],
+  },
   {
     version: "2026-09-23.04",
     date: "2026-09-23",
@@ -2465,6 +2473,13 @@ export default function TournamentManager() {
       const dateLabel = thisEntry
         ? new Date(thisEntry.date).toLocaleDateString("el-GR", { day: "numeric", month: "long", year: "numeric" })
         : "";
+      const dayNamesEl = ["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"];
+      const dayName = thisEntry ? dayNamesEl[new Date(thisEntry.date).getDay()] : "";
+      const ordinalMatch = tournamentName.match(/Ημέρα\s*(\d+)/) || tournamentName.match(/(\d+)/);
+      const ordinalPhrase = ordinalMatch ? `το ${ordinalMatch[1]}ο τουρνουά` : "το τουρνουά αυτής της αγωνιστικής";
+      const introLine = dayName && dateLabel
+        ? `Το ${dayName} ${dateLabel}, πραγματοποιήθηκε ${ordinalPhrase} της φετινής σεζόν. Είχε ${players.length} συμμετοχές, και τα αποτελέσματα έχουν ως εξής:`
+        : `Πραγματοποιήθηκε ${ordinalPhrase} της φετινής σεζόν, με ${players.length} συμμετοχές. Τα αποτελέσματα έχουν ως εξής:`;
 
       // 1. Top finishers of this specific tournament.
       const dayTop = [...players].sort((a, b) => b.wins - a.wins).slice(0, 3);
@@ -2525,6 +2540,7 @@ export default function TournamentManager() {
 
       const lines = [
         `📊 Αποτελέσματα: ${tournamentName}${dateLabel ? " — " + dateLabel : ""}`,
+        introLine,
         "",
         `🏆 Νικητής της ημέρας: ${dayTop[0]?.name ?? "—"} (${dayTop[0]?.wins ?? 0} νίκες)`,
         dayTop[1] ? `🥈 ${dayTop[1].name} (${dayTop[1].wins} νίκες)` : "",
@@ -2560,10 +2576,22 @@ export default function TournamentManager() {
     setAddingToFeed(true);
     try {
       const items = await loadFeedItems();
-      const htmlDescription = recapText
-        .split("\n")
-        .filter((line) => line.trim() !== "")
-        .map((line) => `<p>${line}</p>`)
+
+      // Group the plain-text lines into visual sections (title, winner,
+      // standings, ELO, links) and render each as its own styled box —
+      // only for the WordPress/HTML version. The copy/paste version stays
+      // plain text, since Facebook etc. can't render boxes anyway.
+      const rawLines = recapText.split("\n").filter((line) => line.trim() !== "");
+      const groups = [];
+      const startMarkers = ["📊", "🏆", "📈", "⭐", "Δείτε αναλυτικά:"];
+      rawLines.forEach((line) => {
+        const isNewGroup = startMarkers.some((m) => line.startsWith(m));
+        if (isNewGroup || groups.length === 0) groups.push([line]);
+        else groups[groups.length - 1].push(line);
+      });
+      const boxStyle = "border:1px solid #D8C4A0;border-radius:8px;padding:14px 18px;margin:0 0 14px 0;background:#FFFCF5;";
+      const htmlDescription = groups
+        .map((group) => `<div style="${boxStyle}">${group.map((line) => `<p style="margin:3px 0;">${line}</p>`).join("")}</div>`)
         .join("");
       const newItem = {
         guid: `${tournamentId || "tournament"}-${Date.now()}`,
