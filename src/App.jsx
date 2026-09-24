@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-24.03";
+const APP_BUILD_VERSION = "2026-09-24.04";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,14 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-24.04",
+    date: "2026-09-24",
+    items: [
+      "Νέο tab \"Στατιστικά Σεζόν\" στο Statistics — πλήθος παικτών/τουρνουά, νέοι παίκτες, μέσος όρος συμμετοχών, σύνολο αγώνων, μεγαλύτερη ανατροπή ELO, και μεγαλύτερη άνοδος ELO μέσα στη σεζόν.",
+      "Αφαιρέθηκε το κουμπί εξαγωγής JSON ανά γύρο/τουρνουά (\"Save\" / \"Export Results\") — πλέον περιττό, το \"Export All Data\" το καλύπτει.",
+    ],
+  },
   {
     version: "2026-09-24.03",
     date: "2026-09-24",
@@ -1384,6 +1392,9 @@ export default function TournamentManager() {
   const [h2hExpandedOpponent, setH2hExpandedOpponent] = useState(null);
   const [statsResult, setStatsResult] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [seasonStatsResult, setSeasonStatsResult] = useState(null);
+  const [seasonStatsLoading, setSeasonStatsLoading] = useState(false);
+  const [seasonStatsYear, setSeasonStatsYear] = useState(new Date().getFullYear());
   const [confirmingClearFeed, setConfirmingClearFeed] = useState(false);
   const [playerDetailReturnPhase, setPlayerDetailReturnPhase] = useState("players");
   const [statsTab, setStatsTab] = useState("h2h");
@@ -2125,20 +2136,6 @@ export default function TournamentManager() {
 
   /* ---- file persistence (local download / upload) ---- */
 
-  function exportJSON() {
-    const data = currentSnapshot();
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const safe = (tournamentName || "tournament").replace(/[^\w-]+/g, "_");
-    a.download = `${safe}_gyros${round}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
   async function exportAllData() {
     const registryData = await loadRegistry();
     const eloData2 = await loadElo();
@@ -2784,6 +2781,110 @@ export default function TournamentManager() {
    * rather than running automatically. Retirements and byes are excluded
    * entirely from streaks (as if that match never happened), matching how
    * they're already excluded from ELO and win%. */
+  /** Season-level overview: how many players/tournaments this season,
+   * average turnout, how many players are brand new this year, roughly
+   * how many individual matches were played, plus two highlights — the
+   * biggest ELO upset and the player who gained the most rating — both
+   * scoped to matches that happened within this season's own tournaments
+   * (ELO itself stays continuous/all-time; only the "which matches count
+   * as this season's highlights" question is scoped by year). */
+  async function computeSeasonOverview(year) {
+    setSeasonStatsLoading(true);
+    setSeasonStatsResult(null);
+    try {
+      const season = await loadSeason(year);
+      const playerEntries = Object.entries(season.players || {}).filter(([, p]) => Object.keys(p.entries || {}).length > 0);
+      const tournamentIdSet = new Set();
+      const perTournamentCounts = {};
+      playerEntries.forEach(([, p]) => {
+        Object.keys(p.entries || {}).forEach((id) => {
+          tournamentIdSet.add(id);
+          perTournamentCounts[id] = (perTournamentCounts[id] || 0) + 1;
+        });
+      });
+      const tournamentCount = tournamentIdSet.size;
+      const playerCount = playerEntries.length;
+      const avgParticipants = tournamentCount > 0
+        ? Math.round((Object.values(perTournamentCounts).reduce((a, b) => a + b, 0) / tournamentCount) * 10) / 10
+        : 0;
+      let totalMatchInstances = 0;
+      playerEntries.forEach(([, p]) => Object.values(p.entries || {}).forEach((e) => { totalMatchInstances += e.matches ?? 0; }));
+      const totalMatches = Math.round(totalMatchInstances / 2);
+
+      const allYears = await listSeasonYears();
+      const priorKeys = new Set();
+      for (const y of allYears.filter((y) => y < year)) {
+        const s = await loadSeason(y);
+        Object.entries(s.players || {}).forEach(([key, p]) => {
+          if (Object.keys(p.entries || {}).length > 0) priorKeys.add(key);
+        });
+      }
+      const newPlayers = playerEntries.filter(([key]) => !priorKeys.has(key)).length;
+
+      const seenIds = new Set();
+      const chronological = [...archive]
+        .filter((t) => { if (seenIds.has(t.id)) return false; seenIds.add(t.id); return true; })
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+      const eloRunning = { players: {} };
+      const ratingAtSeasonStart = {};
+      const ratingAtSeasonEnd = {};
+      let biggestUpset = null;
+      for (const t of chronological) {
+        const data = await fetchTournamentData(t.id);
+        if (!data || !data.history) continue;
+        const byId = {};
+        (data.players || []).forEach((p) => { byId[p.id] = p; });
+        const inSeason = tournamentIdSet.has(t.id);
+        data.history.forEach((entry) => {
+          if (inSeason) {
+            entry.pairs.forEach((pr) => {
+              if (!pr.result || pr.result.method !== "normal") return;
+              const w = byId[pr.result.winnerId];
+              const l = byId[pr.result.loserId];
+              if (!w || !l) return;
+              const wKey = normalizeName(w.name);
+              const lKey = normalizeName(l.name);
+              if (ratingAtSeasonStart[wKey] === undefined) ratingAtSeasonStart[wKey] = eloRunning.players[wKey]?.rating ?? ELO_INITIAL;
+              if (ratingAtSeasonStart[lKey] === undefined) ratingAtSeasonStart[lKey] = eloRunning.players[lKey]?.rating ?? ELO_INITIAL;
+              const wRatingBefore = eloRunning.players[wKey]?.rating ?? ELO_INITIAL;
+              const lRatingBefore = eloRunning.players[lKey]?.rating ?? ELO_INITIAL;
+              if (wRatingBefore < lRatingBefore) {
+                const margin = Math.round(lRatingBefore - wRatingBefore);
+                if (!biggestUpset || margin > biggestUpset.margin) {
+                  biggestUpset = { winner: w.name, loser: l.name, margin, date: t.date, tournamentName: t.name };
+                }
+              }
+            });
+          }
+          applyEloRoundBatch(eloRunning, buildEloRoundMatches(entry.pairs, byId), data.matchLength || 7);
+        });
+        if (inSeason) {
+          (data.players || []).forEach((p) => {
+            const key = normalizeName(p.name);
+            if (eloRunning.players[key]) ratingAtSeasonEnd[key] = eloRunning.players[key].rating;
+          });
+        }
+      }
+
+      let mostImproved = null;
+      Object.keys(ratingAtSeasonEnd).forEach((key) => {
+        const start = ratingAtSeasonStart[key];
+        const end = ratingAtSeasonEnd[key];
+        if (start === undefined) return;
+        const delta = Math.round(end - start);
+        if (!mostImproved || delta > mostImproved.delta) {
+          mostImproved = { name: eloRunning.players[key]?.name || key, delta };
+        }
+      });
+
+      setSeasonStatsResult({ year, tournamentCount, playerCount, avgParticipants, newPlayers, totalMatches, biggestUpset, mostImproved });
+    } catch (err) {
+      showToast("Αποτυχία υπολογισμού στατιστικών σεζόν — δοκίμασε ξανά.");
+    } finally {
+      setSeasonStatsLoading(false);
+    }
+  }
+
   async function computeStatistics() {
     setStatsLoading(true);
     setStatsResult(null);
@@ -3472,6 +3573,7 @@ export default function TournamentManager() {
               <button className={`tab ${statsTab === "h2h" ? "active" : ""}`} onClick={() => setStatsTab("h2h")}>Στατιστικά Παίκτη</button>
               <button className={`tab ${statsTab === "streaks" ? "active" : ""}`} onClick={() => setStatsTab("streaks")}>Σερί &amp; Πρωτοπορία</button>
               <button className={`tab ${statsTab === "titles" ? "active" : ""}`} onClick={() => setStatsTab("titles")}>Κατακτήσεις</button>
+              <button className={`tab ${statsTab === "season" ? "active" : ""}`} onClick={() => setStatsTab("season")}>Στατιστικά Σεζόν</button>
             </div>
           </div>
           <div className="content" style={{ maxWidth: 780 }}>
@@ -3669,6 +3771,69 @@ export default function TournamentManager() {
                 <button className="btn-ghost" style={{ marginTop: 16 }} disabled={statsLoading} onClick={computeStatistics}>
                   <RotateCcw size={13} /> Ξαναϋπολόγισε
                 </button>
+              </div>
+            )}
+
+            {statsTab === "season" && (
+              <div>
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
+                  <select
+                    value={seasonStatsYear}
+                    onChange={(e) => { setSeasonStatsYear(Number(e.target.value)); setSeasonStatsResult(null); }}
+                    style={{ fontSize: 15, border: "1px solid var(--border)", borderRadius: 7, padding: "8px 10px", background: "var(--surface)" }}
+                  >
+                    {seasonYearsAvailable.map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <button className="btn-primary" disabled={seasonStatsLoading} onClick={() => computeSeasonOverview(seasonStatsYear)}>
+                    {seasonStatsLoading ? "Υπολογισμός…" : "Υπολόγισε"}
+                  </button>
+                </div>
+
+                {seasonStatsResult && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 24 }}>
+                      {[
+                        { label: "Τουρνουά", value: seasonStatsResult.tournamentCount },
+                        { label: "Παίκτες", value: seasonStatsResult.playerCount },
+                        { label: "Νέοι παίκτες", value: seasonStatsResult.newPlayers },
+                        { label: "Μ.Ο. συμμετοχών/τουρνουά", value: seasonStatsResult.avgParticipants },
+                        { label: "Σύνολο αγώνων (προσέγγιση)", value: seasonStatsResult.totalMatches },
+                      ].map((box) => (
+                        <div key={box.label} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", textAlign: "center", background: "var(--surface)" }}>
+                          <p style={{ fontWeight: 800, fontSize: 26, margin: 0 }}>{box.value}</p>
+                          <p style={{ fontSize: 12, color: "var(--muted)", margin: "4px 0 0 0" }}>{box.label}</p>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
+                      <div style={{ flex: "1 1 260px" }}>
+                        <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>😲 Μεγαλύτερη ανατροπή</p>
+                        {seasonStatsResult.biggestUpset ? (
+                          <p style={{ margin: 0 }}>
+                            <strong>{seasonStatsResult.biggestUpset.winner}</strong> νίκησε τον <strong>{seasonStatsResult.biggestUpset.loser}</strong>
+                            <span style={{ color: "var(--muted)" }}> (διαφορά ELO: {seasonStatsResult.biggestUpset.margin} πόντοι, {seasonStatsResult.biggestUpset.tournamentName})</span>
+                          </p>
+                        ) : <p style={{ color: "var(--muted)" }}>—</p>}
+                      </div>
+                      <div style={{ flex: "1 1 260px" }}>
+                        <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📈 Μεγαλύτερη άνοδος ELO</p>
+                        {seasonStatsResult.mostImproved ? (
+                          <p style={{ margin: 0 }}>
+                            <strong>{seasonStatsResult.mostImproved.name}</strong>
+                            <span style={{ color: "var(--muted)" }}> (+{seasonStatsResult.mostImproved.delta} πόντοι μέσα στη σεζόν)</span>
+                          </p>
+                        ) : <p style={{ color: "var(--muted)" }}>—</p>}
+                      </div>
+                    </div>
+
+                    <button className="btn-ghost" style={{ marginTop: 20 }} disabled={seasonStatsLoading} onClick={() => computeSeasonOverview(seasonStatsYear)}>
+                      <RotateCcw size={13} /> Ξαναϋπολόγισε
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -4751,7 +4916,6 @@ export default function TournamentManager() {
                     >
                       {round >= totalRounds ? "Finish Tournament" : "Draw Next Round"} <ArrowRight size={16} />
                     </button>
-                    <button className="btn-secondary" onClick={exportJSON}><Download size={15} /> Save</button>
                     {!confirmingRedraw ? (
                       <button className="btn-ghost" onClick={() => setConfirmingRedraw(true)}>
                         <RotateCcw size={14} /> Redraw this round
@@ -4959,7 +5123,6 @@ export default function TournamentManager() {
 
             {isAdmin && (
               <div className="footer-actions">
-                <button className="btn-secondary" onClick={exportJSON}><Download size={15} /> Export Results (JSON)</button>
                 <button className="btn-secondary" onClick={goHome}><RotateCcw size={15} /> Home</button>
               </div>
             )}
