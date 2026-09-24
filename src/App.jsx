@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-24.05";
+const APP_BUILD_VERSION = "2026-09-24.06";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-24.06",
+    date: "2026-09-24",
+    items: [
+      "Οπτική αναβάθμιση στα Στατιστικά Σεζόν: εικονίδια + χρωματιστή γραμμή σε κάθε κάρτα νούμερου· τα δύο highlights (ανατροπή/άνοδος ELO) έγιναν πιο εμφατικές, \"βραβείου\"-στυλ κάρτες.",
+    ],
+  },
   {
     version: "2026-09-24.05",
     date: "2026-09-24",
@@ -3803,38 +3810,51 @@ export default function TournamentManager() {
 
                 {seasonStatsResult && (
                   <>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginBottom: 24 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 28 }}>
                       {[
-                        { label: "Τουρνουά", value: seasonStatsResult.tournamentCount },
-                        { label: "Παίκτες", value: seasonStatsResult.playerCount },
-                        { label: "Νέοι παίκτες", value: seasonStatsResult.newPlayers },
-                        { label: "Μ.Ο. συμμετοχών/τουρνουά", value: seasonStatsResult.avgParticipants },
-                        { label: "Σύνολο αγώνων (προσέγγιση)", value: seasonStatsResult.totalMatches },
+                        { icon: "🏆", label: "Τουρνουά", value: seasonStatsResult.tournamentCount },
+                        { icon: "👥", label: "Παίκτες", value: seasonStatsResult.playerCount },
+                        { icon: "🆕", label: "Νέοι παίκτες", value: seasonStatsResult.newPlayers },
+                        { icon: "📊", label: "Μ.Ο. συμμετοχών/τουρνουά", value: seasonStatsResult.avgParticipants },
+                        { icon: "🎲", label: "Σύνολο αγώνων (προσέγγιση)", value: seasonStatsResult.totalMatches },
                       ].map((box) => (
-                        <div key={box.label} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: "14px 16px", textAlign: "center", background: "var(--surface)" }}>
-                          <p style={{ fontWeight: 800, fontSize: 26, margin: 0 }}>{box.value}</p>
+                        <div key={box.label} style={{ border: "1px solid var(--border)", borderTop: "3px solid var(--accent)", borderRadius: 8, padding: "16px 16px 14px 16px", textAlign: "center", background: "var(--surface)" }}>
+                          <div style={{ fontSize: 22, marginBottom: 4 }}>{box.icon}</div>
+                          <p style={{ fontWeight: 800, fontSize: 28, margin: 0, color: "var(--ink)" }}>{box.value}</p>
                           <p style={{ fontSize: 12, color: "var(--muted)", margin: "4px 0 0 0" }}>{box.label}</p>
                         </div>
                       ))}
                     </div>
 
-                    <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
-                      <div style={{ flex: "1 1 260px" }}>
-                        <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>😲 Μεγαλύτερη ανατροπή</p>
+                    <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+                      <div style={{ flex: "1 1 320px", border: "1px solid var(--border)", borderRadius: 10, padding: "20px 22px", background: "var(--accent-soft)" }}>
+                        <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>😲 Μεγαλύτερη ανατροπή</p>
                         {seasonStatsResult.biggestUpset ? (
-                          <p style={{ margin: 0 }}>
-                            <strong>{seasonStatsResult.biggestUpset.winner}</strong> ({seasonStatsResult.biggestUpset.winnerRatingBefore}) νίκησε τον <strong>{seasonStatsResult.biggestUpset.loser}</strong> ({seasonStatsResult.biggestUpset.loserRatingBefore})
-                            <span style={{ color: "var(--muted)" }}> — διαφορά {seasonStatsResult.biggestUpset.margin} πόντοι, {seasonStatsResult.biggestUpset.tournamentName}</span>
-                          </p>
+                          <>
+                            <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>
+                              {seasonStatsResult.biggestUpset.winner} <span style={{ fontSize: 15, color: "var(--muted)" }}>({seasonStatsResult.biggestUpset.winnerRatingBefore})</span>
+                            </p>
+                            <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 10px 0" }}>
+                              νίκησε τον <strong style={{ color: "var(--ink)" }}>{seasonStatsResult.biggestUpset.loser}</strong> ({seasonStatsResult.biggestUpset.loserRatingBefore})
+                            </p>
+                            <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                              διαφορά <strong>{seasonStatsResult.biggestUpset.margin}</strong> πόντοι ELO — {seasonStatsResult.biggestUpset.tournamentName}
+                            </p>
+                          </>
                         ) : <p style={{ color: "var(--muted)" }}>—</p>}
                       </div>
-                      <div style={{ flex: "1 1 260px" }}>
-                        <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📈 Μεγαλύτερη άνοδος ELO</p>
+                      <div style={{ flex: "1 1 320px", border: "1px solid var(--border)", borderRadius: 10, padding: "20px 22px", background: "var(--accent-soft)" }}>
+                        <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>📈 Μεγαλύτερη άνοδος ELO</p>
                         {seasonStatsResult.mostImproved ? (
-                          <p style={{ margin: 0 }}>
-                            <strong>{seasonStatsResult.mostImproved.name}</strong>: {seasonStatsResult.mostImproved.startRating} → {seasonStatsResult.mostImproved.endRating}
-                            <span style={{ color: "var(--muted)" }}> (+{seasonStatsResult.mostImproved.delta} πόντοι μέσα στη σεζόν)</span>
-                          </p>
+                          <>
+                            <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{seasonStatsResult.mostImproved.name}</p>
+                            <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 10px 0" }}>
+                              {seasonStatsResult.mostImproved.startRating} → <strong style={{ color: "var(--win)" }}>{seasonStatsResult.mostImproved.endRating}</strong>
+                            </p>
+                            <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
+                              <strong style={{ color: "var(--win)" }}>+{seasonStatsResult.mostImproved.delta}</strong> πόντοι μέσα στη σεζόν
+                            </p>
+                          </>
                         ) : <p style={{ color: "var(--muted)" }}>—</p>}
                       </div>
                     </div>
