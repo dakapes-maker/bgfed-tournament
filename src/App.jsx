@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-23.12";
+const APP_BUILD_VERSION = "2026-09-24.02";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,21 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-24.02",
+    date: "2026-09-24",
+    items: [
+      "Αφαιρέθηκε το πλέον περιττό κουμπί \"Import 2026 history\".",
+      "\"Official League day\" είναι πλέον ενεργό (checked) από προεπιλογή σε κάθε νέο τουρνουά, αντί να χρειάζεται χειροκίνητο κλικ.",
+    ],
+  },
+  {
+    version: "2026-09-24.01",
+    date: "2026-09-24",
+    items: [
+      "Αφαιρέθηκαν τα δοκιμαστικά κουμπιά \"Add random players\" και \"Randomize results (testing)\" πριν το πρώτο πραγματικό τουρνουά.",
+    ],
+  },
   {
     version: "2026-09-23.12",
     date: "2026-09-23",
@@ -1454,14 +1469,13 @@ export default function TournamentManager() {
   const [confirmingFinish, setConfirmingFinish] = useState(false);
   const [seasonYear, setSeasonYear] = useState(new Date().getFullYear());
   const [liveStandingsEnabled, setLiveStandingsEnabled] = useState(false);
-  const [isOfficial, setIsOfficial] = useState(false); // Official League day — only these count in "Recompute from scratch"
+  const [isOfficial, setIsOfficial] = useState(true); // Official League day — only these count in "Recompute from scratch"
   const [players, setPlayers] = useState([]);
   const [round, setRound] = useState(1);
   const [currentPairings, setCurrentPairings] = useState(null);
   const [history, setHistory] = useState([]);
   const [newPlayerName, setNewPlayerName] = useState("");
   const [bulkText, setBulkText] = useState("");
-  const [randomCount, setRandomCount] = useState(10);
   const [view, setView] = useState("pairings");
   const [selectedRound, setSelectedRound] = useState(1);
   const [notice, setNotice] = useState("");
@@ -1692,7 +1706,7 @@ export default function TournamentManager() {
     setCalcuttaEntries([]);
     setSeasonYear(new Date().getFullYear());
     setLiveStandingsEnabled(false);
-    setIsOfficial(false);
+    setIsOfficial(true);
     setPlayers([]);
     setRound(1);
     setCurrentPairings(null);
@@ -1892,23 +1906,6 @@ export default function TournamentManager() {
     setBulkText("");
   }
 
-  function addRandomPlayers() {
-    const existingNames = new Set(players.map((p) => p.name.toLowerCase()));
-    const available = Object.values(registry.players || {}).filter((p) => !existingNames.has(p.name.toLowerCase()));
-    const picked = shuffle(available).slice(0, randomCount);
-    if (picked.length === 0) return;
-    setPlayers((prev) => [
-      ...prev,
-      ...picked.map((p) => ({
-        id: makeId(), name: p.name, wins: 0, opponents: [], hadBye: false, withdrawn: false, withdrawnRound: null, matchLog: [],
-        hasDiscount: !!p.hasDiscount, discountAmount: p.discountAmount ?? 32, wantsCup: false,
-      })),
-    ]);
-    if (picked.length < randomCount) {
-      setNotice(`Only ${picked.length} registry players were available to add.`);
-    }
-  }
-
   function toggleDefaultSideBetForPlayer(playerId) {
     setSideBets((prev) => {
       const existing = prev.find((b) => b.id === "default-sidebet");
@@ -2004,18 +2001,6 @@ export default function TournamentManager() {
   }
 
   const roundComplete = currentPairings && currentPairings.pairs.every((pr) => pr.result !== null);
-
-  // TODO: TESTING ONLY — remove this function and its button before the real/production version.
-  function randomizeRoundResults() {
-    if (!currentPairings) return;
-    const updatedPairs = currentPairings.pairs.map((pr) => {
-      if (pr.result) return pr;
-      const winnerId = Math.random() < 0.5 ? pr.p1 : pr.p2;
-      const loserId = winnerId === pr.p1 ? pr.p2 : pr.p1;
-      return { ...pr, result: { winnerId, loserId, method: "normal" } };
-    });
-    setCurrentPairings({ ...currentPairings, pairs: updatedPairs });
-  }
 
   async function finalizeRoundAndAdvance(updateSeason) {
     if (!roundComplete) return;
@@ -3806,14 +3791,6 @@ export default function TournamentManager() {
 
             {seasonBrowseYear === 2026 && recomputePanel}
 
-            {isAdmin && seasonBrowseYear === 2026 && (
-              <div className="footer-actions" style={{ marginTop: 0, marginBottom: 20 }}>
-                <button className="btn-secondary" onClick={importHistoricalSeason2026}>
-                  <Upload size={15} /> Import 2026 history (11 days, from spreadsheet)
-                </button>
-              </div>
-            )}
-
             {(() => {
               const qual = { roundA: 32, cutoffA: 5, roundB: 48, cutoffB: 16 };
 
@@ -4576,18 +4553,6 @@ export default function TournamentManager() {
                 </div>
               </div>
 
-              <div style={{ marginTop: 14 }}>
-                <label>For testing: add random players from the registry</label>
-                <div className="row">
-                  <div style={{ width: 90 }}>
-                    <input type="number" min={1} value={randomCount} onChange={(e) => setRandomCount(Math.max(1, Number(e.target.value) || 1))} />
-                  </div>
-                  <button className="btn-secondary" onClick={addRandomPlayers}>
-                    <Dice5 size={16} /> Add random players
-                  </button>
-                </div>
-              </div>
-
               <p style={{ fontSize: 13, color: "var(--muted)", margin: "14px 0 6px 0" }}>
                 <strong style={{ color: "var(--ink)" }}>{players.length}</strong> player{players.length === 1 ? "" : "s"} registered
                 {" · "}
@@ -4784,10 +4749,6 @@ export default function TournamentManager() {
                       {round >= totalRounds ? "Finish Tournament" : "Draw Next Round"} <ArrowRight size={16} />
                     </button>
                     <button className="btn-secondary" onClick={exportJSON}><Download size={15} /> Save</button>
-                    {/* TODO: TESTING ONLY — remove this button before the real/production version. */}
-                    <button className="btn-ghost" onClick={randomizeRoundResults} style={{ color: "var(--muted)" }}>
-                      <Dice5 size={14} /> Randomize results (testing)
-                    </button>
                     {!confirmingRedraw ? (
                       <button className="btn-ghost" onClick={() => setConfirmingRedraw(true)}>
                         <RotateCcw size={14} /> Redraw this round
