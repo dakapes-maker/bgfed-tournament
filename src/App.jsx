@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-24.02";
+const APP_BUILD_VERSION = "2026-09-24.03";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-24.03",
+    date: "2026-09-24",
+    items: [
+      "Διόρθωση σφάλματος: το γράφημα win rate στην καρτέλα παίκτη μετρούσε κάθε νίκη ΔΙΠΛΑ (γι' αυτό έφτανε μέχρι και 200%) — υπόλειμμα χειροκίνητης μέτρησης που έγινε περιττή όταν προστέθηκε η νέα στήλη Win% στο ELO. Τώρα σωστό, μέχρι 100%.",
+    ],
+  },
   {
     version: "2026-09-24.02",
     date: "2026-09-24",
@@ -2412,9 +2419,7 @@ export default function TournamentManager() {
         applyEloRoundBatch(working, roundMatches, 7);
         roundMatches.forEach((m) => {
           if (m.ret) return;
-          const wKey = normalizeName(m.w);
-          working.players[wKey].wins = (working.players[wKey].wins || 0) + 1;
-          participants.add(wKey);
+          participants.add(normalizeName(m.w));
           participants.add(normalizeName(m.l));
         });
       });
@@ -2438,9 +2443,7 @@ export default function TournamentManager() {
         applyEloRoundBatch(working, roundMatches, data.matchLength || 7);
         roundMatches.forEach((m) => {
           if (m.ret) return;
-          const wKey = normalizeName(m.w);
-          working.players[wKey].wins = (working.players[wKey].wins || 0) + 1;
-          participants.add(wKey);
+          participants.add(normalizeName(m.w));
           participants.add(normalizeName(m.l));
         });
       });
