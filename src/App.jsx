@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-24.04";
+const APP_BUILD_VERSION = "2026-09-24.05";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-24.05",
+    date: "2026-09-24",
+    items: [
+      "Στα Στατιστικά Σεζόν: η μεγαλύτερη ανατροπή δείχνει πλέον τα ELO των δύο παικτών εκείνη τη στιγμή· η μεγαλύτερη άνοδος ELO δείχνει από-πού-σε-πού (όχι μόνο τη διαφορά).",
+    ],
+  },
   {
     version: "2026-09-24.04",
     date: "2026-09-24",
@@ -2851,7 +2858,10 @@ export default function TournamentManager() {
               if (wRatingBefore < lRatingBefore) {
                 const margin = Math.round(lRatingBefore - wRatingBefore);
                 if (!biggestUpset || margin > biggestUpset.margin) {
-                  biggestUpset = { winner: w.name, loser: l.name, margin, date: t.date, tournamentName: t.name };
+                  biggestUpset = {
+                    winner: w.name, loser: l.name, margin, date: t.date, tournamentName: t.name,
+                    winnerRatingBefore: Math.round(wRatingBefore), loserRatingBefore: Math.round(lRatingBefore),
+                  };
                 }
               }
             });
@@ -2873,7 +2883,7 @@ export default function TournamentManager() {
         if (start === undefined) return;
         const delta = Math.round(end - start);
         if (!mostImproved || delta > mostImproved.delta) {
-          mostImproved = { name: eloRunning.players[key]?.name || key, delta };
+          mostImproved = { name: eloRunning.players[key]?.name || key, delta, startRating: Math.round(start), endRating: Math.round(end) };
         }
       });
 
@@ -3813,8 +3823,8 @@ export default function TournamentManager() {
                         <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>😲 Μεγαλύτερη ανατροπή</p>
                         {seasonStatsResult.biggestUpset ? (
                           <p style={{ margin: 0 }}>
-                            <strong>{seasonStatsResult.biggestUpset.winner}</strong> νίκησε τον <strong>{seasonStatsResult.biggestUpset.loser}</strong>
-                            <span style={{ color: "var(--muted)" }}> (διαφορά ELO: {seasonStatsResult.biggestUpset.margin} πόντοι, {seasonStatsResult.biggestUpset.tournamentName})</span>
+                            <strong>{seasonStatsResult.biggestUpset.winner}</strong> ({seasonStatsResult.biggestUpset.winnerRatingBefore}) νίκησε τον <strong>{seasonStatsResult.biggestUpset.loser}</strong> ({seasonStatsResult.biggestUpset.loserRatingBefore})
+                            <span style={{ color: "var(--muted)" }}> — διαφορά {seasonStatsResult.biggestUpset.margin} πόντοι, {seasonStatsResult.biggestUpset.tournamentName}</span>
                           </p>
                         ) : <p style={{ color: "var(--muted)" }}>—</p>}
                       </div>
@@ -3822,7 +3832,7 @@ export default function TournamentManager() {
                         <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📈 Μεγαλύτερη άνοδος ELO</p>
                         {seasonStatsResult.mostImproved ? (
                           <p style={{ margin: 0 }}>
-                            <strong>{seasonStatsResult.mostImproved.name}</strong>
+                            <strong>{seasonStatsResult.mostImproved.name}</strong>: {seasonStatsResult.mostImproved.startRating} → {seasonStatsResult.mostImproved.endRating}
                             <span style={{ color: "var(--muted)" }}> (+{seasonStatsResult.mostImproved.delta} πόντοι μέσα στη σεζόν)</span>
                           </p>
                         ) : <p style={{ color: "var(--muted)" }}>—</p>}
