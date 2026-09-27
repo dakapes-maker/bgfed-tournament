@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-25.04";
+const APP_BUILD_VERSION = "2026-09-25.05";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-25.05",
+    date: "2026-09-25",
+    items: [
+      "Η πρόβλεψη μετακόμισε στη γραμμή \"M1-1\" (Πρόβλεψη 52%-48%) αντί για δίπλα στο όνομα — αποφεύγει σπάσιμο γραμμής σε μεγάλα ονόματα, και δείχνει και τα δύο ποσοστά.",
+    ],
+  },
   {
     version: "2026-09-25.04",
     date: "2026-09-25",
@@ -3364,7 +3371,6 @@ export default function TournamentManager() {
         .match-compact-num { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.03em; margin-bottom: 2px; }
         .match-row-name { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; font-size: 16px; font-weight: 700; color: var(--ink); }
         .match-row-score { font-family: 'Fraunces', serif; font-size: 15px; font-weight: 700; min-width: 18px; text-align: right; color: var(--muted); }
-        .match-row-prob { font-size: 12px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 1px 6px; }
         .match-row-name.winner .match-row-score { color: var(--win); }
         .match-row-name.loser .match-row-score { color: var(--loss); }
         .match-row-name.winner { color: var(--win); background: rgba(31, 92, 52, 0.14); border-radius: 5px; padding: 4px 8px; margin: 2px -4px; }
@@ -4938,23 +4944,25 @@ export default function TournamentManager() {
                   const r2 = eloData.players?.[normalizeName(p2.name)]?.rating ?? ELO_INITIAL;
                   const p1Prob = Math.round(eloWinProbability(r1, r2, matchLength || 7) * 100);
                   const p2Prob = 100 - p1Prob;
-                  const p1Favored = p1Prob >= p2Prob;
                   return (
                     <div
                       className={`match-compact ${result ? "decided" : ""} ${canEdit ? "clickable" : ""}`}
                       key={i}
                       onClick={canEdit ? () => setExpandedMatch(isExpanded ? null : i) : undefined}
                     >
-                      <div className="match-compact-num">M{i + 1}-{selectedRound}</div>
+                      <div className="match-compact-num" style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>M{i + 1}-{selectedRound}</span>
+                        {!result && <span>Πρόβλεψη {p1Prob}%-{p2Prob}%</span>}
+                      </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p1.id ? "winner" : "loser") : ""}`}>
-                        <span>{p1.name} {!result && p1Favored && <span className="match-row-prob">{p1Prob}%</span>}</span>
+                        <span>{p1.name}</span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p1Score}</span>
                           {result && !isDoubleRet && result.winnerId === p1.id && <Check size={14} />}
                         </span>
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p2.id ? "winner" : "loser") : ""}`}>
-                        <span>{p2.name} {!result && !p1Favored && <span className="match-row-prob">{p2Prob}%</span>}</span>
+                        <span>{p2.name}</span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p2Score}</span>
                           {result && !isDoubleRet && result.winnerId === p2.id && <Check size={14} />}
