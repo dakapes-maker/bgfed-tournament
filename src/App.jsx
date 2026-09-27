@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-25.01";
+const APP_BUILD_VERSION = "2026-09-25.02";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-25.02",
+    date: "2026-09-25",
+    items: [
+      "Σημαντική διόρθωση: η προσθήκη παίκτη και η καταχώρηση αποτελέσματος ματς ενημέρωναν μόνο την τοπική μνήμη, όχι τη βάση — αν έφευγες πριν ολοκληρωθεί ο γύρος, χανόταν η δουλειά. Τώρα αποθηκεύονται αμέσως, ματς-προς-ματς.",
+    ],
+  },
   {
     version: "2026-09-25.01",
     date: "2026-09-25",
@@ -1800,24 +1807,27 @@ export default function TournamentManager() {
       });
     }
     const newId = makeId();
-    setPlayers((prev) => [
-      ...prev,
+    const updatedPlayers = [
+      ...players,
       { id: newId, name: canonicalName, wins: 0, opponents: [], hadBye: false, withdrawn: false, withdrawnRound: null, excludedFromTournament: false, matchLog: [], hasDiscount: isDiscounted, discountAmount: discountAmt, wantsCup: false },
-    ]);
+    ];
+    setPlayers(updatedPlayers);
+    let updatedSideBets = sideBets;
     if (addToSideBet) {
-      setSideBets((prev) => {
-        const existing = prev.find((b) => b.id === "default-sidebet");
-        if (existing) {
-          return prev.map((b) => (b.id === "default-sidebet" ? { ...b, participantIds: [...b.participantIds, newId] } : b));
-        }
-        return [...prev, { id: "default-sidebet", label: "Side bet", amountPerPlayer: defaultSideBetAmount, participantIds: [newId] }];
-      });
+      const existing = sideBets.find((b) => b.id === "default-sidebet");
+      updatedSideBets = existing
+        ? sideBets.map((b) => (b.id === "default-sidebet" ? { ...b, participantIds: [...b.participantIds, newId] } : b))
+        : [...sideBets, { id: "default-sidebet", label: "Side bet", amountPerPlayer: defaultSideBetAmount, participantIds: [newId] }];
+      setSideBets(updatedSideBets);
     }
     setNewPlayerName("");
+    persistCurrent(phase, round, updatedPlayers, currentPairings, history, updatedSideBets);
   }
 
   function removePlayer(id) {
-    setPlayers((prev) => prev.filter((p) => p.id !== id));
+    const updated = players.filter((p) => p.id !== id);
+    setPlayers(updated);
+    persistCurrent(phase, round, updated, currentPairings, history);
   }
 
   function toggleDiscount(id) {
@@ -1976,17 +1986,21 @@ export default function TournamentManager() {
   /* ---- tournament phase ---- */
 
   function setResult(pairIndex, winnerId, loserId, method) {
-    setCurrentPairings((prev) => {
-      const pairs = prev.pairs.map((pr, i) => (i === pairIndex ? { ...pr, result: { winnerId, loserId, method } } : pr));
-      return { ...prev, pairs };
-    });
+    const updatedPairing = {
+      ...currentPairings,
+      pairs: currentPairings.pairs.map((pr, i) => (i === pairIndex ? { ...pr, result: { winnerId, loserId, method } } : pr)),
+    };
+    setCurrentPairings(updatedPairing);
+    persistCurrent(phase, round, players, updatedPairing, history);
   }
 
   function clearResult(pairIndex) {
-    setCurrentPairings((prev) => {
-      const pairs = prev.pairs.map((pr, i) => (i === pairIndex ? { ...pr, result: null } : pr));
-      return { ...prev, pairs };
-    });
+    const updatedPairing = {
+      ...currentPairings,
+      pairs: currentPairings.pairs.map((pr, i) => (i === pairIndex ? { ...pr, result: null } : pr)),
+    };
+    setCurrentPairings(updatedPairing);
+    persistCurrent(phase, round, players, updatedPairing, history);
   }
 
   function setHistoricalResult(roundNumber, pairIndex, winnerId, loserId, method) {
