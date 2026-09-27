@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-25.07";
+const APP_BUILD_VERSION = "2026-09-25.08";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,14 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-25.08",
+    date: "2026-09-25",
+    items: [
+      "\"Πρόβλεψη ELO 52-48\" → \"Πρόβλεψη ELO 52%-48%\".",
+      "Διόρθωση σφάλματος: ένα τουρνουά ακόμα σε εξέλιξη (π.χ. δοκιμαστικό) εμφανιζόταν λανθασμένα με \"νικητή\" στις Κατακτήσεις των Statistics — τώρα μετράει μόνο πραγματικά τελειωμένα τουρνουά.",
+    ],
+  },
   {
     version: "2026-09-25.07",
     date: "2026-09-25",
@@ -3025,15 +3033,18 @@ export default function TournamentManager() {
           }
         });
 
-        // Tournament title
-        const buch = computeBuchholz(tPlayers);
-        const standings = sortStandings(tPlayers, buch);
-        if (standings.length > 0) {
-          const winner = standings[0];
-          const key = normalizeName(winner.name);
-          if (!titleCounts[key]) titleCounts[key] = { name: winner.name, count: 0, tournaments: [] };
-          titleCounts[key].count += 1;
-          titleCounts[key].tournaments.push({ name: t.name, date: t.date });
+        // Tournament title — only for tournaments that have actually
+        // finished; an in-progress test tournament has no real winner yet.
+        if (data.phase === "finished") {
+          const buch = computeBuchholz(tPlayers);
+          const standings = sortStandings(tPlayers, buch);
+          if (standings.length > 0) {
+            const winner = standings[0];
+            const key = normalizeName(winner.name);
+            if (!titleCounts[key]) titleCounts[key] = { name: winner.name, count: 0, tournaments: [] };
+            titleCounts[key].count += 1;
+            titleCounts[key].tournaments.push({ name: t.name, date: t.date });
+          }
         }
 
         // Per-player chronological sequence, normal matches only
@@ -4997,7 +5008,7 @@ export default function TournamentManager() {
                     >
                       <div className="match-compact-num" style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>M{i + 1}-{selectedRound}</span>
-                        {!result && <span>Πρόβλεψη ELO {p1Prob}-{p2Prob}</span>}
+                        {!result && <span>Πρόβλεψη ELO {p1Prob}%-{p2Prob}%</span>}
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p1.id ? "winner" : "loser") : ""}`}>
                         <span>{p1.name}</span>
