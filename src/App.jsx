@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-25.05";
+const APP_BUILD_VERSION = "2026-09-25.07";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,21 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-25.07",
+    date: "2026-09-25",
+    items: [
+      "Στα Στατιστικά Σεζόν: νέα κάρτα \"Ποσοστό εκπλήξεων\" (% αγώνων όπου κέρδισε ο χαμηλότερος σε ELO), και νέο highlight \"Τουρνουά με τις περισσότερες εκπλήξεις\" (ποσοστιαία, όχι απόλυτος αριθμός).",
+    ],
+  },
+  {
+    version: "2026-09-25.06",
+    date: "2026-09-25",
+    items: [
+      "\"Πρόβλεψη 52%-48%\" → \"Πρόβλεψη ELO 52-48\".",
+      "Αφαιρέθηκε η αναλυτική μπάρα πρόβλεψης από το ανοιχτό πλαίσιο εισαγωγής αποτελέσματος — περιττή εκεί, αφού το ματς έχει ήδη παιχτεί στην πραγματικότητα.",
+    ],
+  },
   {
     version: "2026-09-25.05",
     date: "2026-09-25",
@@ -2889,12 +2904,16 @@ export default function TournamentManager() {
       const ratingAtSeasonStart = {};
       const ratingAtSeasonEnd = {};
       let biggestUpset = null;
+      let totalNormalMatches = 0;
+      let totalUpsets = 0;
+      const perTournamentUpsets = {};
       for (const t of chronological) {
         const data = await fetchTournamentData(t.id);
         if (!data || !data.history) continue;
         const byId = {};
         (data.players || []).forEach((p) => { byId[p.id] = p; });
         const inSeason = tournamentIdSet.has(t.id);
+        if (inSeason && !perTournamentUpsets[t.id]) perTournamentUpsets[t.id] = { name: t.name, matches: 0, upsets: 0 };
         data.history.forEach((entry) => {
           if (inSeason) {
             entry.pairs.forEach((pr) => {
@@ -2908,7 +2927,11 @@ export default function TournamentManager() {
               if (ratingAtSeasonStart[lKey] === undefined) ratingAtSeasonStart[lKey] = eloRunning.players[lKey]?.rating ?? ELO_INITIAL;
               const wRatingBefore = eloRunning.players[wKey]?.rating ?? ELO_INITIAL;
               const lRatingBefore = eloRunning.players[lKey]?.rating ?? ELO_INITIAL;
+              totalNormalMatches += 1;
+              perTournamentUpsets[t.id].matches += 1;
               if (wRatingBefore < lRatingBefore) {
+                totalUpsets += 1;
+                perTournamentUpsets[t.id].upsets += 1;
                 const margin = Math.round(lRatingBefore - wRatingBefore);
                 if (!biggestUpset || margin > biggestUpset.margin) {
                   biggestUpset = {
@@ -2940,7 +2963,17 @@ export default function TournamentManager() {
         }
       });
 
-      setSeasonStatsResult({ year, tournamentCount, playerCount, avgParticipants, newPlayers, totalMatches, biggestUpset, mostImproved });
+      const upsetRate = totalNormalMatches > 0 ? Math.round((totalUpsets / totalNormalMatches) * 1000) / 10 : 0;
+      let mostSurprisingTournament = null;
+      Object.values(perTournamentUpsets).forEach((tt) => {
+        if (tt.matches === 0) return;
+        const rate = Math.round((tt.upsets / tt.matches) * 1000) / 10;
+        if (!mostSurprisingTournament || rate > mostSurprisingTournament.rate) {
+          mostSurprisingTournament = { name: tt.name, rate, upsets: tt.upsets, matches: tt.matches };
+        }
+      });
+
+      setSeasonStatsResult({ year, tournamentCount, playerCount, avgParticipants, newPlayers, totalMatches, biggestUpset, mostImproved, upsetRate, mostSurprisingTournament });
     } catch (err) {
       showToast("Αποτυχία υπολογισμού στατιστικών σεζόν — δοκίμασε ξανά.");
     } finally {
@@ -3866,6 +3899,7 @@ export default function TournamentManager() {
                         { icon: "🆕", label: "Νέοι παίκτες", value: seasonStatsResult.newPlayers },
                         { icon: "📊", label: "Μ.Ο. συμμετοχών/τουρνουά", value: seasonStatsResult.avgParticipants },
                         { icon: "🎲", label: "Σύνολο αγώνων (προσέγγιση)", value: seasonStatsResult.totalMatches },
+                        { icon: "😲", label: "Ποσοστό εκπλήξεων", value: `${seasonStatsResult.upsetRate}%` },
                       ].map((box) => (
                         <div key={box.label} style={{ border: "1px solid var(--border)", borderTop: "3px solid var(--accent)", borderRadius: 8, padding: "16px 16px 14px 16px", textAlign: "center", background: "var(--surface)" }}>
                           <div style={{ fontSize: 22, marginBottom: 4 }}>{box.icon}</div>
@@ -3902,6 +3936,17 @@ export default function TournamentManager() {
                             </p>
                             <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
                               <strong style={{ color: "var(--win)" }}>+{seasonStatsResult.mostImproved.delta}</strong> πόντοι μέσα στη σεζόν
+                            </p>
+                          </>
+                        ) : <p style={{ color: "var(--muted)" }}>—</p>}
+                      </div>
+                      <div style={{ flex: "1 1 320px", border: "1px solid var(--border)", borderRadius: 10, padding: "20px 22px", background: "var(--accent-soft)" }}>
+                        <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>🎪 Τουρνουά με τις περισσότερες εκπλήξεις</p>
+                        {seasonStatsResult.mostSurprisingTournament ? (
+                          <>
+                            <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{seasonStatsResult.mostSurprisingTournament.name}</p>
+                            <p style={{ fontSize: 14, color: "var(--muted)", margin: 0 }}>
+                              <strong style={{ color: "var(--ink)" }}>{seasonStatsResult.mostSurprisingTournament.rate}%</strong> των αγώνων ({seasonStatsResult.mostSurprisingTournament.upsets} από {seasonStatsResult.mostSurprisingTournament.matches})
                             </p>
                           </>
                         ) : <p style={{ color: "var(--muted)" }}>—</p>}
@@ -4952,7 +4997,7 @@ export default function TournamentManager() {
                     >
                       <div className="match-compact-num" style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>M{i + 1}-{selectedRound}</span>
-                        {!result && <span>Πρόβλεψη {p1Prob}%-{p2Prob}%</span>}
+                        {!result && <span>Πρόβλεψη ELO {p1Prob}-{p2Prob}</span>}
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p1.id ? "winner" : "loser") : ""}`}>
                         <span>{p1.name}</span>
@@ -4976,7 +5021,6 @@ export default function TournamentManager() {
 
                       {canEdit && isExpanded && (
                         <div className="match-expand" onClick={(e) => e.stopPropagation()}>
-                          {!result && <WinProbabilityBar p1Name={p1.name} p2Name={p2.name} eloData={eloData} matchLength={matchLength} />}
                           {!result && (
                             <>
                               <div className="match-actions">
