@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-25.02";
+const APP_BUILD_VERSION = "2026-09-25.03";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,14 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-25.03",
+    date: "2026-09-25",
+    items: [
+      "Στα ζευγαρώματα: η πρόβλεψη νίκης φαίνεται πλέον απευθείας στην κάρτα, χωρίς να χρειάζεται κλικ.",
+      "Κάθε ζευγάρι δείχνει τώρα \"σκορ\" δίπλα σε κάθε όνομα — 0-0 όσο εκκρεμεί, {μήκος αγώνα}-0 μόλις αποφασιστεί (π.χ. 7-0). Το ακριβές σκορ ανά πόντο θα προστεθεί μελλοντικά.",
+    ],
+  },
   {
     version: "2026-09-25.02",
     date: "2026-09-25",
@@ -3348,6 +3356,9 @@ export default function TournamentManager() {
         .match-compact.clickable:hover { background: var(--accent-soft); }
         .match-compact-num { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.03em; margin-bottom: 2px; }
         .match-row-name { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; font-size: 16px; font-weight: 700; color: var(--ink); }
+        .match-row-score { font-family: 'Fraunces', serif; font-size: 15px; font-weight: 700; min-width: 18px; text-align: right; color: var(--muted); }
+        .match-row-name.winner .match-row-score { color: var(--win); }
+        .match-row-name.loser .match-row-score { color: var(--loss); }
         .match-row-name.winner { color: var(--win); background: rgba(31, 92, 52, 0.14); border-radius: 5px; padding: 4px 8px; margin: 2px -4px; }
         .match-row-name.loser { color: var(--loss); opacity: 0.8; }
         .match-row-tag { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
@@ -4913,6 +4924,8 @@ export default function TournamentManager() {
                   const doClearResult = () => (roundData.editable ? clearResult(i) : clearHistoricalResult(selectedRound, i));
                   const isExpanded = expandedMatch === i;
                   const isDoubleRet = result && result.method === "double_retirement";
+                  const p1Score = !result || isDoubleRet ? 0 : result.winnerId === p1.id ? matchLength : 0;
+                  const p2Score = !result || isDoubleRet ? 0 : result.winnerId === p2.id ? matchLength : 0;
                   return (
                     <div
                       className={`match-compact ${result ? "decided" : ""} ${canEdit ? "clickable" : ""}`}
@@ -4920,13 +4933,20 @@ export default function TournamentManager() {
                       onClick={canEdit ? () => setExpandedMatch(isExpanded ? null : i) : undefined}
                     >
                       <div className="match-compact-num">M{i + 1}-{selectedRound}</div>
+                      {!result && <WinProbabilityBar p1Name={p1.name} p2Name={p2.name} eloData={eloData} matchLength={matchLength} />}
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p1.id ? "winner" : "loser") : ""}`}>
                         <span>{p1.name}</span>
-                        {result && !isDoubleRet && result.winnerId === p1.id && <Check size={14} />}
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span className="match-row-score">{p1Score}</span>
+                          {result && !isDoubleRet && result.winnerId === p1.id && <Check size={14} />}
+                        </span>
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p2.id ? "winner" : "loser") : ""}`}>
                         <span>{p2.name}</span>
-                        {result && !isDoubleRet && result.winnerId === p2.id && <Check size={14} />}
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span className="match-row-score">{p2Score}</span>
+                          {result && !isDoubleRet && result.winnerId === p2.id && <Check size={14} />}
+                        </span>
                       </div>
                       {isDoubleRet && <div className="match-row-tag">Και οι δύο Α.Α. — χωρίς νικητή</div>}
                       {result && !isDoubleRet && result.method === "retirement" && (
@@ -4936,7 +4956,6 @@ export default function TournamentManager() {
 
                       {canEdit && isExpanded && (
                         <div className="match-expand" onClick={(e) => e.stopPropagation()}>
-                          {!result && <WinProbabilityBar p1Name={p1.name} p2Name={p2.name} eloData={eloData} matchLength={matchLength} />}
                           {!result && (
                             <>
                               <div className="match-actions">
@@ -5115,6 +5134,8 @@ export default function TournamentManager() {
                   const doClearResult = () => clearHistoricalResult(selectedRound, i);
                   const isExpanded = expandedMatch === i;
                   const isDoubleRet = result && result.method === "double_retirement";
+                  const p1Score = !result || isDoubleRet ? 0 : result.winnerId === p1.id ? matchLength : 0;
+                  const p2Score = !result || isDoubleRet ? 0 : result.winnerId === p2.id ? matchLength : 0;
                   return (
                     <div
                       className={`match-compact ${result ? "decided" : ""} ${canEdit ? "clickable" : ""}`}
@@ -5124,11 +5145,17 @@ export default function TournamentManager() {
                       <div className="match-compact-num">M{i + 1}-{selectedRound}</div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p1.id ? "winner" : "loser") : ""}`}>
                         <span>{p1.name}</span>
-                        {result && !isDoubleRet && result.winnerId === p1.id && <Check size={14} />}
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span className="match-row-score">{p1Score}</span>
+                          {result && !isDoubleRet && result.winnerId === p1.id && <Check size={14} />}
+                        </span>
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p2.id ? "winner" : "loser") : ""}`}>
                         <span>{p2.name}</span>
-                        {result && !isDoubleRet && result.winnerId === p2.id && <Check size={14} />}
+                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <span className="match-row-score">{p2Score}</span>
+                          {result && !isDoubleRet && result.winnerId === p2.id && <Check size={14} />}
+                        </span>
                       </div>
                       {isDoubleRet && <div className="match-row-tag">Και οι δύο Α.Α. — χωρίς νικητή</div>}
                       {result && !isDoubleRet && result.method === "retirement" && (
