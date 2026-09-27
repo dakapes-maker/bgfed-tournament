@@ -167,7 +167,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-24.06";
+const APP_BUILD_VERSION = "2026-09-25.01";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +191,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-25.01",
+    date: "2026-09-25",
+    items: [
+      "Διόρθωση σημαντικού σφάλματος: όταν πρόσθετες νέο παίκτη με κοινό μικρό όνομα με κάποιον ήδη υπάρχοντα (π.χ. δύο διαφορετικοί \"Ανδρέας\"), η εφαρμογή τους μπέρδευε και έβαζε τον λάθος παίκτη στο τουρνουά. Τώρα ταιριάζει ονόματα μόνο όταν είναι αδιαμφισβήτητο.",
+    ],
+  },
   {
     version: "2026-09-24.06",
     date: "2026-09-24",
@@ -1748,22 +1755,25 @@ export default function TournamentManager() {
     setConfirmingDelete(false);
   }
 
+  /** Matches a typed name to an existing registry player — but only when
+   * unambiguous. A shared first name (very common in Greek) must never be
+   * enough on its own; this requires every token of the shorter name to
+   * appear in the other, and only returns a match if exactly one registry
+   * player qualifies. Anything less certain is treated as a new player,
+   * never a guess — mixing up two different people is far worse than an
+   * occasional duplicate registry entry. */
   function findRegistryMatch(typedName) {
     const norm = normalizeName(typedName);
     if (registry.players[norm]) return registry.players[norm];
     const tokens = norm.split(/\s+/).filter(Boolean);
-    let best = null;
-    let bestScore = 0;
+    const candidates = [];
     Object.values(registry.players).forEach((p) => {
       const pTokens = normalizeName(p.name).split(/\s+/).filter(Boolean);
       const overlap = tokens.filter((t) => pTokens.includes(t)).length;
-      const score = overlap / Math.max(tokens.length, pTokens.length, 1);
-      if (score > bestScore) {
-        bestScore = score;
-        best = p;
-      }
+      const score = overlap / Math.min(tokens.length, pTokens.length, 1);
+      if (score >= 1) candidates.push(p);
     });
-    return bestScore >= 0.5 ? best : null;
+    return candidates.length === 1 ? candidates[0] : null;
   }
 
   function addPlayer() {
