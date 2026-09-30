@@ -6,6 +6,7 @@ import {
   ArrowRight,
   ArrowLeft,
   Download,
+  Link as LinkIcon,
   Upload,
   RotateCcw,
   UserX,
@@ -167,7 +168,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-25.08";
+const APP_BUILD_VERSION = "2026-09-25.10";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -191,6 +192,20 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-09-25.10",
+    date: "2026-09-25",
+    items: [
+      "Νέο κουμπί \"Αντιγραφή link τουρνουά\" σε κάθε τελειωμένο τουρνουά — μόνιμο link κατευθείαν στα αποτελέσματα/κληρώσεις αυτού του τουρνουά, χρήσιμο για ΒΜΑΒ, YouTube κλπ.",
+    ],
+  },
+  {
+    version: "2026-09-25.09",
+    date: "2026-09-25",
+    items: [
+      "Δοκιμή: στο WordPress feed, η Βαθμολογία και η Κατάταξη ELO εμφανίζονται πλέον σε πραγματικό πίνακα (στήλες: #, Παίκτης, Βαθμοί/ELO, Τάση) — σωστά στοιχισμένα. Το κείμενο copy/paste (Facebook) παραμένει απλή λίστα, αφού εκεί δεν αποδίδεται πίνακας.",
+    ],
+  },
   {
     version: "2026-09-25.08",
     date: "2026-09-25",
@@ -1614,6 +1629,7 @@ export default function TournamentManager() {
     if (hash === "season") setPhase("season");
     else if (hash === "elo") setPhase("elo");
     else if (hash === "about") setPhase("about");
+    else if (hash.startsWith("tournament=")) openArchived(hash.slice("tournament=".length));
   }, []);
 
   // Flag the "Σχετικά" nav button with a red dot once per browser per build,
@@ -2732,21 +2748,38 @@ export default function TournamentManager() {
       });
       // WordPress strips inline style="" attributes from imported content
       // for security, so custom boxes never survive, and blockquote/hr
-      // didn't look good either. Use plain headings instead — every WP
-      // theme styles <h4> distinctly (bold, spaced) with zero custom CSS
-      // needed — and turn the "👉 Label: URL" lines into real clickable
-      // links back into the app instead of showing the raw URL as text.
+      // didn't look good either. Use plain headings for most sections —
+      // every WP theme styles <h4> distinctly with zero custom CSS needed.
+      // The two ranking groups (Standings/ELO) become real <table>
+      // elements instead, so the numbers line up — something plain text
+      // can never do reliably (and Facebook/copy-paste can't render a
+      // table at all, hence this is only worth doing for the HTML feed).
       const linkLineRe = /^👉 (.+?): (https?:\/\/\S+)$/;
+      const rankLineRe = /^(\d+)\.\s+(.+?)\s+—\s+(.+?)\s+\((.+?)\)$/;
+      const rankGroupHeaders = { "📈 Βαθμολογία:": "Βαθμοί", "⭐ Κατάταξη ELO:": "ELO" };
       const htmlDescription = groups
-        .map((group) =>
-          group
+        .map((group) => {
+          const header = group[0];
+          if (rankGroupHeaders[header]) {
+            const rows = group
+              .slice(1)
+              .map((line) => line.match(rankLineRe))
+              .filter(Boolean)
+              .map(
+                (m) =>
+                  `<tr><td>${m[1]}</td><td>${m[2]}</td><td>${m[3]}</td><td>${m[4]}</td></tr>`
+              )
+              .join("");
+            return `<h4>${header}</h4><table><thead><tr><th>#</th><th>Παίκτης</th><th>${rankGroupHeaders[header]}</th><th>Τάση</th></tr></thead><tbody>${rows}</tbody></table>`;
+          }
+          return group
             .map((line, i) => {
               const linkMatch = line.match(linkLineRe);
               if (linkMatch) return `<p>👉 <a href="${linkMatch[2]}">${linkMatch[1]}</a></p>`;
               return i === 0 ? `<h4>${line}</h4>` : `<p>${line}</p>`;
             })
-            .join("")
-        )
+            .join("");
+        })
         .join("");
       const newItem = {
         guid: `${tournamentId || "tournament"}-${Date.now()}`,
@@ -5140,6 +5173,21 @@ export default function TournamentManager() {
               <div className="footer-actions" style={{ marginTop: 0, marginBottom: 20 }}>
                 <button className="btn-secondary" disabled={recapLoading} onClick={generateRecap}>
                   <Info size={15} /> {recapLoading ? "Δημιουργία…" : "Δημιούργησε σύνοψη ανακοίνωσης"}
+                </button>
+                <button
+                  className="btn-secondary"
+                  onClick={async () => {
+                    const link = `https://bgfed-tournament.vercel.app/#tournament=${tournamentId}`;
+                    try {
+                      await navigator.clipboard.writeText(link);
+                      showToast("Το link αντιγράφηκε!");
+                    } catch {
+                      showToast("Δεν ήταν δυνατή η αντιγραφή — επίλεξε και κάνε Ctrl+C.");
+                    }
+                  }}
+                  title="Μόνιμο link κατευθείαν σε αυτό το τουρνουά — για ΒΜΑΒ, YouTube κλπ."
+                >
+                  <LinkIcon size={15} /> Αντιγραφή link τουρνουά
                 </button>
               </div>
             )}
