@@ -168,7 +168,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-09-25.10";
+const APP_BUILD_VERSION = "2026-10-01.04";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -192,6 +192,35 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-01.04",
+    date: "2026-10-01",
+    items: [
+      "Νέα γραμμή κάτω από τον νικητή: \"Από {Χ} νίκες έκαναν οι: ...\" — αναφέρει όσους έκαναν μία νίκη λιγότερο από το τέλειο σκορ.",
+      "Στο WordPress, ο \"Νικητής της ημέρας\" εμφανίζεται πλέον πιο μεγάλος/ευδιάκριτος από τις υπόλοιπες επικεφαλίδες.",
+    ],
+  },
+  {
+    version: "2026-10-01.03",
+    date: "2026-10-01",
+    items: [
+      "Οι δύο πίνακες (Βαθμολογία, Κατάταξη ELO) έχουν τώρα ίδια, σταθερά πλάτη στηλών — δεν ταιριάζουν πια τυχαία ανάλογα με το μεγαλύτερο όνομα του καθενός.",
+    ],
+  },
+  {
+    version: "2026-10-01.02",
+    date: "2026-10-01",
+    items: [
+      "Στον πίνακα WordPress: \"38β\" → \"38\", \"Δ +4\" → \"+4\" — πιο καθαρό, αφού ο τίτλος της στήλης το λέει ήδη. Το copy/paste κείμενο (Facebook) παραμένει όπως ήταν.",
+    ],
+  },
+  {
+    version: "2026-10-01.01",
+    date: "2026-10-01",
+    items: [
+      "Στον πίνακα WordPress: \"Τάση\" → \"Μεταβολή\", και λίγο περισσότερος χώρος γύρω από κάθε κελί.",
+    ],
+  },
   {
     version: "2026-09-25.10",
     date: "2026-09-25",
@@ -2640,6 +2669,7 @@ export default function TournamentManager() {
       // 1. Top finishers of this specific tournament. "Winner(s) of the
       // day" = only players with a perfect record (wins === totalRounds).
       const perfectWinners = players.filter((p) => p.wins === totalRounds);
+      const runnersUp = totalRounds > 1 ? players.filter((p) => p.wins === totalRounds - 1) : [];
 
       // 2. Season Standings: compare with vs. without this tournament's entries.
       const seasonFull = await loadSeason(seasonYear);
@@ -2702,6 +2732,7 @@ export default function TournamentManager() {
         perfectWinners.length > 0
           ? `🏆 ${perfectWinners.length > 1 ? "Νικητές της ημέρας" : "Νικητής της ημέρας"}: ${perfectWinners.map((p) => p.name).join(", ")} (${totalRounds} νίκες)`
           : `🏆 Κανείς με τέλειο σκορ σήμερα`,
+        ...(runnersUp.length > 0 ? [`Από ${totalRounds - 1} νίκες έκαναν οι: ${runnersUp.map((p) => p.name).join(", ")}`] : []),
         "",
         "📈 Βαθμολογία:",
         ...top5Season,
@@ -2765,18 +2796,30 @@ export default function TournamentManager() {
               .slice(1)
               .map((line) => line.match(rankLineRe))
               .filter(Boolean)
-              .map(
-                (m) =>
-                  `<tr><td>${m[1]}</td><td>${m[2]}</td><td>${m[3]}</td><td>${m[4]}</td></tr>`
-              )
+              .map((m) => {
+                // A couple of &nbsp; give the cells breathing room — WordPress
+                // strips inline style="" (incl. padding) from imported content,
+                // so real CSS spacing isn't an option here, only literal text.
+                // The "β"/"Δ" suffix-prefix make sense in plain-text copy/paste
+                // but are redundant once there's an actual column header, so
+                // they're stripped only for this table version.
+                const value = m[3].replace(/β$/, "");
+                const trend = m[4].replace(/^Δ\s*/, "");
+                return `<tr><td>&nbsp;${m[1]}&nbsp;</td><td>&nbsp;${m[2]}&nbsp;</td><td>&nbsp;${value}&nbsp;</td><td>&nbsp;${trend}&nbsp;</td></tr>`;
+              })
               .join("");
-            return `<h4>${header}</h4><table><thead><tr><th>#</th><th>Παίκτης</th><th>${rankGroupHeaders[header]}</th><th>Τάση</th></tr></thead><tbody>${rows}</tbody></table>`;
+            // Fixed, matching column widths on both tables (the "width"
+            // attribute, not style="" — WordPress keeps this one), so the
+            // Player column lines up the same whether the longest name in
+            // this particular table happens to be short or long.
+            return `<h4>${header}</h4><table width="100%"><thead><tr><th width="8%">#</th><th width="46%">Παίκτης</th><th width="20%">${rankGroupHeaders[header]}</th><th width="26%">Μεταβολή</th></tr></thead><tbody>${rows}</tbody></table>`;
           }
           return group
             .map((line, i) => {
               const linkMatch = line.match(linkLineRe);
               if (linkMatch) return `<p>👉 <a href="${linkMatch[2]}">${linkMatch[1]}</a></p>`;
-              return i === 0 ? `<h4>${line}</h4>` : `<p>${line}</p>`;
+              if (i === 0) return line.startsWith("🏆") ? `<h3>${line}</h3>` : `<h4>${line}</h4>`;
+              return `<p>${line}</p>`;
             })
             .join("");
         })
