@@ -168,7 +168,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.01";
+const APP_BUILD_VERSION = "2026-10-08.02";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -192,6 +192,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.02",
+    date: "2026-10-08",
+    items: [
+      "Ασφάλεια: τα κουμπιά \"Export All Data\", \"Εξαγωγή σε Excel\", \"Import All Data\" και \"Άδειασμα RSS feed\" στο κάτω μέρος του Dashboard φαίνονται πλέον μόνο σε Admin. Πριν ήταν ορατά και στους επισκέπτες (το πλήρες αντίγραφο περιέχει τα στοιχεία επικοινωνίας των μελών).",
+    ],
+  },
   {
     version: "2026-10-08.01",
     date: "2026-10-08",
@@ -4983,29 +4990,31 @@ export default function TournamentManager() {
                 <span className="dashboard-card-desc">Λειτουργικότητες, τεχνικά στοιχεία, changelog</span>
               </button>
             </div>
-            <div className="footer-actions" style={{ marginTop: 24 }}>
-              <button className="btn-secondary" onClick={exportAllData}>
-                <Download size={15} /> Export All Data (full backup)
-              </button>
-              <button className="btn-secondary" onClick={exportBaselineExcel}>
-                <Download size={15} /> Εξαγωγή ELO &amp; Βαθμολογίας (Excel)
-              </button>
-              <button className="btn-secondary" onClick={() => fullBackupInputRef.current?.click()}>
-                <Upload size={15} /> Import All Data (restore backup)
-              </button>
-              <input type="file" accept="application/json" ref={fullBackupInputRef} onChange={importAllData} style={{ display: "none" }} />
-              {!confirmingClearFeed ? (
-                <button className="btn-ghost" onClick={() => setConfirmingClearFeed(true)}>
-                  <X size={15} /> Άδειασμα RSS feed
+            {isAdmin && (
+              <div className="footer-actions" style={{ marginTop: 24 }}>
+                <button className="btn-secondary" onClick={exportAllData}>
+                  <Download size={15} /> Export All Data (full backup)
                 </button>
-              ) : (
-                <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)" }}>
-                  Σίγουρα; Δεν επηρεάζει άρθρα που έχουν ήδη μπει στο bgfed.gr.
-                  <button className="btn-ghost" onClick={() => setConfirmingClearFeed(false)}>Άκυρο</button>
-                  <button className="btn-secondary" onClick={() => { clearFeed(); setConfirmingClearFeed(false); }}>Ναι, άδειασμα</button>
-                </span>
-              )}
-            </div>
+                <button className="btn-secondary" onClick={exportBaselineExcel}>
+                  <Download size={15} /> Εξαγωγή ELO &amp; Βαθμολογίας (Excel)
+                </button>
+                <button className="btn-secondary" onClick={() => fullBackupInputRef.current?.click()}>
+                  <Upload size={15} /> Import All Data (restore backup)
+                </button>
+                <input type="file" accept="application/json" ref={fullBackupInputRef} onChange={importAllData} style={{ display: "none" }} />
+                {!confirmingClearFeed ? (
+                  <button className="btn-ghost" onClick={() => setConfirmingClearFeed(true)}>
+                    <X size={15} /> Άδειασμα RSS feed
+                  </button>
+                ) : (
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)" }}>
+                    Σίγουρα; Δεν επηρεάζει άρθρα που έχουν ήδη μπει στο bgfed.gr.
+                    <button className="btn-ghost" onClick={() => setConfirmingClearFeed(false)}>Άκυρο</button>
+                    <button className="btn-secondary" onClick={() => { clearFeed(); setConfirmingClearFeed(false); }}>Ναι, άδειασμα</button>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}
