@@ -168,7 +168,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-01.04";
+const APP_BUILD_VERSION = "2026-10-08.01";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -192,6 +192,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.01",
+    date: "2026-10-08",
+    items: [
+      "Νέο κουμπί \"Εξαγωγή σε Excel\" (Dashboard και σελίδες ELO / Βαθμολογία, μόνο Admin): κατεβάζει ένα αρχείο .xlsx με το ELO, τη Βαθμολογία κάθε σεζόν, αναλυτικά ανά τουρνουά και ένα φύλλο πληροφοριών — για σύγκριση πριν και μετά από αλλαγές στα δεδομένα.",
+    ],
+  },
   {
     version: "2026-10-01.04",
     date: "2026-10-01",
@@ -815,6 +822,170 @@ function computeSeasonStandings(season, bestOf) {
 
 
 
+
+
+/* ---------------------------------------------------------------------- */
+/* Minimal .xlsx writer — no dependency. Builds a real Excel workbook     */
+/* (several sheets, bold header, frozen first row) as a "stored" ZIP.      */
+/* ---------------------------------------------------------------------- */
+
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function xlsxEscape(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "");
+}
+
+function xlsxColLetter(n) {
+  let s = "";
+  n += 1;
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+function xlsxSheetXml(rows) {
+  const widths = [];
+  rows.forEach((row) =>
+    row.forEach((v, c) => {
+      const len = v === null || v === undefined ? 0 : String(v).length;
+      widths[c] = Math.min(60, Math.max(widths[c] || 8, len + 2));
+    })
+  );
+  const cols = widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join("");
+  const body = rows
+    .map((row, r) => {
+      const cells = row
+        .map((v, c) => {
+          if (v === null || v === undefined || v === "") return "";
+          const ref = `${xlsxColLetter(c)}${r + 1}`;
+          const style = r === 0 ? ' s="1"' : "";
+          if (typeof v === "number" && Number.isFinite(v)) return `<c r="${ref}"${style}><v>${v}</v></c>`;
+          return `<c r="${ref}"${style} t="inlineStr"><is><t xml:space="preserve">${xlsxEscape(v)}</t></is></c>`;
+        })
+        .join("");
+      return `<row r="${r + 1}">${cells}</row>`;
+    })
+    .join("");
+  return (
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
+    `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    `<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` +
+    `<cols>${cols}</cols><sheetData>${body}</sheetData></worksheet>`
+  );
+}
+
+function buildXlsx(sheets) {
+  const enc = new TextEncoder();
+  const usedNames = new Set();
+  const safeSheets = sheets.map((s, i) => {
+    let name = s.name.replace(/[:\\/?*\[\]]/g, "-").slice(0, 31) || `Sheet${i + 1}`;
+    while (usedNames.has(name.toLowerCase())) name = `${name.slice(0, 28)}-${i + 1}`;
+    usedNames.add(name.toLowerCase());
+    return { ...s, name };
+  });
+
+  const files = [];
+  const add = (path, text) => files.push({ path, data: enc.encode(text) });
+
+  add(
+    "[Content_Types].xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
+      `<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>` +
+      `<Default Extension="xml" ContentType="application/xml"/>` +
+      `<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>` +
+      `<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>` +
+      safeSheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("") +
+      `</Types>`
+  );
+  add(
+    "_rels/.rels",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      `<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
+  );
+  add(
+    "xl/workbook.xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>` +
+      safeSheets.map((s, i) => `<sheet name="${xlsxEscape(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("") +
+      `</sheets></workbook>`
+  );
+  add(
+    "xl/_rels/workbook.xml.rels",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
+      safeSheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join("") +
+      `<Relationship Id="rId${safeSheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`
+  );
+  add(
+    "xl/styles.xml",
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+      `<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>` +
+      `<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>` +
+      `<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>` +
+      `<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>` +
+      `<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>` +
+      `<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`
+  );
+  safeSheets.forEach((s, i) => add(`xl/worksheets/sheet${i + 1}.xml`, xlsxSheetXml(s.rows)));
+
+  // "Stored" (uncompressed) ZIP container
+  const now = new Date();
+  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  files.forEach((f) => {
+    const nameBytes = enc.encode(f.path);
+    const crc = crc32(f.data);
+    const local = new Uint8Array(30 + nameBytes.length);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(6, 0x0800, true);
+    lv.setUint16(8, 0, true); lv.setUint16(10, dosTime, true); lv.setUint16(12, dosDate, true);
+    lv.setUint32(14, crc, true); lv.setUint32(18, f.data.length, true); lv.setUint32(22, f.data.length, true);
+    lv.setUint16(26, nameBytes.length, true); lv.setUint16(28, 0, true);
+    local.set(nameBytes, 30);
+    parts.push(local, f.data);
+
+    const cd = new Uint8Array(46 + nameBytes.length);
+    const cv = new DataView(cd.buffer);
+    cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true); cv.setUint16(10, 0, true); cv.setUint16(12, dosTime, true); cv.setUint16(14, dosDate, true);
+    cv.setUint32(16, crc, true); cv.setUint32(20, f.data.length, true); cv.setUint32(24, f.data.length, true);
+    cv.setUint16(28, nameBytes.length, true); cv.setUint32(42, offset, true);
+    cd.set(nameBytes, 46);
+    central.push(cd);
+    offset += local.length + f.data.length;
+  });
+  const cdSize = central.reduce((s, c) => s + c.length, 0);
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, files.length, true); ev.setUint16(10, files.length, true);
+  ev.setUint32(12, cdSize, true); ev.setUint32(16, offset, true);
+
+  const all = [...parts, ...central, end];
+  const out = new Uint8Array(all.reduce((s, a) => s + a.length, 0));
+  let p = 0;
+  all.forEach((a) => { out.set(a, p); p += a.length; });
+  return out;
+}
 
 const SEED_PLAYERS = 
 [
@@ -2302,6 +2473,85 @@ export default function TournamentManager() {
    * tournaments) from a file produced by "Export All Data". Overwrites
    * whatever is currently in storage — use right after Unpublish+Publish
    * (which starts from empty storage) to bring real data back. */
+  /** Exports the current ELO table and the Season Standings (every season
+   * year found in the database) to one Excel workbook — the same numbers the
+   * screens show, plus a per-tournament breakdown — so two states of the app
+   * can be compared side by side, e.g. before and after a data migration. */
+  async function exportBaselineExcel() {
+    try {
+      const elo = await loadElo();
+      const index = await loadIndex();
+      const years = [...(await listSeasonYears())].sort();
+
+      const eloRows = [["Rank", "Παίκτης", "Rating", "Rating (ακριβές)", "Matches", "Νίκες (κανονικές)", "Win % (all-time)", "Games", "Experience"]];
+      Object.values(elo.players || {})
+        .sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, "en"))
+        .forEach((p, i) => {
+          const matches = p.matches ?? p.games ?? 0;
+          eloRows.push([
+            i + 1, p.name, Math.round(p.rating), Math.round(p.rating * 100) / 100, matches, p.wins ?? 0,
+            matches > 0 ? Math.round(((p.wins ?? 0) / matches) * 1000) / 10 : null,
+            p.games ?? 0, p.experience ?? (p.games ?? 0) * 7,
+          ]);
+        });
+      const sheets = [{ name: "ELO", rows: eloRows }];
+
+      let seasonPlayerCounts = [];
+      for (const y of years) {
+        const season = await loadSeason(y);
+        const standings = computeSeasonStandings(season, SEASON_BEST_OF);
+        seasonPlayerCounts.push(`${y}: ${standings.length}`);
+        const rows = [["Rank", "Παίκτης", "Events", `Points (best ${SEASON_BEST_OF})`, "Total (all events)", "Wins (regular)", "Matches", "%"]];
+        standings.forEach((p, i) => rows.push([i + 1, p.name, p.eventsPlayed, p.total, p.sumAll, p.totalWins, p.totalMatches, p.pct]));
+        sheets.push({ name: `Βαθμολογία ${y}`, rows });
+
+        const detail = [["Παίκτης", "Τουρνουά", "Ημερομηνία", "Points", "Wins", "Α.Α.", "Bye", "Matches", "Μετράει στο best-of"]];
+        standings.forEach((p) => {
+          [...p.entries]
+            .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
+            .forEach((e) =>
+              detail.push([
+                p.name, e.tournamentName, String(e.date || "").slice(0, 10),
+                e.points ?? 0, e.wins ?? null, e.aa ?? null, e.bye ?? null, e.matches ?? null,
+                p.countedIds.has(e.tournamentId) ? "ναι" : "όχι",
+              ])
+            );
+        });
+        sheets.push({ name: `Αναλυτικά ${y}`, rows: detail });
+      }
+
+      const uniqueTournaments = new Set(index.map((t) => t.id));
+      const officialTournaments = new Set(index.filter((t) => t.isOfficial).map((t) => t.id));
+      sheets.push({
+        name: "Πληροφορίες",
+        rows: [
+          ["Στοιχείο", "Τιμή"],
+          ["Build εφαρμογής", APP_BUILD_VERSION],
+          ["Ώρα εξαγωγής", new Date().toISOString()],
+          ["Παίκτες στο ELO", Object.keys(elo.players || {}).length],
+          ["Παίκτες ανά σεζόν", seasonPlayerCounts.join(" · ") || "—"],
+          ["Τουρνουά στον κατάλογο (μοναδικά)", uniqueTournaments.size],
+          ["Από αυτά, επίσημα (Official League)", officialTournaments.size],
+          ["Best-of που εφαρμόστηκε", SEASON_BEST_OF],
+        ],
+      });
+
+      const bytes = buildXlsx(sheets);
+      const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bgfed_elo_vathmologia_${APP_BUILD_VERSION}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("Το αρχείο Excel κατέβηκε.");
+    } catch (err) {
+      showToast("Η εξαγωγή σε Excel απέτυχε — δοκίμασε ξανά.");
+    }
+  }
+
   function importAllData(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -3297,9 +3547,14 @@ export default function TournamentManager() {
           <p style={{ fontWeight: 700, margin: "0 0 2px 0" }}>Χρειάζεσαι να ξαναχτίσεις τα δεδομένα;</p>
           <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Ξαναϋπολογίζει ELO και Season Standings από την αρχή, μόνο από τουρνουά "Official League day".</p>
         </div>
-        <button className="btn-secondary" onClick={() => setConfirmingRecompute(true)}>
-          <RotateCcw size={15} /> Recompute ELO &amp; Season Standings
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn-secondary" onClick={exportBaselineExcel}>
+            <Download size={15} /> Εξαγωγή σε Excel
+          </button>
+          <button className="btn-secondary" onClick={() => setConfirmingRecompute(true)}>
+            <RotateCcw size={15} /> Recompute ELO &amp; Season Standings
+          </button>
+        </div>
       </div>
     ) : (
       <div className="delete-confirm">
@@ -4731,6 +4986,9 @@ export default function TournamentManager() {
             <div className="footer-actions" style={{ marginTop: 24 }}>
               <button className="btn-secondary" onClick={exportAllData}>
                 <Download size={15} /> Export All Data (full backup)
+              </button>
+              <button className="btn-secondary" onClick={exportBaselineExcel}>
+                <Download size={15} /> Εξαγωγή ELO &amp; Βαθμολογίας (Excel)
               </button>
               <button className="btn-secondary" onClick={() => fullBackupInputRef.current?.click()}>
                 <Upload size={15} /> Import All Data (restore backup)
