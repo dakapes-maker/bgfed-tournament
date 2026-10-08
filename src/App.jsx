@@ -31,7 +31,6 @@ import {
 import {
   loadAdminPassword,
   saveAdminPassword,
-  loadRegistry,
   saveRegistry,
   loadElo,
   saveElo,
@@ -45,6 +44,12 @@ import {
   listSeasonYears,
   loadFeedItems,
   saveFeedItems,
+  loadRegistryStrict,
+  loadEloStrict,
+  loadIndexStrict,
+  loadSeasonStrict,
+  fetchTournamentDataStrict,
+  listSeasonYearsStrict,
 } from "./firebase.js";
 
 /* ---------------------------------------------------------------------- */
@@ -170,7 +175,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.05";
+const APP_BUILD_VERSION = "2026-10-08.06";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -187,6 +192,7 @@ const FEATURES_SUMMARY = [
   "Season Standings — ετήσια κατάταξη με άθροισμα των καλύτερων εμφανίσεων.",
   "Διαχείριση Α.Α. (αποχώρηση παίκτη), με ρητή απόσυρση από το τουρνουά και ένδειξη διπλού Α.Α.",
   "Σημαία \"Official League Day\" και Recompute ELO/Standings από την αρχή, μόνο για επίσημες μέρες.",
+  "Διοργανώσεις (Premier League, Τελική φάση, Κύπελλο), σεζόν και λέσχη για κάθε τουρνουά.",
   "Πλήρες Export / Import δεδομένων (backup) από το Dashboard.",
   "Statistics — αναλυτικά στατιστικά παίκτη έναντι κάθε αντιπάλου, σερί νικών/συμμετοχών, κατακτήσεις τουρνουά, πρωτοπορία σε βαθμολογία/ELO.",
   "Κύριο μενού και τίτλοι σελίδων στα Ελληνικά (προεπιλογή), με εναλλαγή σε Αγγλικά.",
@@ -194,6 +200,17 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.06",
+    date: "2026-10-08",
+    items: [
+      "Ασφάλεια δεδομένων: αν η βάση δεν διαβαστεί σωστά (π.χ. στιγμιαία διακοπή σύνδεσης), η εφαρμογή δεν γράφει πια τίποτα πάνω στα πραγματικά δεδομένα — ούτε στην εκκίνηση, ούτε στο κλείσιμο γύρου, ούτε στο Recompute ή στο Export All Data.",
+      "Κάθε αποθήκευση μητρώου, ELO, καταλόγου τουρνουά και RSS feed ελέγχεται· αν αποτύχει, εμφανίζεται κόκκινο πλαίσιο που λέει τι δεν αποθηκεύτηκε.",
+      "Νέα τουρνουά: ημερομηνία, σεζόν (προτείνεται από την ημερομηνία, με προειδοποίηση αν δεν ταιριάζει), διοργάνωση και λέσχη. Τα ίδια στοιχεία αλλάζουν και σε υπάρχον τουρνουά.",
+      "Διοργανώσεις: Premier League (επίπεδο συλλόγου), Τελική φάση και Κύπελλο (εθνικό επίπεδο). Προς το παρόν, σε ELO και Βαθμολογία μετράει μόνο η Premier League.",
+      "Στην καρτέλα παίκτη, κάθε τουρνουά του ιστορικού ανοίγει με κλικ, με κουμπί «Πίσω στον παίκτη».",
+    ],
+  },
   {
     version: "2026-10-08.05",
     date: "2026-10-08",
@@ -915,7 +932,14 @@ function formatNameForDisplay(name, mode) {
 }
 
 async function pushSeasonUpdate(year, tournamentId, tournamentName, date, playersList) {
-  const season = await loadSeason(year);
+  // Strict read: if the season cannot be read, write nothing. Writing onto
+  // an empty stand-in would replace the whole season with this tournament.
+  let season;
+  try {
+    season = await loadSeasonStrict(year);
+  } catch {
+    return false;
+  }
   playersList.forEach((p) => {
     const key = normalizeName(p.name);
     if (!season.players[key]) season.players[key] = { name: displayNameFor(key, p.name), entries: {} };
@@ -1154,8 +1178,80 @@ async function loadSysState() {
 }
 
 async function saveSysState(patch) {
-  const cur = await loadSysState();
+  // Read strictly: if the read fails we must NOT write { ...{}, ...patch },
+  // which would wipe lastExportAt, purgedIds and the other settings.
+  let cur;
+  try {
+    const d = await fetchTournamentDataStrict(SYS_STATE_ID);
+    cur = d && typeof d === "object" ? d : {};
+  } catch {
+    return false;
+  }
   return await saveTournamentData(SYS_STATE_ID, { ...cur, ...patch });
+}
+
+/* ---------------------------------------------------------------------- */
+/* Competitions, seasons and the organising club (Build 2)                */
+/* ---------------------------------------------------------------------- */
+
+const DEFAULT_COMPETITION_ID = "premier-league";
+const DEFAULT_COMPETITIONS = [
+  { id: "premier-league", name: "Premier League", level: "club" },
+  { id: "final-phase", name: "Τελική φάση", level: "national" },
+  { id: "cup", name: "Κύπελλο", level: "national" },
+];
+const COMPETITION_LEVEL_LABEL = { club: "επίπεδο συλλόγου", national: "εθνικό επίπεδο" };
+
+function competitionsFrom(sys) {
+  return Array.isArray(sys?.competitions) && sys.competitions.length > 0 ? sys.competitions : DEFAULT_COMPETITIONS;
+}
+
+/** Until the separate ELO pools of Build 3, only official Premier League
+ * tournaments feed the ELO and the season standings. A catalogue entry with
+ * no competition yet (before the Build 2 migration) is Premier League. */
+function countsTowardRatings(t) {
+  return !!t && !!t.isOfficial && (t.competitionId || DEFAULT_COMPETITION_ID) === DEFAULT_COMPETITION_ID;
+}
+
+function competitionName(competitions, id) {
+  const c = (competitions || DEFAULT_COMPETITIONS).find((x) => x.id === id);
+  return c ? c.name : id || "—";
+}
+
+/** "YYYY-MM-DD" of an ISO timestamp, in the browser's local time (Athens). */
+function isoToLocalYMD(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Moves an ISO timestamp to another calendar day, keeping its time of day
+ * (so tournaments on the same day keep their original order). */
+function withLocalDate(iso, ymd) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  const base = iso ? new Date(iso) : new Date();
+  const t = isNaN(base.getTime()) ? new Date() : base;
+  return new Date(y, m - 1, d, t.getHours(), t.getMinutes(), t.getSeconds(), t.getMilliseconds()).toISOString();
+}
+
+/** The season a tournament date belongs to. The 2026 season is a one-off
+ * that runs from 27/9/2025 to 31/12/2026; from 2027 a season is the
+ * calendar year. Returns null for a date before the first season. */
+function seasonForDate(iso) {
+  const ymd = isoToLocalYMD(iso);
+  if (!ymd) return null;
+  if (ymd >= "2027-01-01") return Number(ymd.slice(0, 4));
+  if (ymd >= "2025-09-27") return 2026;
+  return null;
+}
+
+/** Human-readable range of a season, for warnings. */
+function seasonRangeLabel(year) {
+  if (year === 2026) return "27/9/2025 – 31/12/2026";
+  return `1/1/${year} – 31/12/${year}`;
 }
 
 /** Remembers which tournament changed the stored ELO, so a later check can
@@ -1180,7 +1276,7 @@ function stripAccents(s) {
  * catalogue. Read-only: it never changes anything. */
 function buildConsistencyReport({ elo, seasons, index, display }) {
   const idx = new Map(index.map((t) => [t.id, t]));
-  const finishedOfficial = index.filter((t) => t.isOfficial && t.status === "Completed");
+  const finishedOfficial = index.filter((t) => countsTowardRatings(t) && t.status === "Completed");
   const report = {
     trackingMissing: !elo.appliedTournaments,
     eloExtra: [], eloMissing: [], seasonExtra: [], seasonMissing: [],
@@ -1192,7 +1288,7 @@ function buildConsistencyReport({ elo, seasons, index, display }) {
   Object.entries(applied).forEach(([id, a]) => {
     const t = idx.get(id);
     if (!t) report.eloExtra.push({ id, name: a.name, reason: "missing" });
-    else if (!t.isOfficial) report.eloExtra.push({ id, name: t.name, reason: "unofficial" });
+    else if (!countsTowardRatings(t)) report.eloExtra.push({ id, name: t.name, reason: "unofficial" });
   });
   if (!report.trackingMissing) {
     finishedOfficial.forEach((t) => {
@@ -1216,7 +1312,7 @@ function buildConsistencyReport({ elo, seasons, index, display }) {
   seasonIds.forEach((info, id) => {
     const t = idx.get(id);
     if (!t) report.seasonExtra.push({ id, name: info.name, year: info.year, reason: "missing" });
-    else if (!t.isOfficial) report.seasonExtra.push({ id, name: t.name, year: info.year, reason: "unofficial" });
+    else if (!countsTowardRatings(t)) report.seasonExtra.push({ id, name: t.name, year: info.year, reason: "unofficial" });
   });
   finishedOfficial.forEach((t) => {
     if (!seasonIds.has(t.id)) report.seasonMissing.push({ id: t.id, name: t.name });
@@ -1276,11 +1372,11 @@ function describeStaleReasons(report) {
   const label = (x) => `"${x.name}"`;
   const uo = report.eloExtra.filter((x) => x.reason === "unofficial");
   const miss = report.eloExtra.filter((x) => x.reason === "missing");
-  if (uo.length) out.push(`Το ELO περιλαμβάνει δοκιμαστικό τουρνουά: ${uo.map(label).join(", ")}.`);
+  if (uo.length) out.push(`Το ELO περιλαμβάνει δοκιμαστικό ή εκτός Premier League τουρνουά: ${uo.map(label).join(", ")}.`);
   if (miss.length) out.push(`Το ELO περιλαμβάνει τουρνουά που δεν υπάρχει πια στον κατάλογο: ${miss.map(label).join(", ")}.`);
   const suo = report.seasonExtra.filter((x) => x.reason === "unofficial");
   const smiss = report.seasonExtra.filter((x) => x.reason === "missing");
-  if (suo.length) out.push(`Η Βαθμολογία περιλαμβάνει δοκιμαστικό τουρνουά: ${suo.map(label).join(", ")}.`);
+  if (suo.length) out.push(`Η Βαθμολογία περιλαμβάνει δοκιμαστικό ή εκτός Premier League τουρνουά: ${suo.map(label).join(", ")}.`);
   if (smiss.length) out.push(`Η Βαθμολογία περιλαμβάνει τουρνουά που δεν υπάρχει πια: ${smiss.map(label).join(", ")}.`);
   if (report.eloMissing.length) out.push(`Επίσημο τουρνουά που δεν έχει περαστεί στο ELO: ${report.eloMissing.map(label).join(", ")}.`);
   if (report.seasonMissing.length) out.push(`Επίσημο τουρνουά που δεν έχει περαστεί στη Βαθμολογία: ${report.seasonMissing.map(label).join(", ")}.`);
@@ -2152,6 +2248,13 @@ export default function TournamentManager() {
   const [seasonYear, setSeasonYear] = useState(new Date().getFullYear());
   const [liveStandingsEnabled, setLiveStandingsEnabled] = useState(false);
   const [isOfficial, setIsOfficial] = useState(true); // Official League day — only these count in "Recompute from scratch"
+  const [competitionId, setCompetitionId] = useState(DEFAULT_COMPETITION_ID); // Build 2: which competition this tournament belongs to
+  const [organisation, setOrganisation] = useState(""); // Build 2: organising club; new tournaments default to the home club
+  const [tournamentReturnPlayer, setTournamentReturnPlayer] = useState(null); // player card to go back to, when opened from its history
+  const [metaEdit, setMetaEdit] = useState(null); // admin edit of date/season/competition/club: { date, seasonYear, competitionId, organisation }
+  const [homeClubDraft, setHomeClubDraft] = useState(null);
+  const [metaPlan, setMetaPlan] = useState(null); // dry-run report of the competitions/club migration
+  const [metaBusy, setMetaBusy] = useState(false);
   const [players, setPlayers] = useState([]);
   const [round, setRound] = useState(1);
   const [currentPairings, setCurrentPairings] = useState(null);
@@ -2169,6 +2272,34 @@ export default function TournamentManager() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToast(""), 2500);
   }
+
+  /* ---- save results (Build 2) ----
+   * Registry, ELO, the tournament catalogue and the RSS feed now report
+   * whether they were saved. A failure stays on screen (admin banner) until
+   * dismissed, naming what was not saved. If the database could not be read
+   * at start-up, these writes are refused altogether: the app is then
+   * holding empty stand-ins, and saving them would overwrite real data. */
+  const [saveFailures, setSaveFailures] = useState([]); // [{ what, at }]
+  const [startupReadFailed, setStartupReadFailed] = useState(false);
+  const writesBlockedRef = useRef(false);
+
+  function reportSaveFailure(what) {
+    setSaveFailures((prev) => [...prev.filter((f) => f.what !== what), { what, at: new Date().toISOString() }]);
+  }
+
+  async function guardedSave(saveFn, what, arg) {
+    if (writesBlockedRef.current) {
+      reportSaveFailure(`${what} — δεν επιχειρήθηκε, γιατί η βάση δεν διαβάστηκε σωστά στην εκκίνηση`);
+      return false;
+    }
+    const ok = await saveFn(arg);
+    if (!ok) reportSaveFailure(what);
+    return !!ok;
+  }
+  const saveRegistryChecked = (data) => guardedSave(saveRegistry, "Μητρώο παικτών", data);
+  const saveEloChecked = (data) => guardedSave(saveElo, "Κατάταξη ELO", data);
+  const saveIndexChecked = (list) => guardedSave(saveIndex, "Κατάλογος τουρνουά", list);
+  const saveFeedItemsChecked = (items) => guardedSave(saveFeedItems, "RSS feed", items);
 
   const [archive, setArchive] = useState([]);
   const [searchName, setSearchName] = useState("");
@@ -2247,16 +2378,33 @@ export default function TournamentManager() {
 
   useEffect(() => {
     async function init() {
-      let index = await loadIndex();
-      const trashList = await loadSysTrash();
-      const sys = await loadSysState();
+      // Every start-up read is STRICT: a read that fails (offline, timeout)
+      // throws instead of looking like "nothing stored yet". Without this, a
+      // single failed read would make the app re-seed the registry, rebuild
+      // the ELO from the 11 historical days, or rewrite the catalogue with
+      // only those days — overwriting real data. On failure nothing is
+      // written and every later registry/ELO/catalogue save is refused.
+      let index, trashList, sys, registryData, season2026, eloStart;
+      try {
+        index = await loadIndexStrict();
+        const trashDoc = await fetchTournamentDataStrict(SYS_TRASH_ID);
+        trashList = trashDoc && Array.isArray(trashDoc.list) ? trashDoc.list : [];
+        const sysDoc = await fetchTournamentDataStrict(SYS_STATE_ID);
+        sys = sysDoc && typeof sysDoc === "object" ? sysDoc : {};
+        registryData = await loadRegistryStrict();
+        season2026 = await loadSeasonStrict(2026);
+        eloStart = await loadEloStrict();
+      } catch {
+        writesBlockedRef.current = true;
+        setStartupReadFailed(true);
+        return;
+      }
       setTrash(trashList);
       setSysState(sys);
       // Days that were moved to the trash, or permanently removed on purpose,
       // must never be re-created from the built-in copy.
       const blockedIds = new Set([...trashList.map((t) => t.id), ...(sys.purgedIds || [])]);
 
-      const registryData = await loadRegistry();
       if (Object.keys(registryData.players || {}).length === 0) {
         const seeded = { players: {} };
         SEED_PLAYERS.forEach((p) => {
@@ -2265,27 +2413,26 @@ export default function TournamentManager() {
           };
         });
         setRegistry(seeded);
-        await saveRegistry(seeded);
+        await saveRegistryChecked(seeded);
       } else {
         setRegistry(registryData);
       }
       setRegistryLoaded(true);
 
-      const season = await loadSeason(2026);
-      const alreadyImported = Object.values(season.players || {}).some((p) =>
+      const alreadyImported = Object.values(season2026.players || {}).some((p) =>
         Object.keys(p.entries || {}).some((id) => id.startsWith("hist-day"))
       );
       if (!alreadyImported) {
-        await importHistoricalSeason2026();
+        await importHistoricalSeason2026(season2026);
       }
 
-      const elo = await loadElo();
+      const elo = eloStart;
       if (!elo.initialized) {
         HISTORICAL_ELO_ROUNDS_2026.forEach((roundMatches) => {
           applyEloRoundBatch(elo, roundMatches, 7); // all 11 historical days used 7-point matches
         });
         elo.initialized = true;
-        await saveElo(elo);
+        await saveEloChecked(elo);
       }
 
       const days = Object.values(HISTORICAL_TOURNAMENTS_2026);
@@ -2297,31 +2444,40 @@ export default function TournamentManager() {
       const missingDays = days.filter((t) => !index.some((idx) => idx.id === t.tournamentId) && !blockedIds.has(t.tournamentId));
       if (missingDays.length > 0) {
         let allOk = true;
+        const newIndexEntries = [];
         for (const t of missingDays) {
           // If the document already exists in the database (e.g. only the
           // catalogue entry was lost), keep it — it may hold corrections made
-          // in the app — and just restore its catalogue entry below.
-          const existing = await fetchTournamentData(t.tournamentId);
-          if (existing && existing.players) continue;
-          const result = await saveTournamentData(t.tournamentId, {
-            tournamentName: t.tournamentName,
-            totalRounds: t.totalRounds,
-            matchLength: t.matchLength,
-            seasonYear: t.seasonYear,
-            liveStandingsEnabled: t.liveStandingsEnabled,
-            isOfficial: true,
-            phase: t.phase,
-            players: t.players,
-            round: t.round,
-            currentPairings: t.currentPairings,
-            history: t.history,
-            createdAt: t.createdAt,
-          });
-          if (!result) allOk = false;
-        }
-        const newIndexEntries = [];
-        for (const t of missingDays) {
-          const existing = await fetchTournamentData(t.tournamentId);
+          // in the app — and just restore its catalogue entry below. The read
+          // is strict: a failed read must not be taken as "missing".
+          let existing;
+          try {
+            existing = await fetchTournamentDataStrict(t.tournamentId);
+          } catch {
+            allOk = false;
+            continue;
+          }
+          if (!(existing && existing.players)) {
+            const result = await saveTournamentData(t.tournamentId, {
+              tournamentName: t.tournamentName,
+              totalRounds: t.totalRounds,
+              matchLength: t.matchLength,
+              seasonYear: t.seasonYear,
+              competitionId: DEFAULT_COMPETITION_ID,
+              liveStandingsEnabled: t.liveStandingsEnabled,
+              isOfficial: true,
+              phase: t.phase,
+              players: t.players,
+              round: t.round,
+              currentPairings: t.currentPairings,
+              history: t.history,
+              createdAt: t.createdAt,
+            });
+            if (!result) {
+              allOk = false;
+              continue;
+            }
+          }
           newIndexEntries.push({
             id: t.tournamentId,
             name: existing?.tournamentName || t.tournamentName,
@@ -2329,10 +2485,14 @@ export default function TournamentManager() {
             status: "Completed",
             totalRounds: existing?.totalRounds || t.totalRounds,
             isOfficial: existing ? existing.isOfficial !== false : true,
+            seasonYear: existing?.seasonYear || t.seasonYear,
+            competitionId: existing?.competitionId || DEFAULT_COMPETITION_ID,
           });
         }
-        index = [...index, ...newIndexEntries];
-        await saveIndex(index);
+        if (newIndexEntries.length > 0) {
+          index = [...index, ...newIndexEntries];
+          await saveIndexChecked(index);
+        }
         if (!allOk) {
           setNotice("Some historical tournaments failed to save — try reloading the app.");
         }
@@ -2342,6 +2502,10 @@ export default function TournamentManager() {
     }
     init();
   }, []);
+
+  useEffect(() => {
+    if (!["tournament", "finished", "setup"].includes(phase)) setTournamentReturnPlayer(null);
+  }, [phase]);
 
   useEffect(() => {
     if (phase === "tournament") setSelectedRound(round);
@@ -2373,7 +2537,7 @@ export default function TournamentManager() {
   /* ---- archive persistence ---- */
 
   function currentSnapshot() {
-    return { tournamentName, totalRounds, matchLength, seasonYear, liveStandingsEnabled, isOfficial, sideBets, calcuttaEntries, phase, players, round, currentPairings, history, createdAt };
+    return { tournamentName, totalRounds, matchLength, seasonYear, competitionId, organisation, liveStandingsEnabled, isOfficial, sideBets, calcuttaEntries, phase, players, round, currentPairings, history, createdAt };
   }
 
   async function persistCurrent(nextPhase, nextRound, nextPlayers, nextPairings, nextHistory, nextSideBets = sideBets, nextCalcuttaEntries = calcuttaEntries) {
@@ -2383,6 +2547,8 @@ export default function TournamentManager() {
       totalRounds,
       matchLength,
       seasonYear,
+      competitionId,
+      organisation,
       liveStandingsEnabled,
       isOfficial,
       sideBets: nextSideBets,
@@ -2404,8 +2570,10 @@ export default function TournamentManager() {
         status: nextPhase === "finished" ? "Completed" : "In progress",
         totalRounds,
         isOfficial,
+        seasonYear,
+        competitionId,
       });
-      saveIndex(next);
+      saveIndexChecked(next);
       return next;
     });
   }
@@ -2420,7 +2588,9 @@ export default function TournamentManager() {
     setMatchLength(7);
     setSideBets([]);
     setCalcuttaEntries([]);
-    setSeasonYear(new Date().getFullYear());
+    setSeasonYear(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
+    setCompetitionId(DEFAULT_COMPETITION_ID);
+    setOrganisation(sysState.homeClub || "");
     setLiveStandingsEnabled(false);
     setIsOfficial(true);
     setPlayers([]);
@@ -2559,7 +2729,7 @@ export default function TournamentManager() {
     saveTournamentData(tournamentId, { ...currentSnapshot(), isOfficial: next });
     setArchive((prev) => {
       const updated = prev.map((t) => (t.id === tournamentId ? { ...t, isOfficial: next } : t));
-      saveIndex(updated);
+      saveIndexChecked(updated);
       return updated;
     });
   }
@@ -2762,8 +2932,12 @@ export default function TournamentManager() {
 
   const roundComplete = currentPairings && currentPairings.pairs.every((pr) => pr.result !== null);
 
-  async function finalizeRoundAndAdvance(updateSeason) {
+  async function finalizeRoundAndAdvance(updateSeasonRequested) {
     if (!roundComplete) return;
+    // Until Build 3's separate ELO pools, only Premier League tournaments
+    // feed the (club) ELO and the season standings.
+    const ratingsCount = competitionId === DEFAULT_COMPETITION_ID;
+    const updateSeason = updateSeasonRequested && ratingsCount;
     const byId = {};
     players.forEach((p) => (byId[p.id] = { ...p, opponents: [...p.opponents], matchLog: [...p.matchLog] }));
 
@@ -2809,12 +2983,16 @@ export default function TournamentManager() {
     setHistory(newHistory);
 
     const eloRoundMatches = buildEloRoundMatches(currentPairings.pairs, byId);
-    if (liveStandingsEnabled) {
-      loadElo().then((elo) => {
-        applyEloRoundBatch(elo, eloRoundMatches, matchLength);
-        markEloApplied(elo, tournamentId, tournamentName, "live");
-        saveElo(elo);
-      });
+    if (liveStandingsEnabled && ratingsCount) {
+      // Strict read: on a failed read nothing is written (writing onto an
+      // empty stand-in would replace the whole ELO with this one round).
+      loadEloStrict()
+        .then((elo) => {
+          applyEloRoundBatch(elo, eloRoundMatches, matchLength);
+          markEloApplied(elo, tournamentId, tournamentName, "live");
+          return saveEloChecked(elo);
+        })
+        .catch(() => reportSaveFailure(`Κατάταξη ELO (γύρος ${round}) — η ELO δεν διαβάστηκε, δεν γράφτηκε τίποτα· τρέξε Recompute`));
     }
 
     // Retries once on failure — saveSeason now honestly reports success/failure
@@ -2838,13 +3016,20 @@ export default function TournamentManager() {
       setPhase("finished");
       setCurrentPairings(null);
       await persistCurrent("finished", round, updatedPlayers, null, newHistory);
-      if (!liveStandingsEnabled) {
-        const elo = await loadElo();
-        newHistory.forEach((entry) => {
-          applyEloRoundBatch(elo, buildEloRoundMatches(entry.pairs, byId), matchLength);
-        });
-        markEloApplied(elo, tournamentId, tournamentName, "end");
-        await saveElo(elo);
+      if (!liveStandingsEnabled && ratingsCount) {
+        let elo = null;
+        try {
+          elo = await loadEloStrict();
+        } catch {
+          reportSaveFailure("Κατάταξη ELO (τέλος τουρνουά) — η ELO δεν διαβάστηκε, δεν γράφτηκε τίποτα· τρέξε Recompute");
+        }
+        if (elo) {
+          newHistory.forEach((entry) => {
+            applyEloRoundBatch(elo, buildEloRoundMatches(entry.pairs, byId), matchLength);
+          });
+          markEloApplied(elo, tournamentId, tournamentName, "end");
+          await saveEloChecked(elo);
+        }
       }
       if (updateSeason) {
         const seasonOk = await pushSeasonUpdateWithRetry();
@@ -2856,6 +3041,8 @@ export default function TournamentManager() {
             "Warning: couldn't save to Season Standings after two tries. Mark this tournament \"Official League day\" (if it should count) and use \"Recompute ELO & Season Standings from scratch\" on the ELO page to pick it up.",
           ].filter(Boolean).join(" ");
         }
+      } else if (!ratingsCount) {
+        noticeMsg = [noticeMsg, `Το τουρνουά τελείωσε. Ως «${competitionName(competitionsFrom(sysState), competitionId)}» δεν μετράει σε ELO και Βαθμολογία.`].filter(Boolean).join(" ");
       } else {
         noticeMsg = [noticeMsg, "Tournament finished (Season Standings not updated, as requested)."].filter(Boolean).join(" ");
       }
@@ -2865,7 +3052,7 @@ export default function TournamentManager() {
       setRound(nextRound);
       setCurrentPairings(nextPairing);
       await persistCurrent("tournament", nextRound, updatedPlayers, nextPairing, newHistory);
-      if (liveStandingsEnabled) {
+      if (liveStandingsEnabled && ratingsCount) {
         const seasonOk = await pushSeasonUpdateWithRetry();
         noticeMsg = [
           noticeMsg,
@@ -2881,24 +3068,35 @@ export default function TournamentManager() {
   /* ---- file persistence (local download / upload) ---- */
 
   async function exportAllData() {
-    const registryData = await loadRegistry();
-    const eloData2 = await loadElo();
-    const index = await loadIndex();
-    const years = await listSeasonYears();
-    const seasons = {};
-    for (const y of years) {
-      seasons[y] = await loadSeason(y);
+    // Every read is strict: a backup with a silently missing part is worse
+    // than no backup, because it would also reset the "last export" clock
+    // that the migrations rely on.
+    let registryData, eloData2, index, seasons, tournaments, trashList, trashedTournaments, sysNow;
+    try {
+      registryData = await loadRegistryStrict();
+      eloData2 = await loadEloStrict();
+      index = await loadIndexStrict();
+      const years = await listSeasonYearsStrict();
+      seasons = {};
+      for (const y of years) {
+        seasons[y] = await loadSeasonStrict(y);
+      }
+      tournaments = {};
+      for (const t of index) {
+        tournaments[t.id] = await fetchTournamentDataStrict(t.id);
+      }
+      const trashDoc = await fetchTournamentDataStrict(SYS_TRASH_ID);
+      trashList = trashDoc && Array.isArray(trashDoc.list) ? trashDoc.list : [];
+      trashedTournaments = {};
+      for (const t of trashList) {
+        trashedTournaments[t.id] = await fetchTournamentDataStrict(t.id);
+      }
+      const sysDoc = await fetchTournamentDataStrict(SYS_STATE_ID);
+      sysNow = sysDoc && typeof sysDoc === "object" ? sysDoc : {};
+    } catch {
+      reportSaveFailure("Export All Data — η βάση δεν διαβάστηκε πλήρως, ΔΕΝ κατέβηκε αρχείο. Δοκίμασε ξανά.");
+      return;
     }
-    const tournaments = {};
-    for (const t of index) {
-      tournaments[t.id] = await fetchTournamentData(t.id);
-    }
-    const trashList = await loadSysTrash();
-    const trashedTournaments = {};
-    for (const t of trashList) {
-      trashedTournaments[t.id] = await fetchTournamentData(t.id);
-    }
-    const sysNow = await loadSysState();
     const exportedAtIso = new Date().toISOString();
     const fullBackup = {
       exportedAt: exportedAtIso,
@@ -2909,7 +3107,7 @@ export default function TournamentManager() {
       tournaments,
       trash: trashList,
       trashedTournaments,
-      sysState: { purgedIds: sysNow.purgedIds || [] },
+      sysState: { purgedIds: sysNow.purgedIds || [], homeClub: sysNow.homeClub || "", competitions: competitionsFrom(sysNow) },
     };
     const blob = new Blob([JSON.stringify(fullBackup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2922,8 +3120,11 @@ export default function TournamentManager() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     showToast("Full backup downloaded.");
-    await saveSysState({ lastExportAt: exportedAtIso });
-    setSysState((s) => ({ ...s, lastExportAt: exportedAtIso }));
+    if (await saveSysState({ lastExportAt: exportedAtIso })) {
+      setSysState((s) => ({ ...s, lastExportAt: exportedAtIso }));
+    } else {
+      reportSaveFailure("Ημερομηνία τελευταίου export — το αρχείο κατέβηκε, αλλά η εφαρμογή δεν κατέγραψε την ώρα του");
+    }
   }
 
   /** Restores every store (registry, ELO, archive index, all seasons, all
@@ -2936,9 +3137,9 @@ export default function TournamentManager() {
    * can be compared side by side, e.g. before and after a data migration. */
   async function exportBaselineExcel() {
     try {
-      const elo = await loadElo();
-      const index = await loadIndex();
-      const years = [...(await listSeasonYears())].sort();
+      const elo = await loadEloStrict();
+      const index = await loadIndexStrict();
+      const years = [...(await listSeasonYearsStrict())].sort();
 
       const eloRows = [["Rank", "Παίκτης", "Rating", "Rating (ακριβές)", "Matches", "Νίκες (κανονικές)", "Win % (all-time)", "Games", "Experience"]];
       Object.values(elo.players || {})
@@ -2955,7 +3156,7 @@ export default function TournamentManager() {
 
       let seasonPlayerCounts = [];
       for (const y of years) {
-        const season = await loadSeason(y);
+        const season = await loadSeasonStrict(y);
         const standings = computeSeasonStandings(season, SEASON_BEST_OF);
         seasonPlayerCounts.push(`${y}: ${standings.length}`);
         const rows = [["Rank", "Παίκτης", "Events", `Points (best ${SEASON_BEST_OF})`, "Total (all events)", "Wins (regular)", "Matches", "%"]];
@@ -3023,33 +3224,45 @@ export default function TournamentManager() {
           setNotice("That doesn't look like a full backup file.");
           return;
         }
-        await saveRegistry(data.registry);
-        await saveElo(data.elo);
-        await saveIndex(data.archiveIndex);
+        const failed = [];
+        if (!(await saveRegistryChecked(data.registry))) failed.push("μητρώο");
+        if (!(await saveEloChecked(data.elo))) failed.push("ELO");
+        if (!(await saveIndexChecked(data.archiveIndex))) failed.push("κατάλογος τουρνουά");
         for (const [year, season] of Object.entries(data.seasons || {})) {
-          await saveSeason(Number(year), season);
+          if (!(await saveSeason(Number(year), season))) failed.push(`σεζόν ${year}`);
         }
         for (const [id, tData] of Object.entries(data.tournaments || {})) {
-          if (tData) await saveTournamentData(id, tData);
+          if (tData && !(await saveTournamentData(id, tData))) failed.push(`τουρνουά ${id}`);
         }
         if (Array.isArray(data.trash)) {
           for (const [id, tData] of Object.entries(data.trashedTournaments || {})) {
-            if (tData) await saveTournamentData(id, tData);
+            if (tData && !(await saveTournamentData(id, tData))) failed.push(`τουρνουά ${id}`);
           }
-          await saveSysTrash(data.trash);
+          if (!(await saveSysTrash(data.trash))) failed.push("κάδος");
           setTrash(data.trash);
+        }
+        if (failed.length > 0) {
+          reportSaveFailure(`Επαναφορά backup — δεν γράφτηκαν: ${failed.join(", ")}. Ξανατρέξε την επαναφορά.`);
         }
         if (data.sysState && Array.isArray(data.sysState.purgedIds)) {
           const purgedIds = [...new Set([...(sysState.purgedIds || []), ...data.sysState.purgedIds])];
           await saveSysState({ purgedIds });
           setSysState((s) => ({ ...s, purgedIds }));
         }
+        if (data.sysState && (typeof data.sysState.homeClub === "string" || Array.isArray(data.sysState.competitions))) {
+          const patch = {};
+          if (typeof data.sysState.homeClub === "string") patch.homeClub = data.sysState.homeClub;
+          if (Array.isArray(data.sysState.competitions)) patch.competitions = data.sysState.competitions;
+          if (await saveSysState(patch)) setSysState((s) => ({ ...s, ...patch }));
+          else reportSaveFailure("Επαναφορά backup — δεν γράφτηκαν οι ρυθμίσεις λέσχης/διοργανώσεων");
+        }
+        setPersonLookup(data.registry);
         setRegistry(data.registry);
         setEloData(data.elo);
         setArchive(data.archiveIndex);
         setEloTimeline(null);
         setPlayerMatchStatsCache({});
-        showToast("Full backup restored.");
+        if (failed.length === 0) showToast("Full backup restored.");
       } catch {
         setNotice("That file wasn't valid, or wasn't a full backup.");
       }
@@ -3072,7 +3285,9 @@ export default function TournamentManager() {
         setMatchLength(data.matchLength || 7);
         setSideBets(data.sideBets || []);
         setCalcuttaEntries(data.calcuttaEntries || []);
-        setSeasonYear(data.seasonYear || new Date().getFullYear());
+        setSeasonYear(data.seasonYear || seasonForDate(data.createdAt) || new Date().getFullYear());
+        setCompetitionId(data.competitionId || DEFAULT_COMPETITION_ID);
+        setOrganisation(data.organisation ?? (sysState.homeClub || ""));
         setLiveStandingsEnabled(!!data.liveStandingsEnabled);
         setIsOfficial(!!data.isOfficial);
         setPhase(data.phase || "setup");
@@ -3104,7 +3319,10 @@ export default function TournamentManager() {
     setMatchLength(data.matchLength || 7);
     setSideBets(data.sideBets || []);
     setCalcuttaEntries(data.calcuttaEntries || []);
-    setSeasonYear(data.seasonYear || new Date().getFullYear());
+    setSeasonYear(data.seasonYear || seasonForDate(data.createdAt) || new Date().getFullYear());
+    setCompetitionId(data.competitionId || DEFAULT_COMPETITION_ID);
+    setOrganisation(data.organisation ?? (sysState.homeClub || ""));
+    setMetaEdit(null);
     setLiveStandingsEnabled(!!data.liveStandingsEnabled);
     setIsOfficial(!!data.isOfficial);
     setPlayers(data.players || []);
@@ -3136,6 +3354,9 @@ export default function TournamentManager() {
     try {
       const known = archive.find((t) => t.id === tournamentId);
       const entry = {
+        // keep every catalogue field (season, competition…) so a restore
+        // brings the entry back exactly as it was
+        ...(known || { seasonYear, competitionId }),
         id: tournamentId,
         name: known?.name || tournamentName || "Untitled",
         date: known?.date || createdAt,
@@ -3153,9 +3374,14 @@ export default function TournamentManager() {
       }
       setTrash(nextTrash);
       const nextIndex = archive.filter((t) => t.id !== entry.id);
-      await saveIndex(nextIndex);
-      const check = await loadIndex();
-      if (check.some((t) => t.id === entry.id)) {
+      const indexSaved = await saveIndexChecked(nextIndex);
+      let check = null;
+      try {
+        check = indexSaved ? await loadIndexStrict() : null;
+      } catch {
+        check = null;
+      }
+      if (!check || check.some((t) => t.id === entry.id)) {
         showToast("Ο κατάλογος δεν ενημερώθηκε — δοκίμασε ξανά.");
         return;
       }
@@ -3184,14 +3410,21 @@ export default function TournamentManager() {
       }
       const { deletedAt, ...restored } = entry;
       const nextIndex = [...archive.filter((t) => t.id !== id), restored];
-      await saveIndex(nextIndex);
-      const check = await loadIndex();
-      if (!check.some((t) => t.id === id)) {
+      const indexSaved = await saveIndexChecked(nextIndex);
+      let check = null;
+      try {
+        check = indexSaved ? await loadIndexStrict() : null;
+      } catch {
+        check = null;
+      }
+      if (!check || !check.some((t) => t.id === id)) {
         showToast("Ο κατάλογος δεν ενημερώθηκε — το τουρνουά μένει στον κάδο.");
         return;
       }
       const nextTrash = trash.filter((t) => t.id !== id);
-      await saveSysTrash(nextTrash);
+      if (!(await saveSysTrash(nextTrash))) {
+        reportSaveFailure(`Κάδος — το «${entry.name}» επανήλθε στον κατάλογο αλλά φαίνεται ακόμα και στον κάδο`);
+      }
       setTrash(nextTrash);
       setArchive(nextIndex);
       setTrashAction(null);
@@ -3292,9 +3525,14 @@ export default function TournamentManager() {
     setIdentityBusy(true);
     try {
       const migrated = buildMigratedRegistry(registry, identityPlan.unmatched, identityDecisions);
-      // saveRegistry does not report success, so verify by reading it back.
-      await saveRegistry(migrated);
-      const check = await loadRegistry();
+      // Save, then verify by reading it back.
+      const saved = await saveRegistryChecked(migrated);
+      let check = null;
+      try {
+        check = saved ? await loadRegistryStrict() : null;
+      } catch {
+        check = null;
+      }
       const written =
         check && check.identityVersion === 2 && Object.keys(check.players || {}).length === Object.keys(migrated.players).length;
       if (!written) {
@@ -3347,8 +3585,202 @@ export default function TournamentManager() {
     await saveTournamentData(tournamentId, { ...currentSnapshot(), isOfficial: next });
     const updated = archive.map((t) => (t.id === tournamentId ? { ...t, isOfficial: next } : t));
     setArchive(updated);
-    await saveIndex(updated);
-    if (runRecompute) await recomputeEloAndSeasonFromScratch(updated);
+    const indexSaved = await saveIndexChecked(updated);
+    if (runRecompute && indexSaved) await recomputeEloAndSeasonFromScratch(updated);
+  }
+
+  /* ---- Build 2: tournament details (date, season, competition, club) ---- */
+
+  /** Saves an admin edit of an existing tournament's date, season,
+   * competition and organising club, both in its own document and in the
+   * catalogue. Numbers (ELO, standings) are not touched here; if the
+   * tournament already counts, the admin is told to run Recompute. */
+  async function saveTournamentMeta() {
+    if (!metaEdit || !tournamentId) return;
+    const nextCreatedAt = withLocalDate(createdAt, metaEdit.date);
+    const nextSeason = Number(metaEdit.seasonYear) || seasonForDate(nextCreatedAt) || seasonYear;
+    const changes = {
+      createdAt: nextCreatedAt,
+      seasonYear: nextSeason,
+      competitionId: metaEdit.competitionId,
+      organisation: metaEdit.organisation.trim(),
+    };
+    const ok = await saveTournamentData(tournamentId, { ...currentSnapshot(), ...changes });
+    if (!ok) {
+      reportSaveFailure(`Στοιχεία τουρνουά «${tournamentName || "Untitled"}» — δεν αποθηκεύτηκαν`);
+      return;
+    }
+    const countsNow = isOfficial && (phase === "finished" || history.length > 0);
+    const numbersAffected =
+      countsNow &&
+      (isoToLocalYMD(nextCreatedAt) !== isoToLocalYMD(createdAt) || nextSeason !== seasonYear || changes.competitionId !== competitionId);
+    setCreatedAt(nextCreatedAt);
+    setSeasonYear(nextSeason);
+    setCompetitionId(changes.competitionId);
+    setOrganisation(changes.organisation);
+    setMetaEdit(null);
+    const updated = archive.map((t) =>
+      t.id === tournamentId ? { ...t, date: nextCreatedAt, seasonYear: nextSeason, competitionId: changes.competitionId } : t
+    );
+    setArchive(updated);
+    if (!(await saveIndexChecked(updated))) return;
+    if (numbersAffected) {
+      setNotice("Τα στοιχεία αποθηκεύτηκαν. Επειδή το τουρνουά μετράει ήδη σε ELO/Βαθμολογία, τρέξε Recompute ώστε να ενημερωθούν.");
+    } else {
+      showToast("Τα στοιχεία του τουρνουά αποθηκεύτηκαν.");
+    }
+  }
+
+  function startMetaEdit() {
+    setMetaEdit({
+      date: isoToLocalYMD(createdAt) || isoToLocalYMD(new Date().toISOString()),
+      seasonYear,
+      competitionId,
+      organisation: organisation || "",
+    });
+  }
+
+  /** Opens a tournament from a player card's history, remembering the card. */
+  async function openTournamentFromPlayer(id, playerKey) {
+    setTournamentReturnPlayer(playerKey);
+    await openArchived(id);
+  }
+
+  function backToPlayer() {
+    const key = tournamentReturnPlayer;
+    setTournamentReturnPlayer(null);
+    if (!key || !registry.players[key]) {
+      setPhase("players");
+      return;
+    }
+    setNotice("");
+    setExpandedRegistryPlayer(key);
+    setPlayerDetailTab("stats");
+    setPhase("playerDetail");
+  }
+
+  async function saveHomeClub() {
+    const value = (homeClubDraft ?? "").trim();
+    if (!value) {
+      showToast("Γράψε το όνομα της λέσχης.");
+      return;
+    }
+    const patch = { homeClub: value };
+    if (!Array.isArray(sysState.competitions)) patch.competitions = DEFAULT_COMPETITIONS;
+    if (await saveSysState(patch)) {
+      setSysState((s) => ({ ...s, ...patch }));
+      setHomeClubDraft(null);
+      showToast("Η λέσχη αποθηκεύτηκε.");
+    } else {
+      reportSaveFailure("Ρυθμίσεις — η λέσχη δεν αποθηκεύτηκε");
+    }
+  }
+
+  /** Dry run of the Build 2 migration: reads every tournament (catalogue and
+   * trash) and reports what would be filled in. Changes nothing. */
+  async function runMetaPlan() {
+    setMetaBusy(true);
+    try {
+      const all = [...archive.map((t) => ({ ...t, inTrash: false })), ...trash.map((t) => ({ ...t, inTrash: true }))];
+      const rows = [];
+      const unreadable = [];
+      for (const t of all) {
+        let d;
+        try {
+          d = await fetchTournamentDataStrict(t.id);
+        } catch {
+          unreadable.push(t.name || t.id);
+          continue;
+        }
+        if (!d) {
+          unreadable.push(t.name || t.id);
+          continue;
+        }
+        const expected = seasonForDate(d.createdAt);
+        rows.push({
+          id: t.id,
+          name: d.tournamentName || t.name || t.id,
+          inTrash: t.inTrash,
+          date: d.createdAt || null,
+          seasonYear: d.seasonYear ?? null,
+          expectedSeason: expected,
+          needsCompetition: !d.competitionId,
+          needsOrganisation: d.organisation === undefined || d.organisation === null || d.organisation === "",
+          needsSeason: !d.seasonYear,
+          seasonMismatch: !!d.seasonYear && !!expected && d.seasonYear !== expected,
+          noDate: !d.createdAt || !expected,
+          indexOutdated: !t.inTrash && (t.seasonYear !== (d.seasonYear || expected) || t.competitionId !== (d.competitionId || DEFAULT_COMPETITION_ID)),
+        });
+      }
+      setMetaPlan({ rows, unreadable, scannedAt: new Date().toISOString() });
+    } finally {
+      setMetaBusy(false);
+    }
+  }
+
+  /** Applies the migration: fills competition (Premier League), organising
+   * club (the home club) and, only where missing, the season. Season and
+   * date that already exist are never changed. Stops at the first failure. */
+  async function applyMetaMigration() {
+    if (!metaPlan || metaBusy) return;
+    const last = sysState.lastExportAt ? new Date(sysState.lastExportAt).getTime() : 0;
+    if (Date.now() - last > 24 * 3600 * 1000) {
+      showToast("Κάνε πρώτα Export All Data (των τελευταίων 24 ωρών).");
+      return;
+    }
+    if (!sysState.homeClub) {
+      showToast("Συμπλήρωσε πρώτα τη λέσχη σου.");
+      return;
+    }
+    if (metaPlan.unreadable.length > 0) {
+      showToast("Κάποια τουρνουά δεν διαβάστηκαν — ξανατρέξε την αναφορά.");
+      return;
+    }
+    setMetaBusy(true);
+    try {
+      const filled = {};
+      for (const r of metaPlan.rows) {
+        let d;
+        try {
+          d = await fetchTournamentDataStrict(r.id);
+        } catch {
+          d = null;
+        }
+        if (!d) {
+          reportSaveFailure(`Μετάπτωση διοργανώσεων — το «${r.name}» δεν διαβάστηκε· η μετάπτωση σταμάτησε (ό,τι γράφτηκε ως εδώ είναι σωστό, ξανατρέξε την)`);
+          return;
+        }
+        const next = {
+          ...d,
+          competitionId: d.competitionId || DEFAULT_COMPETITION_ID,
+          organisation: d.organisation || sysState.homeClub,
+          seasonYear: d.seasonYear || seasonForDate(d.createdAt) || 2026,
+        };
+        filled[r.id] = { seasonYear: next.seasonYear, competitionId: next.competitionId };
+        const changed = next.competitionId !== d.competitionId || next.organisation !== d.organisation || next.seasonYear !== d.seasonYear;
+        if (changed && !(await saveTournamentData(r.id, next))) {
+          reportSaveFailure(`Μετάπτωση διοργανώσεων — το «${r.name}» δεν αποθηκεύτηκε· η μετάπτωση σταμάτησε (ό,τι γράφτηκε ως εδώ είναι σωστό, ξανατρέξε την)`);
+          return;
+        }
+      }
+      const nextIndex = archive.map((t) => (filled[t.id] ? { ...t, ...filled[t.id] } : t));
+      if (!(await saveIndexChecked(nextIndex))) return;
+      setArchive(nextIndex);
+      const nextTrash = trash.map((t) => (filled[t.id] ? { ...t, ...filled[t.id] } : t));
+      if (!(await saveSysTrash(nextTrash))) {
+        reportSaveFailure("Μετάπτωση διοργανώσεων — ο κάδος δεν ενημερώθηκε (τα τουρνουά του ενημερώθηκαν κανονικά)");
+      } else {
+        setTrash(nextTrash);
+      }
+      const patch = { tournamentMetaVersion: 1, tournamentMetaMigratedAt: new Date().toISOString() };
+      if (!Array.isArray(sysState.competitions)) patch.competitions = DEFAULT_COMPETITIONS;
+      if (await saveSysState(patch)) setSysState((s) => ({ ...s, ...patch }));
+      else reportSaveFailure("Μετάπτωση διοργανώσεων — ολοκληρώθηκε, αλλά δεν καταγράφηκε ως ολοκληρωμένη");
+      setMetaPlan(null);
+      showToast("Η μετάπτωση διοργανώσεων ολοκληρώθηκε.");
+    } finally {
+      setMetaBusy(false);
+    }
   }
 
   /* ---- data health: does the stored ELO / season match the catalogue? ---- */
@@ -3391,7 +3823,7 @@ export default function TournamentManager() {
     const merged = { ...registry, ...next };
     setPersonLookup(merged);
     setRegistry(merged);
-    saveRegistry(merged);
+    saveRegistryChecked(merged);
   }
 
   /** A fresh registry entry. After the migration it gets a permanent id and
@@ -3506,8 +3938,8 @@ export default function TournamentManager() {
       const season = await loadSeason(year);
       const entry = season.players[key];
       if (entry) {
-        Object.values(entry.entries).forEach((e) => {
-          rows.push({ year, tournamentName: e.tournamentName, date: e.date, points: e.points });
+        Object.entries(entry.entries).forEach(([tournamentId, e]) => {
+          rows.push({ year, tournamentId, tournamentName: e.tournamentName, date: e.date, points: e.points });
         });
       }
     }
@@ -3535,7 +3967,7 @@ export default function TournamentManager() {
       });
     }
 
-    const extraTournaments = archive.filter((t) => t.isOfficial).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const extraTournaments = archive.filter(countsTowardRatings).sort((a, b) => new Date(a.date) - new Date(b.date));
     for (const t of extraTournaments) {
       const data = await fetchTournamentData(t.id);
       if (!data || !data.history || !data.players) continue;
@@ -3578,9 +4010,18 @@ export default function TournamentManager() {
     const builtAt = new Date().toISOString();
 
     const catalogue = Array.isArray(indexOverride) ? indexOverride : archive;
-    const officialTournaments = catalogue.filter((t) => t.isOfficial).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const officialTournaments = catalogue.filter(countsTowardRatings).sort((a, b) => new Date(a.date) - new Date(b.date));
     for (const t of officialTournaments) {
-      const data = await fetchTournamentData(t.id);
+      // Strict read: if any official tournament cannot be read, stop and
+      // write nothing — a rebuild without it would silently drop its matches.
+      let data;
+      try {
+        data = await fetchTournamentDataStrict(t.id);
+      } catch {
+        setNotice("");
+        reportSaveFailure(`Recompute — το τουρνουά «${t.name}» δεν διαβάστηκε· ΔΕΝ γράφτηκε τίποτα. Δοκίμασε ξανά.`);
+        return;
+      }
       if (!data || !data.history || !data.players) continue;
       appliedNow[t.id] = { name: data.tournamentName, mode: "recompute", at: builtAt };
       data.history.forEach((entry) => {
@@ -3623,13 +4064,18 @@ export default function TournamentManager() {
       matches: matchesCounted,
       players: Object.keys(elo.players).length,
     };
-    await saveElo(elo);
-    await saveSeason(2026, season);
+    const eloSaved = await saveEloChecked(elo);
+    const seasonSaved = eloSaved ? await saveSeason(2026, season) : false;
+    if (eloSaved && !seasonSaved) reportSaveFailure("Recompute — η Βαθμολογία 2026 δεν αποθηκεύτηκε (η ELO αποθηκεύτηκε). Τρέξε ξανά το Recompute.");
+    setNotice("");
+    if (!eloSaved || !seasonSaved) {
+      refreshHealth(catalogue);
+      return;
+    }
     setEloData(elo);
     setEloTimeline(null);
     setPlayerMatchStatsCache({});
     if (seasonBrowseYear === 2026) setSeasonData(season);
-    setNotice("");
     showToast("ELO and Season Standings recomputed from official League days.");
     refreshHealth(catalogue);
   }
@@ -3830,8 +4276,7 @@ export default function TournamentManager() {
         pubDate: new Date().toISOString(),
       };
       const updated = [newItem, ...items].slice(0, 20); // keep the feed small
-      await saveFeedItems(updated);
-      showToast("Προστέθηκε στο RSS feed!");
+      if (await saveFeedItemsChecked(updated)) showToast("Προστέθηκε στο RSS feed!");
     } catch (err) {
       setNotice(`Αποτυχία προσθήκης στο feed: ${err.message}`);
     } finally {
@@ -3844,8 +4289,7 @@ export default function TournamentManager() {
    * independent of us); it only clears what /api/feed will show next. */
   async function clearFeed() {
     try {
-      await saveFeedItems([]);
-      showToast("Το RSS feed αδειάστηκε.");
+      if (await saveFeedItemsChecked([])) showToast("Το RSS feed αδειάστηκε.");
     } catch (err) {
       setNotice(`Αποτυχία αδειάσματος feed: ${err.message}`);
     }
@@ -3962,7 +4406,7 @@ export default function TournamentManager() {
       const seenIds = new Set();
       const chronological = [...archive]
         .filter((t) => { if (seenIds.has(t.id)) return false; seenIds.add(t.id); return true; })
-        .filter((t) => t.isOfficial)
+        .filter(countsTowardRatings)
         .sort((a, b) => new Date(a.date) - new Date(b.date));
       const eloRunning = { players: {} };
       const ratingAtSeasonStart = {};
@@ -4226,8 +4670,9 @@ export default function TournamentManager() {
     }
   }
 
-  async function importHistoricalSeason2026() {
-    const season = await loadSeason(2026);
+  async function importHistoricalSeason2026(seasonAlreadyRead) {
+    // Called at start-up with the season it has just read strictly.
+    const season = seasonAlreadyRead || (await loadSeasonStrict(2026));
     const realDates = {
       1: "2025-09-27", 2: "2025-10-18", 3: "2025-11-08", 4: "2025-11-29",
       5: "2026-01-10", 6: "2026-02-14", 7: "2026-03-14", 8: "2026-03-28",
@@ -4361,6 +4806,91 @@ export default function TournamentManager() {
     .sort((a, b) => new Date(b.date) - new Date(a.date));
   const archiveHasFilter = searchName || dateFrom || dateTo;
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
+
+  /** Tournament details line (date, season, competition, club) shown at the
+   * top of an open tournament, plus the admin editor and the way back to
+   * the player card it was opened from. */
+  function renderTournamentMeta() {
+    const comps = competitionsFrom(sysState);
+    return (
+      <>
+        {tournamentReturnPlayer && registry.players[tournamentReturnPlayer] && (
+          <div style={{ marginBottom: 12 }}>
+            <button className="btn-secondary" onClick={backToPlayer}>
+              <ArrowLeft size={15} /> Πίσω στον παίκτη ({registry.players[tournamentReturnPlayer].name})
+            </button>
+          </div>
+        )}
+        {!metaEdit && (
+          <div className="meta-bar">
+            <span>Ημερομηνία: <strong>{createdAt ? formatDate(createdAt) : "—"}</strong></span>
+            <span>Σεζόν: <strong>{seasonYear}</strong></span>
+            <span>Διοργάνωση: <strong>{competitionName(comps, competitionId)}</strong></span>
+            {organisation && <span>Λέσχη: <strong>{organisation}</strong></span>}
+            {isAdmin && (
+              <button className="btn-ghost" onClick={startMetaEdit} style={{ padding: "2px 8px" }}>
+                <Pencil size={13} /> Αλλαγή
+              </button>
+            )}
+          </div>
+        )}
+        {isAdmin && metaEdit && (
+          <div className="card" style={{ marginBottom: 14, padding: "14px 18px" }}>
+            <strong>Στοιχεία τουρνουά</strong>
+            <div className="row" style={{ marginTop: 10 }}>
+              <div style={{ width: 160 }}>
+                <label>Ημερομηνία</label>
+                <input
+                  type="date"
+                  value={metaEdit.date}
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    const suggested = seasonForDate(withLocalDate(createdAt, e.target.value));
+                    setMetaEdit({ ...metaEdit, date: e.target.value, seasonYear: suggested || metaEdit.seasonYear });
+                  }}
+                />
+              </div>
+              <div style={{ width: 110 }}>
+                <label>Σεζόν</label>
+                <input type="number" value={metaEdit.seasonYear} onChange={(e) => setMetaEdit({ ...metaEdit, seasonYear: Number(e.target.value) || metaEdit.seasonYear })} />
+              </div>
+              <div style={{ width: 220 }}>
+                <label>Διοργάνωση</label>
+                <select
+                  value={metaEdit.competitionId}
+                  onChange={(e) => setMetaEdit({ ...metaEdit, competitionId: e.target.value })}
+                  style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+                >
+                  {comps.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label>Λέσχη / διοργανωτής</label>
+                <input type="text" value={metaEdit.organisation} onChange={(e) => setMetaEdit({ ...metaEdit, organisation: e.target.value })} placeholder={sysState.homeClub || "Όνομα λέσχης"} />
+              </div>
+            </div>
+            {(() => {
+              const expected = seasonForDate(withLocalDate(createdAt, metaEdit.date));
+              return expected !== null && expected !== Number(metaEdit.seasonYear) ? (
+                <p className="field-warning">⚠ Η ημερομηνία ανήκει στη σεζόν {expected} ({seasonRangeLabel(expected)}), όχι στη {metaEdit.seasonYear}.</p>
+              ) : null;
+            })()}
+            {isOfficial && (phase === "finished" || history.length > 0) && (
+              <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0 0 0" }}>
+                Το τουρνουά μετράει ήδη σε ELO/Βαθμολογία. Αν αλλάξεις ημερομηνία, σεζόν ή διοργάνωση, τρέξε μετά Recompute.
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+              <button className="btn-secondary" onClick={() => setMetaEdit(null)}>Άκυρο</button>
+              <button className="btn-primary" onClick={saveTournamentMeta}>Αποθήκευση</button>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
 
   /* ---------------------------------------------------------------------- */
   /* Render                                                                 */
@@ -4599,6 +5129,12 @@ export default function TournamentManager() {
         .dashboard-card-desc { font-size: 13px; color: var(--muted); font-weight: 400; }
 
         .toast { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 30px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); z-index: 100; animation: toast-in 0.2s ease; }
+        .save-failure-banner { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 1001; display: flex; gap: 10px; align-items: flex-start; width: min(720px, calc(100% - 24px)); background: #fff4f2; color: #7a1d12; border: 2px solid #c0392b; border-radius: 10px; padding: 12px 14px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); }
+        .history-link { background: none; border: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
+        .history-link:hover { color: var(--ink); }
+        .meta-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+        .meta-bar strong { color: var(--ink); font-weight: 600; }
+        .field-warning { font-size: 13px; color: #9a5b00; margin: 6px 0 0 0; }
         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
       `}</style>
 
@@ -4606,6 +5142,37 @@ export default function TournamentManager() {
         <div className="toast">
           <Check size={16} color="var(--win)" />
           {toast}
+        </div>
+      )}
+
+      {(startupReadFailed || saveFailures.length > 0) && (
+        <div className="save-failure-banner" role="alert">
+          <AlertTriangle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1 }}>
+            {startupReadFailed && (
+              <p style={{ margin: 0 }}>
+                <strong>Τα δεδομένα δεν φορτώθηκαν από τη βάση.</strong> Ανανέωσε τη σελίδα. Μέχρι τότε η εφαρμογή δεν αποθηκεύει μητρώο, ELO ή κατάλογο τουρνουά, ώστε να μην αντικατασταθούν τα πραγματικά δεδομένα με κενά.
+              </p>
+            )}
+            {saveFailures.length > 0 && (
+              <>
+                <p style={{ margin: startupReadFailed ? "8px 0 4px 0" : "0 0 4px 0" }}><strong>Δεν αποθηκεύτηκαν:</strong></p>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {saveFailures.map((f) => (
+                    <li key={f.what}>
+                      {f.what} <span style={{ opacity: 0.75 }}>({new Date(f.at).toLocaleTimeString("el-GR", { hour: "2-digit", minute: "2-digit" })})</span>
+                    </li>
+                  ))}
+                </ul>
+                <p style={{ margin: "6px 0 0 0", fontSize: 13 }}>Έλεγξε τη σύνδεση και επανάλαβε την ενέργεια.</p>
+              </>
+            )}
+          </div>
+          {saveFailures.length > 0 && (
+            <button className="btn-ghost" onClick={() => setSaveFailures([])} title="Απόκρυψη">
+              <X size={15} />
+            </button>
+          )}
         </div>
       )}
 
@@ -5852,7 +6419,16 @@ export default function TournamentManager() {
                     <div className="history-table">
                       {playerHistoryCache[key].map((h, i) => (
                         <div key={i} className="history-row">
-                          <span>{h.tournamentName} <span style={{ color: "var(--muted)" }}>({formatDate(h.date)})</span></span>
+                          <span>
+                            {h.tournamentId && archive.some((t) => t.id === h.tournamentId) ? (
+                              <button className="history-link" onClick={() => openTournamentFromPlayer(h.tournamentId, key)} title="Άνοιγμα του τουρνουά">
+                                {h.tournamentName}
+                              </button>
+                            ) : (
+                              h.tournamentName
+                            )}{" "}
+                            <span style={{ color: "var(--muted)" }}>({formatDate(h.date)})</span>
+                          </span>
                           <strong>{h.points} pts</strong>
                         </div>
                       ))}
@@ -6005,6 +6581,105 @@ export default function TournamentManager() {
               </div>
             )}
 
+            {isAdmin && (() => {
+              const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
+              const comps = competitionsFrom(sysState);
+              const migrated = sysState.tournamentMetaVersion === 1;
+              const rows = metaPlan ? metaPlan.rows : [];
+              const toFill = rows.filter((r) => r.needsCompetition || r.needsOrganisation || r.needsSeason);
+              const mismatches = rows.filter((r) => r.seasonMismatch);
+              const noDate = rows.filter((r) => r.noDate);
+              return (
+                <div className="card" style={{ marginBottom: 20, padding: "14px 18px" }}>
+                  <strong>Διοργανώσεις, σεζόν και λέσχη</strong>
+
+                  <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
+                    <div className="field">
+                      <label>Η λέσχη σου (προεπιλογή σε κάθε νέο τουρνουά)</label>
+                      <input
+                        type="text"
+                        value={homeClubDraft ?? (sysState.homeClub || "")}
+                        onChange={(e) => setHomeClubDraft(e.target.value)}
+                        placeholder="Όνομα λέσχης"
+                      />
+                    </div>
+                    <button className="btn-secondary" onClick={saveHomeClub} disabled={homeClubDraft === null || homeClubDraft.trim() === (sysState.homeClub || "")}>
+                      <Save size={15} /> Αποθήκευση
+                    </button>
+                  </div>
+
+                  <p style={{ margin: "10px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
+                    Διοργανώσεις: {comps.map((c) => `${c.name} (${COMPETITION_LEVEL_LABEL[c.level] || c.level})`).join(", ")}. Μέχρι το Build 3, σε ELO και Βαθμολογία μετράνε μόνο τα επίσημα τουρνουά Premier League.
+                  </p>
+
+                  <div style={{ marginTop: 12 }}>
+                    {migrated && !metaPlan ? (
+                      <p style={{ margin: 0, fontSize: 13, color: "var(--win)" }}>
+                        ✓ Όλα τα τουρνουά έχουν διοργάνωση και λέσχη{sysState.tournamentMetaMigratedAt ? ` (μετάπτωση ${formatDate(sysState.tournamentMetaMigratedAt)})` : ""}.{" "}
+                        <button className="btn-ghost" onClick={runMetaPlan} disabled={metaBusy} style={{ padding: "2px 8px" }}>
+                          {metaBusy ? "Έλεγχος…" : "Έλεγχος ξανά"}
+                        </button>
+                      </p>
+                    ) : !metaPlan ? (
+                      <>
+                        <p style={{ margin: "0 0 8px 0", fontSize: 13 }}>
+                          Τα υπάρχοντα τουρνουά δεν έχουν ακόμα διοργάνωση και λέσχη. Η μετάπτωση τους δίνει Premier League και τη λέσχη σου· σεζόν και ημερομηνία που ήδη υπάρχουν δεν αλλάζουν. Πρώτα βλέπεις αναφορά.
+                        </p>
+                        <button className="btn-secondary" onClick={runMetaPlan} disabled={metaBusy}>
+                          {metaBusy ? "Έλεγχος…" : "Αναφορά μετάπτωσης (δεν αλλάζει τίποτα)"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ margin: "0 0 6px 0", fontSize: 13 }}>
+                          Ελέγχθηκαν <strong>{rows.length}</strong> τουρνουά ({rows.filter((r) => r.inTrash).length} στον κάδο).{" "}
+                          {toFill.length === 0 ? "Κανένα δεν χρειάζεται συμπλήρωση." : <>Θα συμπληρωθούν <strong>{toFill.length}</strong>: διοργάνωση Premier League, λέσχη «{sysState.homeClub || "—"}».</>}
+                        </p>
+                        {metaPlan.unreadable.length > 0 && (
+                          <p className="field-warning">⚠ Δεν διαβάστηκαν: {metaPlan.unreadable.join(", ")}. Ξανατρέξε την αναφορά πριν την εφαρμογή.</p>
+                        )}
+                        {mismatches.length > 0 && (
+                          <div className="field-warning">
+                            ⚠ Σεζόν που δεν ταιριάζει με την ημερομηνία (δεν αλλάζει αυτόματα· διόρθωσέ τη μέσα στο τουρνουά αν χρειάζεται):
+                            <ul style={{ margin: "4px 0 0 0", paddingLeft: 18 }}>
+                              {mismatches.map((r) => (
+                                <li key={r.id}>{r.name} — {formatDate(r.date)}, σεζόν {r.seasonYear} (η ημερομηνία ανήκει στη {r.expectedSeason})</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {noDate.length > 0 && (
+                          <p className="field-warning">⚠ Χωρίς έγκυρη ημερομηνία ή πριν από τις 27/9/2025: {noDate.map((r) => r.name).join(", ")}.</p>
+                        )}
+                        {mismatches.length === 0 && noDate.length === 0 && metaPlan.unreadable.length === 0 && (
+                          <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 6px 0" }}>✓ Όλες οι σεζόν ταιριάζουν με τις ημερομηνίες.</p>
+                        )}
+                        {!sysState.homeClub && (
+                          <p className="field-warning">Συμπλήρωσε και αποθήκευσε πρώτα τη λέσχη σου.</p>
+                        )}
+                        {!exportFresh && (
+                          <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                            <span>Για να εφαρμόσεις τη μετάπτωση χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
+                            <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
+                          </div>
+                        )}
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                          <button className="btn-secondary" onClick={() => setMetaPlan(null)} disabled={metaBusy}>Άκυρο</button>
+                          <button
+                            className="btn-primary"
+                            onClick={applyMetaMigration}
+                            disabled={metaBusy || !exportFresh || !sysState.homeClub || metaPlan.unreadable.length > 0}
+                          >
+                            {metaBusy ? "Μετάπτωση… (περίμενε)" : "Εφαρμογή μετάπτωσης"}
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="filters">
               <div className="field">
                 <label>Search by name</label>
@@ -6139,11 +6814,59 @@ export default function TournamentManager() {
                   <label>Match length</label>
                   <input type="number" min={1} max={25} value={matchLength} onChange={(e) => setMatchLength(Math.max(1, Math.min(25, Number(e.target.value) || 7)))} />
                 </div>
+                <div style={{ width: 160 }}>
+                  <label>Ημερομηνία</label>
+                  <input
+                    type="date"
+                    required
+                    value={isoToLocalYMD(createdAt)}
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      const nextIso = withLocalDate(createdAt, e.target.value);
+                      setCreatedAt(nextIso);
+                      const suggested = seasonForDate(nextIso);
+                      if (suggested) setSeasonYear(suggested);
+                    }}
+                  />
+                </div>
                 <div style={{ width: 110 }}>
-                  <label>Season</label>
-                  <input type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value) || new Date().getFullYear())} />
+                  <label>Σεζόν</label>
+                  <input type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value) || seasonForDate(createdAt) || new Date().getFullYear())} />
                 </div>
               </div>
+              {seasonForDate(createdAt) !== null && seasonForDate(createdAt) !== seasonYear && (
+                <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
+                  ⚠ Η ημερομηνία {formatDate(createdAt)} ανήκει στη σεζόν {seasonForDate(createdAt)} ({seasonRangeLabel(seasonForDate(createdAt))}), όχι στη {seasonYear}. Βεβαιώσου ότι αυτό θέλεις.
+                </p>
+              )}
+              {seasonForDate(createdAt) === null && (
+                <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
+                  ⚠ Η ημερομηνία είναι πριν από την πρώτη σεζόν (27/9/2025).
+                </p>
+              )}
+              <div className="row" style={{ marginBottom: 14 }}>
+                <div style={{ width: 220 }}>
+                  <label>Διοργάνωση</label>
+                  <select
+                    value={competitionId}
+                    onChange={(e) => setCompetitionId(e.target.value)}
+                    style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+                  >
+                    {competitionsFrom(sysState).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Λέσχη / διοργανωτής</label>
+                  <input type="text" value={organisation} onChange={(e) => setOrganisation(e.target.value)} placeholder={sysState.homeClub || "Όνομα λέσχης"} />
+                </div>
+              </div>
+              {competitionId !== DEFAULT_COMPETITION_ID && (
+                <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
+                  Μέχρι να μπουν οι χωριστές κατατάξεις ELO (Build 3), τουρνουά εκτός Premier League καταγράφονται κανονικά αλλά δεν μετράνε σε ELO και Βαθμολογία στο Recompute.
+                </p>
+              )}
 
               <label className="live-toggle" style={{ marginBottom: 14 }} title="Only Official days are included when you use 'Recompute ELO & Season Standings from scratch' on the ELO page">
                 <input type="checkbox" checked={isOfficial} onChange={(e) => setIsOfficial(e.target.checked)} />
@@ -6281,6 +7004,8 @@ export default function TournamentManager() {
                 </>
               )}
             </div>
+
+            {renderTournamentMeta()}
 
             {isAdmin && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
@@ -6447,7 +7172,7 @@ export default function TournamentManager() {
               </>
             )}
 
-            {view === "standings" && <StandingsTable standings={standings} buchholz={null} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} />}
+            {view === "standings" && <StandingsTable standings={standings} buchholz={null} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
             {view === "finance" && isAdmin && (
               <FinanceTab
               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
@@ -6527,6 +7252,8 @@ export default function TournamentManager() {
                 </>
               )}
             </div>
+
+            {renderTournamentMeta()}
 
             {isAdmin && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
@@ -6643,7 +7370,7 @@ export default function TournamentManager() {
               </>
             )}
 
-            {view === "standings" && <StandingsTable standings={standings} buchholz={buchholz} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} />}
+            {view === "standings" && <StandingsTable standings={standings} buchholz={buchholz} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
             {view === "finance" && isAdmin && (
               <FinanceTab
               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
@@ -7206,12 +7933,12 @@ function ConsistencyReportView({ report, onClose }) {
   if (report.nameStale.length) findings.push({ level: "warn", title: "Όνομα στο ELO / Βαθμολογία διαφορετικό από το μητρώο (θα διορθωθεί με Recompute)", items: cap(report.nameStale, (x) => `${x.from} → ${x.to}`) });
   const eloUnofficial = report.eloExtra.filter((x) => x.reason === "unofficial");
   const eloGone = report.eloExtra.filter((x) => x.reason === "missing");
-  if (eloUnofficial.length) findings.push({ level: "warn", title: "Το ELO περιλαμβάνει δοκιμαστικά τουρνουά", items: cap(eloUnofficial, (x) => x.name) });
+  if (eloUnofficial.length) findings.push({ level: "warn", title: "Το ELO περιλαμβάνει δοκιμαστικά ή εκτός Premier League τουρνουά", items: cap(eloUnofficial, (x) => x.name) });
   if (eloGone.length) findings.push({ level: "warn", title: "Το ELO περιλαμβάνει τουρνουά που δεν υπάρχουν πια στον κατάλογο", items: cap(eloGone, (x) => x.name) });
   if (report.eloMissing.length) findings.push({ level: "warn", title: "Επίσημα τουρνουά που δεν έχουν περαστεί στο ELO", items: cap(report.eloMissing, (x) => x.name) });
   const seasonUnofficial = report.seasonExtra.filter((x) => x.reason === "unofficial");
   const seasonGone = report.seasonExtra.filter((x) => x.reason === "missing");
-  if (seasonUnofficial.length) findings.push({ level: "warn", title: "Η Βαθμολογία περιλαμβάνει δοκιμαστικά τουρνουά", items: cap(seasonUnofficial, (x) => x.name) });
+  if (seasonUnofficial.length) findings.push({ level: "warn", title: "Η Βαθμολογία περιλαμβάνει δοκιμαστικά ή εκτός Premier League τουρνουά", items: cap(seasonUnofficial, (x) => x.name) });
   if (seasonGone.length) findings.push({ level: "warn", title: "Η Βαθμολογία περιλαμβάνει τουρνουά που δεν υπάρχουν πια", items: cap(seasonGone, (x) => x.name) });
   if (report.seasonMissing.length) findings.push({ level: "warn", title: "Επίσημα τουρνουά που δεν έχουν περαστεί στη Βαθμολογία", items: cap(report.seasonMissing, (x) => x.name) });
   if (report.eloOnly.length) findings.push({ level: "warn", title: "Παίκτες στο ELO που δεν υπάρχουν στη Βαθμολογία", items: cap(report.eloOnly, (x) => `${x.name} (${x.games} αγώνες)`) });
@@ -7243,7 +7970,7 @@ function ConsistencyReportView({ report, onClose }) {
   );
 }
 
-function StandingsTable({ standings, buchholz, totalRounds, sideBets, isAdmin, onToggleExclusion }) {
+function StandingsTable({ standings, buchholz, totalRounds, sideBets, isAdmin, onToggleExclusion, onOpenPlayer }) {
   const rounds = Array.from({ length: totalRounds || 0 }, (_, i) => i + 1);
   const inAnySideBet = (playerId) => (sideBets || []).some((b) => b.participantIds.includes(playerId));
   return (
@@ -7266,7 +7993,7 @@ function StandingsTable({ standings, buchholz, totalRounds, sideBets, isAdmin, o
           {standings.map((p, i) => (
             <tr key={p.id}>
               <td className="rank">{i + 1}</td>
-              <td className="standings-name" style={{ cursor: "pointer" }} onClick={() => openPlayerDetail(normalizeName(p.name))}>{p.name}</td>
+              <td className="standings-name" style={{ cursor: "pointer" }} onClick={() => onOpenPlayer && onOpenPlayer(normalizeName(p.name))}>{p.name}</td>
               {rounds.map((r) => (
                 <td key={r} style={{ textAlign: "center" }}>{roundCell(p, r)}</td>
               ))}
