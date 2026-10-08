@@ -176,7 +176,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.15";
+const APP_BUILD_VERSION = "2026-10-08.16";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -202,6 +202,16 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.16",
+    date: "2026-10-08",
+    items: [
+      "«Πώς προέκυψε η ELO» στην καρτέλα παίκτη: κάθε αγώνας με τουρνουά, γύρο, αντίπαλο και την ELO του, αποτέλεσμα, μεταβολή και νέα ELO, με έλεγχο ότι ταιριάζει με την κατάταξη.",
+      "Κλείσιμο σεζόν (Διαχείριση → Σεζόν): backup, Excel τελικής Βαθμολογίας και κλείδωμα με πληκτρολόγηση του έτους. Η Επισκόπηση υπενθυμίζει όποια σεζόν έχει τελειώσει χωρίς να κλείσει.",
+      "Κλειδωμένη σεζόν: κανόνες και ημερολόγιο μόνο για ανάγνωση· αλλαγές σε τουρνουά της μόνο μετά από ξεκλείδωμα για το συγκεκριμένο τουρνουά· ένα Recompute που θα άλλαζε τη Βαθμολογία της σταματά και ρωτά.",
+      "Διόρθωση: στα Στατιστικά Σεζόν εμφανιζόταν και το κουμπί των άλλων tabs, και το «Ξαναϋπολόγισε» χρησιμοποιούσε λάθος σεζόν.",
+    ],
+  },
   {
     version: "2026-10-08.15",
     date: "2026-10-08",
@@ -1463,6 +1473,30 @@ function formatYMD(ymd) {
   return new Date(y, m - 1, d).toLocaleDateString("el-GR", { weekday: "long", day: "numeric", month: "numeric", year: "numeric" });
 }
 
+/* ---- Season closing (Build 3D) ------------------------------------------
+ * seasonLocks: { "2026": { lockedAt } } in the system document. A locked
+ * season's rules and calendar are read-only, changes to its tournaments
+ * need an explicit per-tournament unlock, and a Recompute that would change
+ * its standings stops and asks first. */
+function seasonLocked(sys, year) {
+  return !!(sys && sys.seasonLocks && sys.seasonLocks[String(year)]);
+}
+
+/** Comparable fingerprint of a season's standings data (names ignored). */
+function seasonFingerprint(season) {
+  const out = {};
+  Object.keys((season && season.players) || {}).sort().forEach((k) => {
+    const entries = season.players[k].entries || {};
+    const keys = Object.keys(entries).sort();
+    if (keys.length === 0) return;
+    out[k] = keys.map((id) => {
+      const e = entries[id];
+      return [id, e.points, e.wins, e.matches, e.normalMatches ?? null];
+    });
+  });
+  return JSON.stringify(out);
+}
+
 /** Statistics period filter (Build 3C): "all" or a season year. */
 function tournamentInScope(t, scope) {
   if (scope === "all") return true;
@@ -2502,6 +2536,11 @@ export default function TournamentManager() {
   const [metaBusy, setMetaBusy] = useState(false);
   const [controlSeasons, setControlSeasons] = useState([]); // seasons listed on the admin page
   const [controlTab, setControlTab] = useState("overview"); // admin page sub-menu
+  const [lockOverrideId, setLockOverrideId] = useState(null); // tournament allowed to change although its season is locked (this session)
+  const [lockTyped, setLockTyped] = useState(""); // typed year for lock / unlock confirmations
+  const [lockAction, setLockAction] = useState(null); // { kind: "lock" | "unlock" | "tournament", year }
+  const [recomputeLockConflict, setRecomputeLockConflict] = useState(null); // { years, indexOverride }
+  const [excelDoneAt, setExcelDoneAt] = useState(null); // final standings exported in this session
   const [statsScope, setStatsScope] = useState("all"); // Build 3C: Statistics period — "all" or a season year
   const [archiveSeason, setArchiveSeason] = useState(""); // Build 3C: tournaments list filters
   const [archiveCompetition, setArchiveCompetition] = useState("");
@@ -3188,6 +3227,10 @@ export default function TournamentManager() {
   }
 
   function startTournament() {
+    if (seasonLocked(sysState, seasonYear)) {
+      showToast(`Η σεζόν ${seasonYear} είναι κλειδωμένη — διάλεξε άλλη σεζόν ή ημερομηνία.`);
+      return;
+    }
     if (players.length < 3) return;
     const pairing = generatePairings(players, 1);
     setCurrentPairings(pairing);
@@ -3218,6 +3261,7 @@ export default function TournamentManager() {
   }
 
   function setHistoricalResult(roundNumber, pairIndex, winnerId, loserId, method) {
+    if (!tournamentEditable()) return;
     const updatedHistory = history.map((entry) =>
       entry.round !== roundNumber
         ? entry
@@ -3227,10 +3271,11 @@ export default function TournamentManager() {
     setHistory(updatedHistory);
     setPlayers(recomputed);
     persistCurrent(phase, round, recomputed, currentPairings, updatedHistory);
-    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα \"Recompute ELO & Season Standings\" (στο ELO Ratings ή Season Standings) για να συγχρονιστεί.");
+    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα \"Recompute ELO & Season Standings\" (Διαχείριση → Δεδομένα) για να συγχρονιστεί.");
   }
 
   function clearHistoricalResult(roundNumber, pairIndex) {
+    if (!tournamentEditable()) return;
     const updatedHistory = history.map((entry) =>
       entry.round !== roundNumber
         ? entry
@@ -3240,7 +3285,7 @@ export default function TournamentManager() {
     setHistory(updatedHistory);
     setPlayers(recomputed);
     persistCurrent(phase, round, recomputed, currentPairings, updatedHistory);
-    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα \"Recompute ELO & Season Standings\" (στο ELO Ratings ή Season Standings) για να συγχρονιστεί.");
+    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα \"Recompute ELO & Season Standings\" (Διαχείριση → Δεδομένα) για να συγχρονιστεί.");
   }
 
   /** Redraws the live round. For round 1, that means deleting the round
@@ -3267,7 +3312,7 @@ export default function TournamentManager() {
     setRound(lastEntry.round);
     setCurrentPairings(restoredPairing);
     persistCurrent(phase, lastEntry.round, recomputed, restoredPairing, remainingHistory);
-    setNotice("Ο γύρος αναιρέθηκε — αλλά το ELO ΔΕΝ αναιρέθηκε αυτόματα μαζί του. Πάτα \"Recompute ELO & Season Standings\" (στο ELO Ratings ή Season Standings) για να συγχρονιστεί, μόλις τελειώσεις τις διορθώσεις.");
+    setNotice("Ο γύρος αναιρέθηκε — αλλά το ELO ΔΕΝ αναιρέθηκε αυτόματα μαζί του. Πάτα \"Recompute ELO & Season Standings\" (Διαχείριση → Δεδομένα) για να συγχρονιστεί, μόλις τελειώσεις τις διορθώσεις.");
   }
 
   const roundComplete = currentPairings && currentPairings.pairs.every((pr) => pr.result !== null);
@@ -3679,6 +3724,8 @@ export default function TournamentManager() {
     setOrganisationClubId(data.organisationClubId || null);
     setCalendarEntryId(data.calendarEntryId || null);
     setMetaEdit(null);
+    setLockOverrideId(null);
+    setLockAction(null);
     setLiveStandingsEnabled(!!data.liveStandingsEnabled);
     setIsOfficial(!!data.isOfficial);
     setPlayers(data.players || []);
@@ -3956,6 +4003,11 @@ export default function TournamentManager() {
    * tournament already counts, the admin is told to run Recompute. */
   async function saveTournamentMeta() {
     if (!metaEdit || !tournamentId) return;
+    if (!tournamentEditable()) return;
+    if (seasonLocked(sysState, Number(metaEdit.seasonYear)) && Number(metaEdit.seasonYear) !== seasonYear) {
+      showToast(`Η σεζόν ${metaEdit.seasonYear} είναι κλειδωμένη — δεν μπορεί να μπει τουρνουά σε αυτήν.`);
+      return;
+    }
     const nextCreatedAt = withLocalDate(createdAt, metaEdit.date);
     const nextSeason = Number(metaEdit.seasonYear) || seasonForDate(nextCreatedAt) || seasonYear;
     const changes = {
@@ -4335,12 +4387,16 @@ export default function TournamentManager() {
       });
     }
 
+    // Build 3D: the per-match ledger ("how this rating was reached"),
+    // recorded during the same replay — so it can never disagree with it.
+    const ledger = {}; // key -> [{ date, tournamentId, tournamentName, round, opponent, opponentRating, result, delta, ratingAfter, ret }]
     const extraTournaments = archive.filter(countsTowardRatings).sort((a, b) => new Date(a.date) - new Date(b.date));
     for (const t of extraTournaments) {
       const data = await fetchTournamentData(t.id);
       if (!data || !data.history || !data.players) continue;
       const participants = new Set();
-      data.history.forEach((entry) => {
+      const ml = data.matchLength || 7;
+      data.history.forEach((entry, idx) => {
         const roundMatches = [];
         entry.pairs.forEach((pr) => {
           if (!pr.result) return;
@@ -4349,7 +4405,23 @@ export default function TournamentManager() {
           if (!w || !l) return;
           roundMatches.push({ w: w.name, l: l.name, ret: pr.result.method === "retirement" });
         });
-        applyEloRoundBatch(working, roundMatches, data.matchLength || 7);
+        // ratings before the round (the whole round is applied as one batch)
+        const pending = [];
+        roundMatches.forEach((m) => {
+          const wKey = normalizeName(m.w);
+          const lKey = normalizeName(m.l);
+          const wR = working.players[wKey]?.rating ?? ELO_INITIAL;
+          const lR = working.players[lKey]?.rating ?? ELO_INITIAL;
+          const delta = m.ret ? 0 : (1 - eloWinProbability(wR, lR, ml)) * eloPointsAtStake(ml);
+          const base = { date: t.date, tournamentId: t.id, tournamentName: t.name, round: entry.round ?? idx + 1, matchLength: ml, ret: m.ret };
+          pending.push([wKey, { ...base, opponent: m.l, opponentRating: lR, result: "win", delta }]);
+          pending.push([lKey, { ...base, opponent: m.w, opponentRating: wR, result: "loss", delta: -delta }]);
+        });
+        applyEloRoundBatch(working, roundMatches, ml);
+        pending.forEach(([k, row]) => {
+          if (!ledger[k]) ledger[k] = [];
+          ledger[k].push({ ...row, ratingAfter: working.players[k]?.rating ?? ELO_INITIAL });
+        });
         roundMatches.forEach((m) => {
           if (m.ret) return;
           participants.add(normalizeName(m.w));
@@ -4359,6 +4431,7 @@ export default function TournamentManager() {
       snapshot(t.date, [...participants]);
     }
 
+    timeline.__ledger = ledger;
     setEloTimeline(timeline);
     setEloTimelineLoading(false);
   }
@@ -4371,7 +4444,7 @@ export default function TournamentManager() {
    * League days are flagged this way by default. Any tournament NOT
    * flagged Official (e.g. a test) is skipped entirely, whether or not it
    * still exists in the archive — no need to delete it first. */
-  async function recomputeEloAndSeasonFromScratch(indexOverride) {
+  async function recomputeEloAndSeasonFromScratch(indexOverride, opts = {}) {
     setNotice("Recomputing ELO and Season Standings from official League days…");
     const elo = { players: {}, initialized: true };
     const seasonsBuilt = {}; // year -> { players }
@@ -4444,6 +4517,27 @@ export default function TournamentManager() {
       return;
     }
     const yearsToWrite = [...new Set([...existingYears, ...Object.keys(seasonsBuilt).map(Number)])].sort((a, b) => a - b);
+
+    // A locked season's standings may only change with explicit consent.
+    if (!opts.allowLocked) {
+      const conflicts = [];
+      for (const y of yearsToWrite.filter((x) => seasonLocked(sysState, x))) {
+        let current;
+        try {
+          current = await loadSeasonStrict(y);
+        } catch {
+          setNotice("");
+          reportSaveFailure(`Recompute — η κλειδωμένη σεζόν ${y} δεν διαβάστηκε· ΔΕΝ γράφτηκε τίποτα. Δοκίμασε ξανά.`);
+          return;
+        }
+        if (seasonFingerprint(current) !== seasonFingerprint(seasonsBuilt[y] || { players: {} })) conflicts.push(y);
+      }
+      if (conflicts.length > 0) {
+        setNotice("");
+        setRecomputeLockConflict({ years: conflicts, indexOverride: Array.isArray(indexOverride) ? indexOverride : null });
+        return;
+      }
+    }
 
     elo.appliedTournaments = appliedNow;
     elo.builtFrom = {
@@ -5254,6 +5348,110 @@ export default function TournamentManager() {
   const archiveSeasonOptions = [...new Set(archive.map((t) => Number(t.seasonYear) || seasonForDate(t.date)).filter(Boolean))].sort((a, b) => b - a);
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
 
+  /* ---- Build 3D: locked seasons ---- */
+
+  /** True when the open tournament may be changed. In a locked season the
+   * admin must first unlock changes for this one tournament (tab «Στοιχεία»). */
+  function tournamentEditable() {
+    if (!seasonLocked(sysState, seasonYear) || lockOverrideId === tournamentId) return true;
+    showToast(`Η σεζόν ${seasonYear} είναι κλειδωμένη — ξεκλείδωσε τις αλλαγές από το tab «Στοιχεία».`);
+    return false;
+  }
+
+  async function confirmLockAction() {
+    if (!lockAction || String(lockTyped).trim() !== String(lockAction.year)) {
+      showToast("Πληκτρολόγησε το έτος της σεζόν για επιβεβαίωση.");
+      return;
+    }
+    const { kind, year } = lockAction;
+    if (kind === "tournament") {
+      setLockOverrideId(tournamentId);
+      setLockAction(null);
+      setLockTyped("");
+      showToast("Επιτρέπονται αλλαγές σε αυτό το τουρνουά, μέχρι να ανοίξεις άλλο.");
+      return;
+    }
+    const locks = { ...(sysState.seasonLocks || {}) };
+    if (kind === "lock") locks[String(year)] = { lockedAt: new Date().toISOString() };
+    else delete locks[String(year)];
+    if (await saveSysState({ seasonLocks: locks })) {
+      setSysState((st) => ({ ...st, seasonLocks: locks }));
+      setLockAction(null);
+      setLockTyped("");
+      showToast(kind === "lock" ? `Η σεζόν ${year} έκλεισε και κλειδώθηκε.` : `Η σεζόν ${year} ξεκλειδώθηκε.`);
+    } else {
+      reportSaveFailure(`Σεζόν ${year} — το ${kind === "lock" ? "κλείδωμα" : "ξεκλείδωμα"} δεν αποθηκεύτηκε`);
+    }
+  }
+
+  function renderLockPrompt(kind, year, text) {
+    const open = lockAction && lockAction.kind === kind && lockAction.year === year;
+    if (!open) return null;
+    return (
+      <div className="lock-prompt">
+        <p style={{ margin: "0 0 8px 0", fontSize: 14 }}>{text}</p>
+        <div className="row" style={{ alignItems: "flex-end" }}>
+          <div style={{ width: 140 }}>
+            <label>Πληκτρολόγησε «{year}»</label>
+            <input type="text" value={lockTyped} onChange={(e) => setLockTyped(e.target.value)} />
+          </div>
+          <button className="btn-secondary" onClick={() => { setLockAction(null); setLockTyped(""); }}>Άκυρο</button>
+          <button className="btn-primary" onClick={confirmLockAction} disabled={String(lockTyped).trim() !== String(year)}>Επιβεβαίωση</button>
+        </div>
+      </div>
+    );
+  }
+
+  /** Admin: closing and locking a season (Σεζόν tab). */
+  function renderSeasonCloseCard(year) {
+    const locked = seasonLocked(sysState, year);
+    const prog = calendarProgress(buildCalendarView(sysState, year, archive));
+    const ended = todayYMD() > (year === 2026 ? "2026-12-31" : `${year}-12-31`);
+    const calendarDone = prog.total > 0 && prog.done === prog.total;
+    const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
+    if (locked) {
+      return (
+        <div className="control-sub-card">
+          <strong>Σεζόν {year} — κλειστή 🔒</strong>
+          <p style={{ margin: "6px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
+            Κλείδωσε στις {formatDate(sysState.seasonLocks[String(year)].lockedAt)}. Οι κανόνες και το ημερολόγιό της δεν αλλάζουν, κάθε αλλαγή σε τουρνουά της θέλει ξεχωριστό ξεκλείδωμα, και ένα Recompute που θα άλλαζε τη Βαθμολογία της σταματά και ρωτά.
+          </p>
+          {!lockAction && (
+            <button className="btn-ghost" style={{ marginTop: 8 }} onClick={() => { setLockAction({ kind: "unlock", year }); setLockTyped(""); }}>
+              Ξεκλείδωμα σεζόν…
+            </button>
+          )}
+          {renderLockPrompt("unlock", year, `Το ξεκλείδωμα επιτρέπει ξανά αλλαγές στη σεζόν ${year}. Χρησιμοποίησέ το μόνο για διόρθωση λάθους.`)}
+        </div>
+      );
+    }
+    return (
+      <div className="control-sub-card">
+        <strong>Σεζόν {year} — κλείσιμο</strong>
+        <p style={{ margin: "6px 0 8px 0", fontSize: 13, color: ended || calendarDone ? "var(--win)" : "var(--muted)" }}>
+          {ended || calendarDone
+            ? "✓ Η σεζόν έχει ολοκληρωθεί και μπορεί να κλείσει."
+            : `Η σεζόν δεν έχει ολοκληρωθεί ακόμα${prog.total > 0 ? ` (${prog.done} από ${prog.total} αγωνιστικές)` : ""}. Μπορεί να κλείσει, αλλά συνήθως κλείνει μετά την τελευταία αγωνιστική.`}
+        </p>
+        <ol className="close-steps">
+          <li className={exportFresh ? "done" : ""}>
+            Πλήρες backup: {exportFresh ? `✓ ${formatDate(sysState.lastExportAt)}` : <button className="btn-secondary" onClick={exportAllData}><Download size={14} /> Export All Data</button>}
+          </li>
+          <li className={excelDoneAt ? "done" : ""}>
+            Τελική Βαθμολογία σε Excel: {excelDoneAt ? "✓ κατέβηκε" : <button className="btn-secondary" onClick={async () => { await exportBaselineExcel(); setExcelDoneAt(new Date().toISOString()); }}><Download size={14} /> Εξαγωγή Excel</button>}
+          </li>
+          <li>
+            Κλείδωμα:{" "}
+            <button className="btn-primary" disabled={!exportFresh || !excelDoneAt || !!lockAction} onClick={() => { setLockAction({ kind: "lock", year }); setLockTyped(""); }}>
+              🔒 Κλείσιμο σεζόν {year}
+            </button>
+          </li>
+        </ol>
+        {renderLockPrompt("lock", year, `Μετά το κλείσιμο, οι κανόνες, το ημερολόγιο και τα αποτελέσματα της σεζόν ${year} προστατεύονται από αλλαγές.`)}
+      </div>
+    );
+  }
+
   /* ---- Build 3B3: clubs and registry numbers ---- */
 
   /** Dry run of the clubs migration: every club name in use today (players,
@@ -5622,7 +5820,7 @@ export default function TournamentManager() {
                       )}
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      {!e.tournament && (
+                      {!e.tournament && !seasonLocked(sysState, year) && (
                         <>
                           <button className="btn-ghost" style={{ padding: "2px 6px" }} onClick={() => setCalDraft({ year, id: e.id, date: e.date, competitionId: e.competitionId || DEFAULT_COMPETITION_ID, note: e.note || "" })} title="Αλλαγή ημερομηνίας">
                             <Pencil size={13} />
@@ -5639,7 +5837,7 @@ export default function TournamentManager() {
             </table>
           </div>
         )}
-        {editing ? (
+        {seasonLocked(sysState, year) ? null : editing ? (
           <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
             <div style={{ width: 160 }}>
               <label>Ημερομηνία</label>
@@ -5745,7 +5943,7 @@ export default function TournamentManager() {
       <div className="control-sub-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <strong>Σεζόν {year} — κανόνες Βαθμολογίας</strong>
-          {!editing && (
+          {!editing && !seasonLocked(sysState, year) && (
             <button className="btn-ghost" onClick={() => setRulesDraft({ year, bestOf: rules.bestOf, cutoffR32: rules.cutoffR32, cutoffR48: rules.cutoffR48 })}>
               <Pencil size={13} /> Αλλαγή
             </button>
@@ -5861,12 +6059,30 @@ export default function TournamentManager() {
     const seasonMismatch = seasonForDate(createdAt) !== null && seasonForDate(createdAt) !== seasonYear;
     return (
       <div className="details-tab">
+        {isAdmin && seasonLocked(sysState, seasonYear) && (
+          <div className="card details-card" style={{ borderLeft: "4px solid #9a5b00" }}>
+            <strong>Η σεζόν {seasonYear} είναι κλειδωμένη 🔒</strong>
+            {lockOverrideId === tournamentId ? (
+              <p style={{ fontSize: 13, margin: "6px 0 0 0" }}>Επιτρέπονται αλλαγές σε αυτό το τουρνουά μέχρι να ανοίξεις άλλο. Μετά από αλλαγή, τρέξε Recompute.</p>
+            ) : (
+              <>
+                <p style={{ fontSize: 13, color: "var(--muted)", margin: "6px 0 8px 0" }}>Τα αποτελέσματα και τα στοιχεία του προστατεύονται. Για διόρθωση λάθους, ξεκλείδωσε τις αλλαγές μόνο για αυτό το τουρνουά.</p>
+                {!lockAction && (
+                  <button className="btn-secondary" onClick={() => { setLockAction({ kind: "tournament", year: seasonYear }); setLockTyped(""); }}>
+                    Ξεκλείδωμα αλλαγών σε αυτό το τουρνουά…
+                  </button>
+                )}
+                {renderLockPrompt("tournament", seasonYear, "Οι αλλαγές θα επιτρέπονται μόνο σε αυτό το τουρνουά και μόνο μέχρι να ανοίξεις άλλο.")}
+              </>
+            )}
+          </div>
+        )}
         {!metaEdit && (
           <div className="card details-card">
             <div className="details-head">
               <strong>Στοιχεία τουρνουά</strong>
               {isAdmin && (
-                <button className="btn-secondary" onClick={startMetaEdit}>
+                <button className="btn-secondary" onClick={() => tournamentEditable() && startMetaEdit()}>
                   <Pencil size={14} /> Αλλαγή στοιχείων
                 </button>
               )}
@@ -5959,7 +6175,7 @@ export default function TournamentManager() {
             <p style={{ fontSize: 13, color: "var(--muted)", margin: "6px 0 10px 0" }}>
               Μόνο τα επίσημα τουρνουά μετράνε στο Recompute ELO και Βαθμολογίας. Η αλλαγή ζητά επιβεβαίωση.
             </p>
-            <button className="btn-secondary" onClick={() => setConfirmingOfficial(true)}>
+            <button className="btn-secondary" onClick={() => tournamentEditable() && setConfirmingOfficial(true)}>
               {isOfficial ? <Check size={14} color="var(--win)" /> : <X size={14} />} {isOfficial ? "Επίσημο — κάνε το δοκιμαστικό" : "Δοκιμαστικό — κάνε το επίσημο"}
             </button>
           </div>
@@ -5971,7 +6187,7 @@ export default function TournamentManager() {
             <div style={{ marginTop: 10 }}>
               <MoveToTrashControl
                 confirming={confirmingDelete}
-                onStart={() => setConfirmingDelete(true)}
+                onStart={() => tournamentEditable() && setConfirmingDelete(true)}
                 onCancel={() => setConfirmingDelete(false)}
                 onConfirm={confirmDeleteTournament}
                 isOfficial={isOfficial}
@@ -6230,6 +6446,11 @@ export default function TournamentManager() {
         .control-section { padding: 16px 20px; margin-bottom: 16px; }
         .control-season { margin-top: 6px; }
         .control-tabs { flex-wrap: wrap; row-gap: 4px; }
+        .lock-prompt { border: 1px solid #9a5b00; background: #fff8ec; border-radius: 8px; padding: 10px 12px; margin-top: 10px; }
+        .close-steps { margin: 6px 0 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
+        .close-steps li.done { color: var(--win); }
+        .ledger-table td.pos { color: var(--win); }
+        .ledger-table td.neg { color: var(--loss, #b03a2e); }
         .scope-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; font-size: 14px; color: var(--muted); }
         .cal-table { width: 100%; border-collapse: collapse; font-size: 14px; }
         .cal-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--border); }
@@ -6258,6 +6479,30 @@ export default function TournamentManager() {
         <div className="toast">
           <Check size={16} color="var(--win)" />
           {toast}
+        </div>
+      )}
+
+      {isAdmin && recomputeLockConflict && (
+        <div className="save-failure-banner" role="alert" style={{ background: "#fff8ec", borderColor: "#9a5b00", color: "#5a3a00", bottom: saveFailures.length > 0 || startupReadFailed ? 140 : 16 }}>
+          <Lock size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ flex: 1 }}>
+            <p style={{ margin: "0 0 8px 0" }}>
+              <strong>Το Recompute θα άλλαζε τη Βαθμολογία της κλειδωμένης σεζόν {recomputeLockConflict.years.join(", ")}.</strong> Δεν γράφτηκε τίποτα ακόμα. Συνέχισε μόνο αν η αλλαγή οφείλεται σε διόρθωση που έκανες σκόπιμα.
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn-secondary" onClick={() => setRecomputeLockConflict(null)}>Ακύρωση</button>
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  const c = recomputeLockConflict;
+                  setRecomputeLockConflict(null);
+                  recomputeEloAndSeasonFromScratch(c.indexOverride || undefined, { allowLocked: true });
+                }}
+              >
+                Συνέχεια παρά το κλείδωμα
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -6667,7 +6912,7 @@ export default function TournamentManager() {
               </>
             )}
 
-            {statsTab !== "h2h" && !statsResult && (
+            {(statsTab === "streaks" || statsTab === "titles") && !statsResult && (
               <button className="btn-secondary" disabled={statsLoading} onClick={() => computeStatistics()}>
                 <TrendingUp size={15} /> {statsLoading ? "Υπολογισμός…" : "Υπολόγισε στατιστικά"}
               </button>
@@ -6814,7 +7059,7 @@ export default function TournamentManager() {
                       </div>
                     </div>
 
-                    <button className="btn-ghost" style={{ marginTop: 20 }} disabled={seasonStatsLoading} onClick={() => computeSeasonOverview(seasonStatsYear)}>
+                    <button className="btn-ghost" style={{ marginTop: 20 }} disabled={seasonStatsLoading} onClick={() => computeSeasonOverview(statsScope)}>
                       <RotateCcw size={13} /> Ξαναϋπολόγισε
                     </button>
                   </>
@@ -7499,6 +7744,46 @@ export default function TournamentManager() {
                   <p className="trend-chart-title" style={{ marginTop: 4 }}>Performance trend</p>
                   <PlayerTrendCharts rows={eloTimeline ? eloTimeline[key] : null} />
 
+                  {(() => {
+                    const rows = eloTimeline && eloTimeline.__ledger ? eloTimeline.__ledger[key] || [] : null;
+                    if (!rows) return null;
+                    const stored = eloData.players?.[key]?.rating;
+                    const final = rows.length ? rows[rows.length - 1].ratingAfter : ELO_INITIAL;
+                    const agrees = stored === undefined || Math.abs(stored - final) < 0.5;
+                    return (
+                      <details className="ledger" style={{ marginTop: 14 }}>
+                        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Πώς προέκυψε η ELO ({rows.filter((r) => !r.ret).length} αγώνες)</summary>
+                        <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0" }}>
+                          Αφετηρία {ELO_INITIAL}. Κάθε αγώνας της Premier League αλλάζει την ELO ανάλογα με τη διαφορά δυναμικότητας και το μήκος του αγώνα· οι αγώνες ενός γύρου υπολογίζονται μαζί. Οι νίκες με Α.Α. δεν μετράνε.
+                          {" "}Τελική: <strong>{Math.round(final)}</strong>
+                          {agrees ? " ✓ ίδια με την κατάταξη." : ` ⚠ η αποθηκευμένη ELO είναι ${Math.round(stored)} — χρειάζεται Recompute.`}
+                        </p>
+                        <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto" }}>
+                          <table className="cal-table ledger-table">
+                            <thead>
+                              <tr><th>Τουρνουά</th><th>Γύρος</th><th>Αντίπαλος (ELO)</th><th>Αποτ.</th><th>Μεταβολή</th><th>ELO</th></tr>
+                            </thead>
+                            <tbody>
+                              {[...rows].reverse().map((r, i) => (
+                                <tr key={i}>
+                                  <td>
+                                    <button className="history-link" onClick={() => openTournamentFromPlayer(r.tournamentId, key)}>{shortTournamentLabel(r.tournamentName)}</button>
+                                    <span className="cal-note"> · {formatDate(r.date)}</span>
+                                  </td>
+                                  <td>{r.round}</td>
+                                  <td>{r.opponent} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
+                                  <td>{r.ret ? (r.result === "win" ? "Ν (Α.Α.)" : "Η (Α.Α.)") : r.result === "win" ? "Νίκη" : "Ήττα"}</td>
+                                  <td className={r.delta > 0 ? "pos" : r.delta < 0 ? "neg" : ""}>{r.ret ? "—" : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}`}</td>
+                                  <td>{Math.round(r.ratingAfter)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </details>
+                    );
+                  })()}
+
                   <label style={{ marginTop: 18, display: "block" }}>Tournament history</label>
                   {!playerHistoryCache[key] && <p style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</p>}
                   {playerHistoryCache[key] && playerHistoryCache[key].length === 0 && (
@@ -7663,8 +7948,19 @@ export default function TournamentManager() {
                 <div className="card control-section">
                   <h2 className="control-h">Κατάσταση εφαρμογής</h2>
                   <dl className="details-list">
+                    {controlSeasons
+                      .filter((y) => y < current && !seasonLocked(sysState, y))
+                      .map((y) => (
+                        <React.Fragment key={y}>
+                          <dt>Σεζόν {y}</dt>
+                          <dd style={{ color: "#9a5b00" }}>
+                            Έχει τελειώσει αλλά δεν έχει κλείσει —{" "}
+                            <button className="history-link" onClick={() => { setControlSeasonYear(y); setControlTab("seasons"); }}>κλείσιμο σεζόν</button>
+                          </dd>
+                        </React.Fragment>
+                      ))}
                     <dt>Τρέχουσα σεζόν</dt>
-                    <dd>{current} ({seasonRangeLabel(current)})</dd>
+                    <dd>{current} ({seasonRangeLabel(current)}){seasonLocked(sysState, current) ? " 🔒" : ""}</dd>
                     {(() => {
                       const prog = calendarProgress(buildCalendarView(sysState, current, archive));
                       return (
@@ -7728,7 +8024,7 @@ export default function TournamentManager() {
             {/* 2. Seasons */}
             <div className="card control-section">
               <h2 className="control-h">Σεζόν</h2>
-              <p className="control-sub">Διάλεξε σεζόν για τους κανόνες Βαθμολογίας και το ημερολόγιό της. Το κλείσιμο σεζόν θα προστεθεί εδώ.</p>
+              <p className="control-sub">Διάλεξε σεζόν για τους κανόνες Βαθμολογίας, το ημερολόγιο και το κλείσιμό της.</p>
               {newSeasonYear === null ? (
                 <button className="btn-secondary" onClick={() => setNewSeasonYear(String(Math.max(...controlSeasons, seasonForDate(new Date().toISOString()) || 2026) + 1))}>
                   <Plus size={14} /> Νέα σεζόν
@@ -7749,8 +8045,8 @@ export default function TournamentManager() {
               {controlSeasons.length > 0 && (
                 <div className="round-pills" style={{ marginTop: 12 }}>
                   {controlSeasons.map((y) => (
-                    <button key={y} className={`round-pill ${controlSeasonYear === y ? "active" : ""}`} onClick={() => { setControlSeasonYear(y); setCalDraft(null); setRulesDraft(null); }}>
-                      Σεζόν {y}
+                    <button key={y} className={`round-pill ${controlSeasonYear === y ? "active" : ""}`} onClick={() => { setControlSeasonYear(y); setCalDraft(null); setRulesDraft(null); setLockAction(null); }}>
+                      Σεζόν {y}{seasonLocked(sysState, y) ? " 🔒" : ""}
                     </button>
                   ))}
                 </div>
@@ -7759,6 +8055,7 @@ export default function TournamentManager() {
                 <div className="control-season">
                   {renderSeasonRulesCard(controlSeasonYear)}
                   {renderCalendarCard(controlSeasonYear)}
+                  {renderSeasonCloseCard(controlSeasonYear)}
                 </div>
               )}
             </div>
