@@ -175,7 +175,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.06";
+const APP_BUILD_VERSION = "2026-10-08.07";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -200,6 +200,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.07",
+    date: "2026-10-08",
+    items: [
+      "Νέο tab «Στοιχεία» σε κάθε τουρνουά: όλα τα στοιχεία μαζεμένα (ημερομηνία, σεζόν, διοργάνωση, λέσχη, κατάσταση, γύροι, παίκτες, αγώνες, αν μετράει σε ELO/Βαθμολογία). Για τον admin, εκεί βρίσκονται και η αλλαγή στοιχείων, η σήμανση «επίσημο» και η μετακίνηση στον κάδο.",
+    ],
+  },
   {
     version: "2026-10-08.06",
     date: "2026-10-08",
@@ -4807,36 +4814,69 @@ export default function TournamentManager() {
   const archiveHasFilter = searchName || dateFrom || dateTo;
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
 
-  /** Tournament details line (date, season, competition, club) shown at the
-   * top of an open tournament, plus the admin editor and the way back to
-   * the player card it was opened from. */
-  function renderTournamentMeta() {
-    const comps = competitionsFrom(sysState);
+  /** Way back to the player card the tournament was opened from. */
+  function renderBackToPlayer() {
+    if (!tournamentReturnPlayer || !registry.players[tournamentReturnPlayer]) return null;
     return (
-      <>
-        {tournamentReturnPlayer && registry.players[tournamentReturnPlayer] && (
-          <div style={{ marginBottom: 12 }}>
-            <button className="btn-secondary" onClick={backToPlayer}>
-              <ArrowLeft size={15} /> Πίσω στον παίκτη ({registry.players[tournamentReturnPlayer].name})
-            </button>
-          </div>
-        )}
+      <div style={{ marginBottom: 12 }}>
+        <button className="btn-secondary" onClick={backToPlayer}>
+          <ArrowLeft size={15} /> Πίσω στον παίκτη ({registry.players[tournamentReturnPlayer].name})
+        </button>
+      </div>
+    );
+  }
+
+  /** The "Στοιχεία" tab: everything about the tournament in one place —
+   * what it is, where it counts, and (admin) the actions on it. */
+  function renderTournamentDetailsTab() {
+    const comps = competitionsFrom(sysState);
+    const comp = comps.find((c) => c.id === competitionId);
+    const matchesPlayed = history.reduce((n, h) => n + h.pairs.filter((p) => p.result).length, 0);
+    const counts = countsTowardRatings({ isOfficial, competitionId });
+    const rows = [
+      ["Όνομα", tournamentName || "—"],
+      ["Ημερομηνία", createdAt ? formatDate(createdAt) : "—"],
+      ["Σεζόν", `${seasonYear} (${seasonRangeLabel(seasonYear)})`],
+      ["Διοργάνωση", comp ? `${comp.name} — ${COMPETITION_LEVEL_LABEL[comp.level] || comp.level}` : competitionName(comps, competitionId)],
+      ["Λέσχη / διοργανωτής", organisation || "—"],
+      ["Κατάσταση", phase === "finished" ? "Ολοκληρώθηκε" : `Σε εξέλιξη — γύρος ${round} από ${totalRounds}`],
+      ["Γύροι", totalRounds],
+      ["Μήκος αγώνα", `${matchLength} πόντοι`],
+      ["Παίκτες", players.length],
+      ["Αγώνες με αποτέλεσμα", matchesPlayed],
+      ["Επίσημο", isOfficial ? "Ναι (Official League day)" : "Όχι (δοκιμαστικό)"],
+      ["Μετράει σε ELO και Βαθμολογία", counts ? "Ναι" : isOfficial ? "Όχι — μετράει μόνο η Premier League προς το παρόν" : "Όχι — δεν είναι επίσημο"],
+    ];
+    const seasonMismatch = seasonForDate(createdAt) !== null && seasonForDate(createdAt) !== seasonYear;
+    return (
+      <div className="details-tab">
         {!metaEdit && (
-          <div className="meta-bar">
-            <span>Ημερομηνία: <strong>{createdAt ? formatDate(createdAt) : "—"}</strong></span>
-            <span>Σεζόν: <strong>{seasonYear}</strong></span>
-            <span>Διοργάνωση: <strong>{competitionName(comps, competitionId)}</strong></span>
-            {organisation && <span>Λέσχη: <strong>{organisation}</strong></span>}
-            {isAdmin && (
-              <button className="btn-ghost" onClick={startMetaEdit} style={{ padding: "2px 8px" }}>
-                <Pencil size={13} /> Αλλαγή
-              </button>
+          <div className="card details-card">
+            <div className="details-head">
+              <strong>Στοιχεία τουρνουά</strong>
+              {isAdmin && (
+                <button className="btn-secondary" onClick={startMetaEdit}>
+                  <Pencil size={14} /> Αλλαγή στοιχείων
+                </button>
+              )}
+            </div>
+            <dl className="details-list">
+              {rows.map(([k, v]) => (
+                <React.Fragment key={k}>
+                  <dt>{k}</dt>
+                  <dd>{v}</dd>
+                </React.Fragment>
+              ))}
+            </dl>
+            {seasonMismatch && (
+              <p className="field-warning">⚠ Η ημερομηνία ανήκει στη σεζόν {seasonForDate(createdAt)}, όχι στη {seasonYear}.</p>
             )}
           </div>
         )}
+
         {isAdmin && metaEdit && (
-          <div className="card" style={{ marginBottom: 14, padding: "14px 18px" }}>
-            <strong>Στοιχεία τουρνουά</strong>
+          <div className="card details-card">
+            <strong>Αλλαγή στοιχείων</strong>
             <div className="row" style={{ marginTop: 10 }}>
               <div style={{ width: 160 }}>
                 <label>Ημερομηνία</label>
@@ -4888,7 +4928,38 @@ export default function TournamentManager() {
             </div>
           </div>
         )}
-      </>
+
+        {isAdmin && (
+          <div className="card details-card">
+            <strong>Επίσημο τουρνουά</strong>
+            <p style={{ fontSize: 13, color: "var(--muted)", margin: "6px 0 10px 0" }}>
+              Μόνο τα επίσημα τουρνουά μετράνε στο Recompute ELO και Βαθμολογίας. Η αλλαγή ζητά επιβεβαίωση.
+            </p>
+            <button className="btn-secondary" onClick={() => setConfirmingOfficial(true)}>
+              {isOfficial ? <Check size={14} color="var(--win)" /> : <X size={14} />} {isOfficial ? "Επίσημο — κάνε το δοκιμαστικό" : "Δοκιμαστικό — κάνε το επίσημο"}
+            </button>
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="card details-card">
+            <strong>Μετακίνηση στον κάδο</strong>
+            <div style={{ marginTop: 10 }}>
+              <MoveToTrashControl
+                confirming={confirmingDelete}
+                onStart={() => setConfirmingDelete(true)}
+                onCancel={() => setConfirmingDelete(false)}
+                onConfirm={confirmDeleteTournament}
+                isOfficial={isOfficial}
+                name={tournamentName}
+                playersCount={players.length}
+                matchesCount={matchesPlayed}
+                busy={trashBusy}
+              />
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -5132,8 +5203,13 @@ export default function TournamentManager() {
         .save-failure-banner { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 1001; display: flex; gap: 10px; align-items: flex-start; width: min(720px, calc(100% - 24px)); background: #fff4f2; color: #7a1d12; border: 2px solid #c0392b; border-radius: 10px; padding: 12px 14px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); }
         .history-link { background: none; border: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
         .history-link:hover { color: var(--ink); }
-        .meta-bar { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
-        .meta-bar strong { color: var(--ink); font-weight: 600; }
+        .details-tab { display: grid; gap: 14px; max-width: 760px; }
+        .details-card { padding: 16px 20px; margin: 0; }
+        .details-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+        .details-list { display: grid; grid-template-columns: max-content 1fr; gap: 7px 22px; margin: 0; font-size: 15px; }
+        .details-list dt { color: var(--muted); }
+        .details-list dd { margin: 0; font-weight: 600; color: var(--ink); }
+        @media (max-width: 520px) { .details-list { grid-template-columns: 1fr; gap: 2px; } .details-list dd { margin-bottom: 8px; } }
         .field-warning { font-size: 13px; color: #9a5b00; margin: 6px 0 0 0; }
         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
       `}</style>
@@ -6994,9 +7070,12 @@ export default function TournamentManager() {
               </div>
             )}
 
+            {renderBackToPlayer()}
+
             <div className="tabs">
               <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Pairings</button>
               <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Standings</button>
+              <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
               {isAdmin && (
                 <>
                   <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>Prizes</button>
@@ -7005,29 +7084,7 @@ export default function TournamentManager() {
               )}
             </div>
 
-            {renderTournamentMeta()}
-
-            {isAdmin && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                <button className="btn-ghost" onClick={() => setConfirmingOfficial(true)} title="Only Official days count when you recompute ELO & Season Standings from scratch">
-                  {isOfficial ? <Check size={13} color="var(--win)" /> : <X size={13} />} {isOfficial ? "Official League day" : "Test tournament (excluded from recompute)"}
-                </button>
-              </div>
-            )}
-
-            {isAdmin && (
-              <MoveToTrashControl
-                confirming={confirmingDelete}
-                onStart={() => setConfirmingDelete(true)}
-                onCancel={() => setConfirmingDelete(false)}
-                onConfirm={confirmDeleteTournament}
-                isOfficial={isOfficial}
-                name={tournamentName}
-                playersCount={players.length}
-                matchesCount={history.reduce((n, h) => n + h.pairs.filter((p) => p.result).length, 0)}
-                busy={trashBusy}
-              />
-            )}
+            {view === "details" && renderTournamentDetailsTab()}
 
             {view === "pairings" && (
               <>
@@ -7242,9 +7299,12 @@ export default function TournamentManager() {
               </div>
             )}
 
+            {renderBackToPlayer()}
+
             <div className="tabs">
               <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Pairings</button>
               <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Standings</button>
+              <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
               {isAdmin && (
                 <>
                   <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>Prizes</button>
@@ -7253,29 +7313,7 @@ export default function TournamentManager() {
               )}
             </div>
 
-            {renderTournamentMeta()}
-
-            {isAdmin && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                <button className="btn-ghost" onClick={() => setConfirmingOfficial(true)} title="Only Official days count when you recompute ELO & Season Standings from scratch">
-                  {isOfficial ? <Check size={13} color="var(--win)" /> : <X size={13} />} {isOfficial ? "Official League day" : "Test tournament (excluded from recompute)"}
-                </button>
-              </div>
-            )}
-
-            {isAdmin && (
-              <MoveToTrashControl
-                confirming={confirmingDelete}
-                onStart={() => setConfirmingDelete(true)}
-                onCancel={() => setConfirmingDelete(false)}
-                onConfirm={confirmDeleteTournament}
-                isOfficial={isOfficial}
-                name={tournamentName}
-                playersCount={players.length}
-                matchesCount={history.reduce((n, h) => n + h.pairs.filter((p) => p.result).length, 0)}
-                busy={trashBusy}
-              />
-            )}
+            {view === "details" && renderTournamentDetailsTab()}
 
             {view === "pairings" && (
               <>
