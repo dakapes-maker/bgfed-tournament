@@ -175,7 +175,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.07";
+const APP_BUILD_VERSION = "2026-10-08.08";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -200,6 +200,16 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.08",
+    date: "2026-10-08",
+    items: [
+      "Recompute ανά σεζόν: κάθε τουρνουά πηγαίνει στη Βαθμολογία της σεζόν του (από 1/1/2027 στη σεζόν 2027). Σεζόν χωρίς επίσημο τουρνουά αδειάζει, ώστε να μη μένουν υπολείμματα από δοκιμές.",
+      "Το Recompute δείχνει πόσα τουρνουά και παίκτες μέτρησε σε κάθε σεζόν, και είναι διαθέσιμο από τη Βαθμολογία οποιασδήποτε σεζόν.",
+      "Η Βαθμολογία και τα Στατιστικά Σεζόν ανοίγουν στην τρέχουσα σεζόν, ή στην πιο πρόσφατη με αποτελέσματα αν η τρέχουσα δεν έχει ακόμα.",
+      "Ο έλεγχος συνέπειας εντοπίζει τουρνουά σε λάθος σεζόν, και τουρνουά με σεζόν που δεν ταιριάζει με την ημερομηνία τους.",
+    ],
+  },
   {
     version: "2026-10-08.07",
     date: "2026-10-08",
@@ -1289,6 +1299,7 @@ function buildConsistencyReport({ elo, seasons, index, display }) {
     eloExtra: [], eloMissing: [], seasonExtra: [], seasonMissing: [],
     winsMismatch: [], eloOnly: [], seasonOnly: [], lookalikes: [],
     unknownKeys: [], nameStale: [],
+    seasonWrongYear: [], dateSeasonMismatch: [],
   };
 
   const applied = elo.appliedTournaments || {};
@@ -1311,7 +1322,8 @@ function buildConsistencyReport({ elo, seasons, index, display }) {
       const entries = Object.entries(p.entries || {});
       if (entries.length) seasonNames[key] = p.name;
       entries.forEach(([id, e]) => {
-        if (!seasonIds.has(id)) seasonIds.set(id, { name: e.tournamentName, year });
+        if (!seasonIds.has(id)) seasonIds.set(id, { name: e.tournamentName, year, years: new Set() });
+        seasonIds.get(id).years.add(Number(year));
         seasonWins[key] = (seasonWins[key] || 0) + (e.wins ?? e.points ?? 0);
       });
     });
@@ -1323,6 +1335,20 @@ function buildConsistencyReport({ elo, seasons, index, display }) {
   });
   finishedOfficial.forEach((t) => {
     if (!seasonIds.has(t.id)) report.seasonMissing.push({ id: t.id, name: t.name });
+  });
+  // Build 2: is each tournament in the season it belongs to?
+  seasonIds.forEach((info, id) => {
+    const t = idx.get(id);
+    if (!t || !t.seasonYear) return;
+    const wrong = [...info.years].filter((y) => y !== Number(t.seasonYear));
+    if (wrong.length) report.seasonWrongYear.push({ id, name: t.name, expected: Number(t.seasonYear), found: wrong });
+  });
+  index.forEach((t) => {
+    if (!countsTowardRatings(t) || !t.seasonYear) return;
+    const expected = seasonForDate(t.date);
+    if (expected && expected !== Number(t.seasonYear)) {
+      report.dateSeasonMismatch.push({ id: t.id, name: t.name, seasonYear: Number(t.seasonYear), expected });
+    }
   });
 
   const eloPlayers = elo.players || {};
@@ -1387,6 +1413,7 @@ function describeStaleReasons(report) {
   if (smiss.length) out.push(`Η Βαθμολογία περιλαμβάνει τουρνουά που δεν υπάρχει πια: ${smiss.map(label).join(", ")}.`);
   if (report.eloMissing.length) out.push(`Επίσημο τουρνουά που δεν έχει περαστεί στο ELO: ${report.eloMissing.map(label).join(", ")}.`);
   if (report.seasonMissing.length) out.push(`Επίσημο τουρνουά που δεν έχει περαστεί στη Βαθμολογία: ${report.seasonMissing.map(label).join(", ")}.`);
+  if ((report.seasonWrongYear || []).length) out.push(`Τουρνουά καταχωρημένο σε λάθος σεζόν: ${report.seasonWrongYear.map((x) => `${label(x)} (σε ${x.found.join(", ")} αντί ${x.expected})`).join(", ")}.`);
   if (report.eloOnly.length || report.winsMismatch.length) {
     out.push(`Το ELO δεν ταιριάζει με τη Βαθμολογία σε ${report.eloOnly.length + report.winsMismatch.length} παίκτες.`);
   }
@@ -2161,7 +2188,7 @@ export default function TournamentManager() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [seasonStatsResult, setSeasonStatsResult] = useState(null);
   const [seasonStatsLoading, setSeasonStatsLoading] = useState(false);
-  const [seasonStatsYear, setSeasonStatsYear] = useState(new Date().getFullYear());
+  const [seasonStatsYear, setSeasonStatsYear] = useState(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
   const [confirmingClearFeed, setConfirmingClearFeed] = useState(false);
   const [playerDetailReturnPhase, setPlayerDetailReturnPhase] = useState("players");
   const [statsTab, setStatsTab] = useState("h2h");
@@ -2314,7 +2341,7 @@ export default function TournamentManager() {
   const [dateTo, setDateTo] = useState("");
   const [showAllArchive, setShowAllArchive] = useState(false);
 
-  const [seasonBrowseYear, setSeasonBrowseYear] = useState(new Date().getFullYear());
+  const [seasonBrowseYear, setSeasonBrowseYear] = useState(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
   const [seasonYearsAvailable, setSeasonYearsAvailable] = useState([]);
   const [seasonData, setSeasonData] = useState({ players: {} });
   const [expandedPlayer, setExpandedPlayer] = useState(null);
@@ -2514,6 +2541,31 @@ export default function TournamentManager() {
     if (!["tournament", "finished", "setup"].includes(phase)) setTournamentReturnPlayer(null);
   }, [phase]);
 
+  // Build 2: the Season and Season-statistics pages open on the current
+  // season — or, while it has no results yet (e.g. 1 January, before the
+  // first tournament of the year), on the most recent season that has.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
+      const years = (await listSeasonYears()).filter((y) => y <= current).sort((a, b) => b - a);
+      let pick = current;
+      for (const y of years) {
+        const sz = await loadSeason(y);
+        if (Object.values(sz.players || {}).some((p) => Object.keys(p.entries || {}).length > 0)) {
+          pick = y;
+          break;
+        }
+      }
+      if (cancelled) return;
+      setSeasonBrowseYear(pick);
+      setSeasonStatsYear(pick);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     if (phase === "tournament") setSelectedRound(round);
     if (phase === "finished") setSelectedRound(totalRounds);
@@ -2540,6 +2592,15 @@ export default function TournamentManager() {
     });
     loadSeason(seasonBrowseYear).then(setSeasonData);
   }, [phase, seasonBrowseYear]);
+
+  // The season-statistics selector needs the list of seasons too, even when
+  // the Season page has not been opened in this visit.
+  useEffect(() => {
+    if (statsTab !== "season") return;
+    listSeasonYears().then((years) => {
+      setSeasonYearsAvailable(years.includes(seasonStatsYear) ? years : [seasonStatsYear, ...years]);
+    });
+  }, [statsTab, seasonStatsYear]);
 
   /* ---- archive persistence ---- */
 
@@ -4002,7 +4063,9 @@ export default function TournamentManager() {
     setEloTimelineLoading(false);
   }
 
-  /** Rebuilds elo-ratings and season-standings:2026 entirely from scratch,
+  /** Rebuilds the ELO and EVERY season's standings entirely from scratch
+   * (Build 2: each tournament goes to its own season; a season left with no
+   * counting tournament is emptied, so a stray test entry disappears),
    * replaying every tournament flagged "Official" (isOfficial: true), in
    * chronological order, straight from its own stored history — the 11
    * League days are flagged this way by default. Any tournament NOT
@@ -4011,7 +4074,8 @@ export default function TournamentManager() {
   async function recomputeEloAndSeasonFromScratch(indexOverride) {
     setNotice("Recomputing ELO and Season Standings from official League days…");
     const elo = { players: {}, initialized: true };
-    const season = { players: {} };
+    const seasonsBuilt = {}; // year -> { players }
+    const seasonTournaments = {}; // year -> count
     const appliedNow = {};
     let matchesCounted = 0;
     const builtAt = new Date().toISOString();
@@ -4044,6 +4108,10 @@ export default function TournamentManager() {
         applyEloRoundBatch(elo, roundMatches, data.matchLength || 7);
       });
       if (data.phase === "finished") {
+        const year = Number(data.seasonYear) || seasonForDate(data.createdAt) || 2026;
+        if (!seasonsBuilt[year]) seasonsBuilt[year] = { players: {} };
+        seasonTournaments[year] = (seasonTournaments[year] || 0) + 1;
+        const season = seasonsBuilt[year];
         data.players.forEach((p) => {
           const key = normalizeName(p.name);
           if (!season.players[key]) season.players[key] = { name: displayNameFor(key, p.name), entries: {} };
@@ -4064,26 +4132,52 @@ export default function TournamentManager() {
       }
     }
 
+    // Every season that exists in the database is rewritten — those with no
+    // counting tournament become empty. The listing is strict: if it fails,
+    // nothing at all is written.
+    let existingYears;
+    try {
+      existingYears = await listSeasonYearsStrict();
+    } catch {
+      setNotice("");
+      reportSaveFailure("Recompute — η λίστα σεζόν δεν διαβάστηκε· ΔΕΝ γράφτηκε τίποτα. Δοκίμασε ξανά.");
+      return;
+    }
+    const yearsToWrite = [...new Set([...existingYears, ...Object.keys(seasonsBuilt).map(Number)])].sort((a, b) => a - b);
+
     elo.appliedTournaments = appliedNow;
     elo.builtFrom = {
       at: builtAt,
       tournaments: Object.keys(appliedNow).length,
       matches: matchesCounted,
       players: Object.keys(elo.players).length,
+      seasons: Object.fromEntries(
+        yearsToWrite.map((y) => [String(y), { tournaments: seasonTournaments[y] || 0, players: Object.keys(seasonsBuilt[y]?.players || {}).length }])
+      ),
     };
     const eloSaved = await saveEloChecked(elo);
-    const seasonSaved = eloSaved ? await saveSeason(2026, season) : false;
-    if (eloSaved && !seasonSaved) reportSaveFailure("Recompute — η Βαθμολογία 2026 δεν αποθηκεύτηκε (η ELO αποθηκεύτηκε). Τρέξε ξανά το Recompute.");
+    let seasonsOk = eloSaved;
+    if (eloSaved) {
+      for (const y of yearsToWrite) {
+        if (!(await saveSeason(y, seasonsBuilt[y] || { players: {} }))) {
+          const notWritten = yearsToWrite.filter((x) => x >= y).join(", ");
+          reportSaveFailure(`Recompute — δεν αποθηκεύτηκε η Βαθμολογία των σεζόν ${notWritten} (η ELO αποθηκεύτηκε). Τρέξε ξανά το Recompute.`);
+          seasonsOk = false;
+          break;
+        }
+      }
+    }
     setNotice("");
-    if (!eloSaved || !seasonSaved) {
+    if (!eloSaved || !seasonsOk) {
       refreshHealth(catalogue);
       return;
     }
     setEloData(elo);
     setEloTimeline(null);
     setPlayerMatchStatsCache({});
-    if (seasonBrowseYear === 2026) setSeasonData(season);
-    showToast("ELO and Season Standings recomputed from official League days.");
+    setSeasonData(seasonsBuilt[seasonBrowseYear] || { players: {} });
+    const perSeason = yearsToWrite.map((y) => `${y}: ${seasonTournaments[y] || 0} τουρνουά`).join(" · ");
+    showToast(`Recompute ολοκληρώθηκε — ${perSeason}`);
     refreshHealth(catalogue);
   }
 
@@ -4746,10 +4840,13 @@ export default function TournamentManager() {
       <div className="recompute-panel">
         <div>
           <p style={{ fontWeight: 700, margin: "0 0 2px 0" }}>Χρειάζεσαι να ξαναχτίσεις τα δεδομένα;</p>
-          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Ξαναϋπολογίζει ELO και Season Standings από την αρχή, μόνο από τουρνουά "Official League day".</p>
+          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Ξαναϋπολογίζει την ELO και τη Βαθμολογία κάθε σεζόν από την αρχή, μόνο από επίσημα τουρνουά Premier League· κάθε τουρνουά πηγαίνει στη σεζόν του.</p>
           {builtFrom && (
             <p style={{ fontSize: 12, color: "var(--muted)", margin: "4px 0 0 0" }}>
               Τελευταίο Recompute: {formatDate(builtFrom.at)} — {builtFrom.tournaments} τουρνουά, {builtFrom.matches} αγώνες, {builtFrom.players} παίκτες.
+              {builtFrom.seasons && (
+                  <> Ανά σεζόν: {Object.entries(builtFrom.seasons).map(([y, v]) => `${y}: ${v.tournaments} τουρνουά, ${v.players} παίκτες`).join(" · ")}.</>
+                )}
             </p>
           )}
         </div>
@@ -4769,7 +4866,7 @@ export default function TournamentManager() {
       </>
     ) : (
       <div className="delete-confirm">
-        <span>Rebuild ELO and the 2026 Season Standings from scratch, using only tournaments marked "Official League day" — any test tournament is ignored automatically, whether or not you've deleted it. This can't be undone.</span>
+        <span>Rebuild ELO and the Season Standings of every season from scratch (each tournament goes to its own season), using only tournaments marked "Official League day" — any test tournament is ignored automatically, whether or not you've deleted it. This can't be undone.</span>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn-secondary" onClick={() => setConfirmingRecompute(false)}>Cancel</button>
           <button
@@ -5883,10 +5980,10 @@ export default function TournamentManager() {
           <div className="content">
             <div className="notice">
               <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>Counts each player's best {SEASON_BEST_OF} tournament results this season. Names are matched by exact spelling across tournaments — keep spelling consistent when adding players.</span>
+              <span>Σεζόν {seasonBrowseYear}: {seasonRangeLabel(seasonBrowseYear)}. Counts each player's best {SEASON_BEST_OF} tournament results this season. Names are matched by exact spelling across tournaments — keep spelling consistent when adding players.</span>
             </div>
 
-            {seasonBrowseYear === 2026 && recomputePanel}
+            {recomputePanel}
 
             {(() => {
               const qual = { roundA: 32, cutoffA: 5, roundB: 48, cutoffB: 16 };
@@ -7982,6 +8079,8 @@ function ConsistencyReportView({ report, onClose }) {
   if (report.eloOnly.length) findings.push({ level: "warn", title: "Παίκτες στο ELO που δεν υπάρχουν στη Βαθμολογία", items: cap(report.eloOnly, (x) => `${x.name} (${x.games} αγώνες)`) });
   if (report.winsMismatch.length) findings.push({ level: "warn", title: "Παίκτες με διαφορετικές νίκες σε ELO και Βαθμολογία", items: cap(report.winsMismatch, (x) => `${x.name}: ELO ${x.elo} · Βαθμολογία ${x.season}`) });
   if (report.seasonOnly.length) findings.push({ level: "info", title: "Παίκτες στη Βαθμολογία χωρίς ELO (π.χ. μόνο bye ή Α.Α.)", items: cap(report.seasonOnly, (x) => x.name) });
+  if ((report.seasonWrongYear || []).length) findings.push({ level: "warn", title: "Τουρνουά καταχωρημένα σε λάθος σεζόν (διορθώνεται με Recompute)", items: cap(report.seasonWrongYear, (x) => `${x.name}: στη σεζόν ${x.found.join(", ")}, ανήκει στη ${x.expected}`) });
+  if ((report.dateSeasonMismatch || []).length) findings.push({ level: "warn", title: "Η σεζόν του τουρνουά δεν ταιριάζει με την ημερομηνία του (διορθώνεται από το tab «Στοιχεία», όχι με Recompute)", items: cap(report.dateSeasonMismatch, (x) => `${x.name}: σεζόν ${x.seasonYear}, η ημερομηνία ανήκει στη ${x.expected}`) });
   if (report.lookalikes.length) findings.push({ level: "warn", title: "Πιθανό ίδιο πρόσωπο με δύο γραφές (δεν διορθώνεται με Recompute)", items: cap(report.lookalikes, (g) => g.join("  ↔  ")) });
   const warns = findings.filter((f) => f.level === "warn").length;
 
