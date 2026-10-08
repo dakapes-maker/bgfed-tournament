@@ -176,7 +176,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.10";
+const APP_BUILD_VERSION = "2026-10-08.11";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -201,6 +201,16 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.11",
+    date: "2026-10-08",
+    items: [
+      "Νέα σελίδα «Διαχείριση» (μόνο για admin, στο μενού και στο Dashboard): όλα τα εργαλεία διαχείρισης σε ένα σημείο — κατάσταση εφαρμογής, κανόνες κάθε σεζόν, διοργανώσεις και λέσχη, μόνιμα ID, Recompute και έλεγχος συνέπειας, Excel, Κάδος, backup, RSS feed, αλλαγή κωδικού.",
+      "Η επαναφορά από backup μεταφέρθηκε σε χωριστό πλαίσιο «Επικίνδυνες ενέργειες» και ζητά επιβεβαίωση πριν την επιλογή αρχείου.",
+      "Οι σελίδες Βαθμολογία, ELO, Τουρνουά, Παίκτες και Dashboard καθάρισαν από εργαλεία· όπου χρειάζεται Recompute, η προειδοποίηση μένει με κουμπί προς τη Διαχείριση.",
+      "Η αλλαγή κωδικού admin ελέγχει πλέον ότι αποθηκεύτηκε.",
+    ],
+  },
   {
     version: "2026-10-08.10",
     date: "2026-10-08",
@@ -690,7 +700,8 @@ const LANG_STORAGE_KEY = "bgfed_lang";
 const TRANSLATIONS = {
   el: {
     navAbout: "Σχετικά", navTournaments: "Τουρνουά", navSeason: "Βαθμολογία",
-    navElo: "Βαθμολογία ELO", navStats: "Στατιστικά", navPlayers: "Παίκτες",
+    navElo: "Βαθμολογία ELO", navStats: "Στατιστικά", navPlayers: "Παίκτες", navControl: "Διαχείριση",
+    controlEyebrow: "Μόνο για διαχειριστή", controlTitle: "Διαχείριση εφαρμογής",
     dashboardEyebrow: "Διαχείριση Τουρνουά", dashboardTitle: "Πίνακας Ελέγχου",
     archiveEyebrow: "Τουρνουά Backgammon · Σύστημα Swiss", archiveTitle: "Αρχείο Τουρνουά",
     seasonEyebrow: "Ετήσια Κατάταξη", seasonTitle: "Βαθμολογία Σεζόν",
@@ -701,7 +712,8 @@ const TRANSLATIONS = {
   },
   en: {
     navAbout: "About", navTournaments: "Tournaments", navSeason: "Season Standings",
-    navElo: "ELO Ratings", navStats: "Statistics", navPlayers: "Players",
+    navElo: "ELO Ratings", navStats: "Statistics", navPlayers: "Players", navControl: "Admin",
+    controlEyebrow: "Admin only", controlTitle: "App administration",
     dashboardEyebrow: "Tournament Manager", dashboardTitle: "Dashboard",
     archiveEyebrow: "Backgammon Tournament · Swiss System", archiveTitle: "Tournament Archive",
     seasonEyebrow: "Annual Ranking", seasonTitle: "Season Standings",
@@ -2292,7 +2304,10 @@ export default function TournamentManager() {
       setChangePwError("New password can't be empty.");
       return;
     }
-    await saveAdminPassword(changePwNew.trim());
+    if (writesBlockedRef.current || !(await saveAdminPassword(changePwNew.trim()))) {
+      setChangePwError("Ο κωδικός ΔΕΝ άλλαξε — η αποθήκευση απέτυχε. Δοκίμασε ξανά.");
+      return;
+    }
     setShowChangePassword(false);
     setChangePwCurrent("");
     setChangePwNew("");
@@ -2324,6 +2339,8 @@ export default function TournamentManager() {
   const [homeClubDraft, setHomeClubDraft] = useState(null);
   const [metaPlan, setMetaPlan] = useState(null); // dry-run report of the competitions/club migration
   const [metaBusy, setMetaBusy] = useState(false);
+  const [controlSeasons, setControlSeasons] = useState([]); // seasons listed on the admin page
+  const [confirmingRestore, setConfirmingRestore] = useState(false);
   const [rulesDraft, setRulesDraft] = useState(null); // { year, bestOf, cutoffR32, cutoffR48 } while editing season rules
   const [players, setPlayers] = useState([]);
   const [round, setRound] = useState(1);
@@ -2643,6 +2660,12 @@ export default function TournamentManager() {
     });
     loadSeason(seasonBrowseYear).then(setSeasonData);
   }, [phase, seasonBrowseYear]);
+
+  useEffect(() => {
+    if (phase !== "control") return;
+    const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
+    listSeasonYears().then((years) => setControlSeasons([...new Set([current, ...years])].sort((x, y) => y - x)));
+  }, [phase]);
 
   // The season-statistics selector needs the list of seasons too, even when
   // the Season page has not been opened in this visit.
@@ -3675,7 +3698,7 @@ export default function TournamentManager() {
       setIdentityPlan(null);
       await recomputeEloAndSeasonFromScratch();
       await runConsistencyCheck();
-      setPhase("elo"); // the consistency report is shown there
+      setPhase("control"); // the consistency report is shown there
       showToast("Η μετάβαση σε μόνιμα ID ολοκληρώθηκε.");
     } finally {
       setIdentityBusy(false);
@@ -3945,7 +3968,7 @@ export default function TournamentManager() {
 
   useEffect(() => {
     if (!isAdmin) return;
-    if (phase === "dashboard" || phase === "elo" || phase === "season" || phase === "archive") refreshHealth();
+    if (phase === "dashboard" || phase === "elo" || phase === "season" || phase === "archive" || phase === "control") refreshHealth();
   }, [isAdmin, phase, archive.length]);
 
   /* ---- player registry ---- */
@@ -4902,6 +4925,14 @@ export default function TournamentManager() {
       </div>
     ) : null;
   const builtFrom = eloData?.builtFrom;
+  // On the Season and ELO pages only the warning stays; the tools live in
+  // the admin page ("Διαχείριση").
+  const staleNotice = staleBlock ? (
+    <div style={{ marginBottom: 16 }}>
+      {staleBlock}
+      <button className="btn-secondary" onClick={() => setPhase("control")}>Άνοιγμα Διαχείρισης για Recompute</button>
+    </div>
+  ) : null;
 
   const recomputePanel = isAdmin && (
     !confirmingRecompute ? (
@@ -4982,8 +5013,7 @@ export default function TournamentManager() {
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
 
   /** Admin card on the Season page: the rules of the season being viewed. */
-  function renderSeasonRulesCard() {
-    const year = seasonBrowseYear;
+  function renderSeasonRulesCard(year) {
     const rules = rulesForSeason(sysState, year);
     const editing = rulesDraft && rulesDraft.year === year;
     const d = editing ? rulesDraft : null;
@@ -4993,9 +5023,9 @@ export default function TournamentManager() {
       Number.isInteger(Number(d.cutoffR32)) && Number(d.cutoffR32) >= 1 &&
       Number.isInteger(Number(d.cutoffR48)) && Number(d.cutoffR48) >= Number(d.cutoffR32);
     return (
-      <div className="card" style={{ marginBottom: 16, padding: "14px 18px" }}>
+      <div className="control-sub-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <strong>Κανόνες σεζόν {year}</strong>
+          <strong>Σεζόν {year} — κανόνες Βαθμολογίας</strong>
           {!editing && (
             <button className="btn-ghost" onClick={() => setRulesDraft({ year, bestOf: rules.bestOf, cutoffR32: rules.cutoffR32, cutoffR48: rules.cutoffR48 })}>
               <Pencil size={13} /> Αλλαγή
@@ -5465,6 +5495,12 @@ export default function TournamentManager() {
         .save-failure-banner { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 1001; display: flex; gap: 10px; align-items: flex-start; width: min(720px, calc(100% - 24px)); background: #fff4f2; color: #7a1d12; border: 2px solid #c0392b; border-radius: 10px; padding: 12px 14px; font-size: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); }
         .history-link { background: none; border: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
         .history-link:hover { color: var(--ink); }
+        .control-section { padding: 16px 20px; margin-bottom: 16px; }
+        .control-h { font-size: 19px; margin: 0 0 8px 0; }
+        .control-sub { font-size: 13px; color: var(--muted); margin: 0 0 10px 0; }
+        .control-sub-card { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+        .control-sub-card:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+        .control-danger { border: 2px solid #c0392b; }
         .details-tab { display: grid; gap: 14px; max-width: 760px; }
         .details-card { padding: 16px 20px; margin: 0; }
         .details-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
@@ -5619,6 +5655,11 @@ export default function TournamentManager() {
           {isAdmin && (
             <button className="btn-ghost" onClick={() => setPhase("players")}>
               <Users size={14} /> {L.navPlayers}
+            </button>
+          )}
+          {isAdmin && (
+            <button className="btn-ghost" onClick={() => setPhase("control")}>
+              <Lock size={14} /> {L.navControl}
             </button>
           )}
           <button className="btn-ghost" onClick={toggleLang} title="Switch language" style={{ fontWeight: 700, fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 20 }}>
@@ -6154,9 +6195,7 @@ export default function TournamentManager() {
               </span>
             </div>
 
-            {isAdmin && renderSeasonRulesCard()}
-
-            {recomputePanel}
+            {staleNotice}
 
             {(() => {
               const rules = rulesForSeason(sysState, seasonBrowseYear);
@@ -6305,7 +6344,7 @@ export default function TournamentManager() {
               </div>
             </div>
 
-            {recomputePanel}
+            {staleNotice}
 
             {(() => {
               const standings = Object.values(eloData.players || {}).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, "en"));
@@ -6372,81 +6411,6 @@ export default function TournamentManager() {
               <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
               <span>Admin-only: contact info and membership status never appear to visitors.</span>
             </div>
-
-            {(() => {
-              const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
-              const sortedPersons = Object.entries(registry.players).sort((a, b) => a[1].name.localeCompare(b[1].name, "el"));
-              return (
-                <div className="card" style={{ marginBottom: 20, padding: "14px 18px" }}>
-                  <strong>Μόνιμα ID παικτών</strong>
-                  {registry.identityVersion === 2 ? (
-                    <p style={{ margin: "6px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
-                      ✓ Ενεργά{registry.migratedAt ? ` (μετάβαση ${formatDate(registry.migratedAt)})` : ""}. Κάθε παίκτης έχει μόνιμο ID και όλες οι γραφές του ονόματός του οδηγούν στο ίδιο πρόσωπο.
-                    </p>
-                  ) : (
-                    <>
-                      <p style={{ margin: "6px 0 10px 0", fontSize: 13, color: "var(--muted)" }}>
-                        Σήμερα ο παίκτης αναγνωρίζεται από το όνομά του. Η μετάβαση δίνει σε κάθε παίκτη μόνιμο ID, ώστε μια μετονομασία ή διόρθωση γραφής να μη χάνει ιστορικό. Πρώτα βλέπεις αναφορά, χωρίς καμία αλλαγή.
-                      </p>
-                      {!identityPlan ? (
-                        <button className="btn-secondary" onClick={runIdentityPlan} disabled={identityBusy}>
-                          {identityBusy ? "Έλεγχος…" : "Αναφορά μετάβασης (δεν αλλάζει τίποτα)"}
-                        </button>
-                      ) : (
-                        <>
-                          <p style={{ margin: "0 0 8px 0", fontSize: 13 }}>
-                            Ελέγχθηκαν {identityPlan.scanned} τουρνουά. Θα δημιουργηθούν <strong>{identityPlan.persons}</strong> μόνιμα ID από το μητρώο.
-                          </p>
-                          {identityPlan.unmatched.length === 0 ? (
-                            <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 8px 0" }}>✓ Όλα τα ονόματα των τουρνουά υπάρχουν στο μητρώο.</p>
-                          ) : (
-                            <div style={{ margin: "0 0 10px 0" }}>
-                              <p style={{ fontSize: 13, margin: "0 0 6px 0" }}>
-                                <strong>{identityPlan.unmatched.length}</strong> {identityPlan.unmatched.length === 1 ? "όνομα" : "ονόματα"} στα τουρνουά δεν υπάρχουν στο μητρώο. Για καθένα, διάλεξε αν είναι ήδη κάποιος παίκτης ή νέο πρόσωπο:
-                              </p>
-                              {identityPlan.unmatched.map((u) => (
-                                <div key={u.base} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6, fontSize: 13 }}>
-                                  <span style={{ minWidth: 190 }}><strong>{u.name}</strong> ({u.tournaments} τουρνουά)</span>
-                                  <select value={identityDecisions[u.base] ?? u.defaultChoice} onChange={(e) => setIdentityDecisions({ ...identityDecisions, [u.base]: e.target.value })}>
-                                    <option value="new">Νέο πρόσωπο</option>
-                                    {u.candidates.map((c) => (
-                                      <option key={c.key} value={c.key}>Είναι ο/η {c.name}</option>
-                                    ))}
-                                    <optgroup label="Άλλος παίκτης του μητρώου">
-                                      {sortedPersons.filter(([k]) => !u.candidates.some((c) => c.key === k)).map(([k, q]) => (
-                                        <option key={k} value={k}>{q.name}</option>
-                                      ))}
-                                    </optgroup>
-                                  </select>
-                                  {u.reason && <span style={{ color: "var(--muted)" }}>{u.reason}</span>}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {identityPlan.duplicates.length > 0 && (
-                            <p style={{ fontSize: 13, margin: "0 0 10px 0" }}>
-                              Πιθανά διπλά πρόσωπα στο μητρώο (θα μπορείς να τα ενώσεις μετά): {identityPlan.duplicates.map((g) => g.join(" ↔ ")).join(" · ")}
-                            </p>
-                          )}
-                          {!exportFresh && (
-                            <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-                              <span>Για να εφαρμόσεις τη μετάβαση χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
-                              <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
-                            </div>
-                          )}
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <button className="btn-secondary" onClick={() => setIdentityPlan(null)} disabled={identityBusy}>Άκυρο</button>
-                            <button className="btn-primary" onClick={applyIdentityMigration} disabled={identityBusy || !exportFresh}>
-                              {identityBusy ? "Μετάβαση… (περίμενε)" : "Εφαρμογή μετάβασης"}
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-              );
-            })()}
 
             <div className="footer-actions" style={{ marginTop: 0, marginBottom: 20 }}>
               <button className="btn-secondary" onClick={addRegistryPlayer}>
@@ -6828,7 +6792,7 @@ export default function TournamentManager() {
                       <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         <AlertTriangle size={16} style={{ flexShrink: 0 }} /> Το ELO / η Βαθμολογία ίσως δεν ταιριάζουν με τα τουρνουά ({staleReasons.length} {staleReasons.length === 1 ? "λόγος" : "λόγοι"}).
                       </span>
-                      <button className="btn-secondary" onClick={() => setPhase("elo")}>Άνοιγμα ELO</button>
+                      <button className="btn-secondary" onClick={() => setPhase("control")}>Άνοιγμα Διαχείρισης</button>
                     </div>
                   )}
                 </>
@@ -6862,37 +6826,334 @@ export default function TournamentManager() {
                   <span className="dashboard-card-desc">Registry, contact info, membership</span>
                 </button>
               )}
+              {isAdmin && (
+                <button className="dashboard-card" onClick={() => setPhase("control")}>
+                  <Lock size={26} />
+                  <span className="dashboard-card-title">{L.navControl}</span>
+                  <span className="dashboard-card-desc">Σεζόν, κανόνες, δεδομένα, backup, ρυθμίσεις</span>
+                </button>
+              )}
               <button className="dashboard-card" onClick={() => { setPhase("about"); dismissWhatsNew(); }}>
                 <Info size={26} />
                 <span className="dashboard-card-title">{L.navAbout}</span>
                 <span className="dashboard-card-desc">Λειτουργικότητες, τεχνικά στοιχεία, changelog</span>
               </button>
             </div>
-            {isAdmin && (
-              <div className="footer-actions" style={{ marginTop: 24 }}>
-                <button className="btn-secondary" onClick={exportAllData}>
-                  <Download size={15} /> Export All Data (full backup)
-                </button>
-                <button className="btn-secondary" onClick={exportBaselineExcel}>
-                  <Download size={15} /> Εξαγωγή ELO &amp; Βαθμολογίας (Excel)
-                </button>
-                <button className="btn-secondary" onClick={() => fullBackupInputRef.current?.click()}>
-                  <Upload size={15} /> Import All Data (restore backup)
-                </button>
-                <input type="file" accept="application/json" ref={fullBackupInputRef} onChange={importAllData} style={{ display: "none" }} />
-                {!confirmingClearFeed ? (
-                  <button className="btn-ghost" onClick={() => setConfirmingClearFeed(true)}>
-                    <X size={15} /> Άδειασμα RSS feed
-                  </button>
-                ) : (
-                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)" }}>
-                    Σίγουρα; Δεν επηρεάζει άρθρα που έχουν ήδη μπει στο bgfed.gr.
-                    <button className="btn-ghost" onClick={() => setConfirmingClearFeed(false)}>Άκυρο</button>
-                    <button className="btn-secondary" onClick={() => { clearFeed(); setConfirmingClearFeed(false); }}>Ναι, άδειασμα</button>
-                  </span>
-                )}
+          </div>
+        </>
+      )}
+
+      {/* ADMIN PAGE (Build 3B1): every admin tool for running the app, in one place */}
+      {phase === "control" && isAdmin && (
+        <>
+          <div className="header">
+            <p className="eyebrow">{L.controlEyebrow}</p>
+            <h1>{L.controlTitle}</h1>
+            <div className="points-strip">
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
+              ))}
+            </div>
+          </div>
+          <div className="content">
+            {notice && (
+              <div className="notice">
+                <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{notice}</span>
               </div>
             )}
+
+            {/* 1. Status */}
+            {(() => {
+              const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
+              const lastExport = sysState.lastExportAt ? new Date(sysState.lastExportAt) : null;
+              const daysSince = lastExport ? Math.floor((Date.now() - lastExport.getTime()) / 86400000) : null;
+              const healthOk = health && !(health.needsRecompute && staleReasons.length > 0);
+              return (
+                <div className="card control-section">
+                  <h2 className="control-h">Κατάσταση εφαρμογής</h2>
+                  <dl className="details-list">
+                    <dt>Τρέχουσα σεζόν</dt>
+                    <dd>{current} ({seasonRangeLabel(current)})</dd>
+                    <dt>Τελευταίο Export All Data</dt>
+                    <dd style={{ color: !lastExport || daysSince > 30 ? "#9a5b00" : undefined }}>
+                      {lastExport ? `${formatDate(sysState.lastExportAt)} (πριν ${daysSince} ${daysSince === 1 ? "ημέρα" : "ημέρες"})` : "Ποτέ"}
+                    </dd>
+                    <dt>Τελευταίο Recompute</dt>
+                    <dd>{builtFrom ? `${formatDate(builtFrom.at)} — ${builtFrom.tournaments} τουρνουά, ${builtFrom.matches} αγώνες` : "—"}</dd>
+                    <dt>Συνέπεια δεδομένων</dt>
+                    <dd style={{ color: health ? (healthOk ? "var(--win)" : "#9a5b00") : undefined }}>
+                      {!health ? "Έλεγχος…" : healthOk ? "✓ ELO και Βαθμολογία ταιριάζουν με τα τουρνουά" : `⚠ ${staleReasons.length} ${staleReasons.length === 1 ? "εύρημα" : "ευρήματα"} — δες «Δεδομένα»`}
+                    </dd>
+                    <dt>Build</dt>
+                    <dd>{APP_BUILD_VERSION}</dd>
+                  </dl>
+                </div>
+              );
+            })()}
+
+            {/* 2. Seasons */}
+            <div className="card control-section">
+              <h2 className="control-h">Σεζόν</h2>
+              <p className="control-sub">Οι κανόνες Βαθμολογίας κάθε σεζόν. Το ημερολόγιο και το κλείσιμο σεζόν θα προστεθούν εδώ.</p>
+              {controlSeasons.map((y) => (
+                <React.Fragment key={y}>{renderSeasonRulesCard(y)}</React.Fragment>
+              ))}
+            </div>
+
+            {/* 3. Competitions, club, identities */}
+            <div className="card control-section">
+              <h2 className="control-h">Διοργανώσεις, λέσχη και παίκτες</h2>
+              {isAdmin && (() => {
+                const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
+                const comps = competitionsFrom(sysState);
+                const migrated = sysState.tournamentMetaVersion === 1;
+                const rows = metaPlan ? metaPlan.rows : [];
+                const toFill = rows.filter((r) => r.needsCompetition || r.needsOrganisation || r.needsSeason);
+                const mismatches = rows.filter((r) => r.seasonMismatch);
+                const noDate = rows.filter((r) => r.noDate);
+                return (
+                  <div className="control-sub-card">
+                    <strong>Διοργανώσεις και λέσχη</strong>
+
+                    <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
+                      <div className="field">
+                        <label>Η λέσχη σου (προεπιλογή σε κάθε νέο τουρνουά)</label>
+                        <input
+                          type="text"
+                          value={homeClubDraft ?? (sysState.homeClub || "")}
+                          onChange={(e) => setHomeClubDraft(e.target.value)}
+                          placeholder="Όνομα λέσχης"
+                        />
+                      </div>
+                      <button className="btn-secondary" onClick={saveHomeClub} disabled={homeClubDraft === null || homeClubDraft.trim() === (sysState.homeClub || "")}>
+                        <Save size={15} /> Αποθήκευση
+                      </button>
+                    </div>
+
+                    <p style={{ margin: "10px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
+                      Διοργανώσεις: {comps.map((c) => `${c.name} (${COMPETITION_LEVEL_LABEL[c.level] || c.level})`).join(", ")}. Μέχρι το Build 3, σε ELO και Βαθμολογία μετράνε μόνο τα επίσημα τουρνουά Premier League.
+                    </p>
+
+                    <div style={{ marginTop: 12 }}>
+                      {migrated && !metaPlan ? (
+                        <p style={{ margin: 0, fontSize: 13, color: "var(--win)" }}>
+                          ✓ Όλα τα τουρνουά έχουν διοργάνωση και λέσχη{sysState.tournamentMetaMigratedAt ? ` (μετάπτωση ${formatDate(sysState.tournamentMetaMigratedAt)})` : ""}.{" "}
+                          <button className="btn-ghost" onClick={runMetaPlan} disabled={metaBusy} style={{ padding: "2px 8px" }}>
+                            {metaBusy ? "Έλεγχος…" : "Έλεγχος ξανά"}
+                          </button>
+                        </p>
+                      ) : !metaPlan ? (
+                        <>
+                          <p style={{ margin: "0 0 8px 0", fontSize: 13 }}>
+                            Τα υπάρχοντα τουρνουά δεν έχουν ακόμα διοργάνωση και λέσχη. Η μετάπτωση τους δίνει Premier League και τη λέσχη σου· σεζόν και ημερομηνία που ήδη υπάρχουν δεν αλλάζουν. Πρώτα βλέπεις αναφορά.
+                          </p>
+                          <button className="btn-secondary" onClick={runMetaPlan} disabled={metaBusy}>
+                            {metaBusy ? "Έλεγχος…" : "Αναφορά μετάπτωσης (δεν αλλάζει τίποτα)"}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p style={{ margin: "0 0 6px 0", fontSize: 13 }}>
+                            Ελέγχθηκαν <strong>{rows.length}</strong> τουρνουά ({rows.filter((r) => r.inTrash).length} στον κάδο).{" "}
+                            {toFill.length === 0 ? "Κανένα δεν χρειάζεται συμπλήρωση." : <>Θα συμπληρωθούν <strong>{toFill.length}</strong>: διοργάνωση Premier League, λέσχη «{sysState.homeClub || "—"}».</>}
+                          </p>
+                          {metaPlan.unreadable.length > 0 && (
+                            <p className="field-warning">⚠ Δεν διαβάστηκαν: {metaPlan.unreadable.join(", ")}. Ξανατρέξε την αναφορά πριν την εφαρμογή.</p>
+                          )}
+                          {mismatches.length > 0 && (
+                            <div className="field-warning">
+                              ⚠ Σεζόν που δεν ταιριάζει με την ημερομηνία (δεν αλλάζει αυτόματα· διόρθωσέ τη μέσα στο τουρνουά αν χρειάζεται):
+                              <ul style={{ margin: "4px 0 0 0", paddingLeft: 18 }}>
+                                {mismatches.map((r) => (
+                                  <li key={r.id}>{r.name} — {formatDate(r.date)}, σεζόν {r.seasonYear} (η ημερομηνία ανήκει στη {r.expectedSeason})</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {noDate.length > 0 && (
+                            <p className="field-warning">⚠ Χωρίς έγκυρη ημερομηνία ή πριν από τις 27/9/2025: {noDate.map((r) => r.name).join(", ")}.</p>
+                          )}
+                          {mismatches.length === 0 && noDate.length === 0 && metaPlan.unreadable.length === 0 && (
+                            <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 6px 0" }}>✓ Όλες οι σεζόν ταιριάζουν με τις ημερομηνίες.</p>
+                          )}
+                          {!sysState.homeClub && (
+                            <p className="field-warning">Συμπλήρωσε και αποθήκευσε πρώτα τη λέσχη σου.</p>
+                          )}
+                          {!exportFresh && (
+                            <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                              <span>Για να εφαρμόσεις τη μετάπτωση χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
+                              <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
+                            </div>
+                          )}
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                            <button className="btn-secondary" onClick={() => setMetaPlan(null)} disabled={metaBusy}>Άκυρο</button>
+                            <button
+                              className="btn-primary"
+                              onClick={applyMetaMigration}
+                              disabled={metaBusy || !exportFresh || !sysState.homeClub || metaPlan.unreadable.length > 0}
+                            >
+                              {metaBusy ? "Μετάπτωση… (περίμενε)" : "Εφαρμογή μετάπτωσης"}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
+              {(() => {
+                const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
+                const sortedPersons = Object.entries(registry.players).sort((a, b) => a[1].name.localeCompare(b[1].name, "el"));
+                return (
+                  <div className="control-sub-card">
+                    <strong>Μόνιμα ID παικτών</strong>
+                    {registry.identityVersion === 2 ? (
+                      <p style={{ margin: "6px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
+                        ✓ Ενεργά{registry.migratedAt ? ` (μετάβαση ${formatDate(registry.migratedAt)})` : ""}. Κάθε παίκτης έχει μόνιμο ID και όλες οι γραφές του ονόματός του οδηγούν στο ίδιο πρόσωπο.
+                      </p>
+                    ) : (
+                      <>
+                        <p style={{ margin: "6px 0 10px 0", fontSize: 13, color: "var(--muted)" }}>
+                          Σήμερα ο παίκτης αναγνωρίζεται από το όνομά του. Η μετάβαση δίνει σε κάθε παίκτη μόνιμο ID, ώστε μια μετονομασία ή διόρθωση γραφής να μη χάνει ιστορικό. Πρώτα βλέπεις αναφορά, χωρίς καμία αλλαγή.
+                        </p>
+                        {!identityPlan ? (
+                          <button className="btn-secondary" onClick={runIdentityPlan} disabled={identityBusy}>
+                            {identityBusy ? "Έλεγχος…" : "Αναφορά μετάβασης (δεν αλλάζει τίποτα)"}
+                          </button>
+                        ) : (
+                          <>
+                            <p style={{ margin: "0 0 8px 0", fontSize: 13 }}>
+                              Ελέγχθηκαν {identityPlan.scanned} τουρνουά. Θα δημιουργηθούν <strong>{identityPlan.persons}</strong> μόνιμα ID από το μητρώο.
+                            </p>
+                            {identityPlan.unmatched.length === 0 ? (
+                              <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 8px 0" }}>✓ Όλα τα ονόματα των τουρνουά υπάρχουν στο μητρώο.</p>
+                            ) : (
+                              <div style={{ margin: "0 0 10px 0" }}>
+                                <p style={{ fontSize: 13, margin: "0 0 6px 0" }}>
+                                  <strong>{identityPlan.unmatched.length}</strong> {identityPlan.unmatched.length === 1 ? "όνομα" : "ονόματα"} στα τουρνουά δεν υπάρχουν στο μητρώο. Για καθένα, διάλεξε αν είναι ήδη κάποιος παίκτης ή νέο πρόσωπο:
+                                </p>
+                                {identityPlan.unmatched.map((u) => (
+                                  <div key={u.base} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6, fontSize: 13 }}>
+                                    <span style={{ minWidth: 190 }}><strong>{u.name}</strong> ({u.tournaments} τουρνουά)</span>
+                                    <select value={identityDecisions[u.base] ?? u.defaultChoice} onChange={(e) => setIdentityDecisions({ ...identityDecisions, [u.base]: e.target.value })}>
+                                      <option value="new">Νέο πρόσωπο</option>
+                                      {u.candidates.map((c) => (
+                                        <option key={c.key} value={c.key}>Είναι ο/η {c.name}</option>
+                                      ))}
+                                      <optgroup label="Άλλος παίκτης του μητρώου">
+                                        {sortedPersons.filter(([k]) => !u.candidates.some((c) => c.key === k)).map(([k, q]) => (
+                                          <option key={k} value={k}>{q.name}</option>
+                                        ))}
+                                      </optgroup>
+                                    </select>
+                                    {u.reason && <span style={{ color: "var(--muted)" }}>{u.reason}</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {identityPlan.duplicates.length > 0 && (
+                              <p style={{ fontSize: 13, margin: "0 0 10px 0" }}>
+                                Πιθανά διπλά πρόσωπα στο μητρώο (θα μπορείς να τα ενώσεις μετά): {identityPlan.duplicates.map((g) => g.join(" ↔ ")).join(" · ")}
+                              </p>
+                            )}
+                            {!exportFresh && (
+                              <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                                <span>Για να εφαρμόσεις τη μετάβαση χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
+                                <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
+                              </div>
+                            )}
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button className="btn-secondary" onClick={() => setIdentityPlan(null)} disabled={identityBusy}>Άκυρο</button>
+                              <button className="btn-primary" onClick={applyIdentityMigration} disabled={identityBusy || !exportFresh}>
+                                {identityBusy ? "Μετάβαση… (περίμενε)" : "Εφαρμογή μετάβασης"}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* 4. Data */}
+            <div className="card control-section">
+              <h2 className="control-h">Δεδομένα</h2>
+              {recomputePanel}
+              <div className="footer-actions" style={{ marginTop: 12 }}>
+                <button className="btn-secondary" onClick={() => setPhase("trash")}>
+                  <Trash2 size={15} /> Κάδος ({trash.length})
+                </button>
+              </div>
+            </div>
+
+            {/* 5. Backup */}
+            <div className="card control-section">
+              <h2 className="control-h">Backup</h2>
+              <p className="control-sub">
+                Πλήρες αντίγραφο όλων των δεδομένων σε αρχείο. Τελευταίο: {sysState.lastExportAt ? formatDate(sysState.lastExportAt) : "ποτέ"}.
+              </p>
+              <button className="btn-secondary" onClick={exportAllData}>
+                <Download size={15} /> Export All Data (full backup)
+              </button>
+            </div>
+
+            {/* 6. Publishing */}
+            <div className="card control-section">
+              <h2 className="control-h">Δημοσίευση (RSS feed για το bgfed.gr)</h2>
+              {!confirmingClearFeed ? (
+                <button className="btn-secondary" onClick={() => setConfirmingClearFeed(true)}>
+                  <X size={15} /> Άδειασμα RSS feed
+                </button>
+              ) : (
+                <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)", flexWrap: "wrap" }}>
+                  Σίγουρα; Δεν επηρεάζει άρθρα που έχουν ήδη μπει στο bgfed.gr.
+                  <button className="btn-ghost" onClick={() => setConfirmingClearFeed(false)}>Άκυρο</button>
+                  <button className="btn-secondary" onClick={() => { clearFeed(); setConfirmingClearFeed(false); }}>Ναι, άδειασμα</button>
+                </span>
+              )}
+            </div>
+
+            {/* 7. Security */}
+            {!inIframe && (
+              <div className="card control-section">
+                <h2 className="control-h">Ασφάλεια</h2>
+                <button className="btn-secondary" onClick={() => setShowChangePassword(true)}>
+                  <Lock size={15} /> Αλλαγή κωδικού admin
+                </button>
+              </div>
+            )}
+
+            {/* 8. Danger zone */}
+            <div className="card control-section control-danger">
+              <h2 className="control-h">Επικίνδυνες ενέργειες</h2>
+              <p className="control-sub">
+                Η επαναφορά από backup <strong>αντικαθιστά όλα τα τρέχοντα δεδομένα</strong> (μητρώο, ELO, κατάλογο, σεζόν, τουρνουά) με εκείνα του αρχείου. Κάνε πρώτα Export All Data.
+              </p>
+              {!confirmingRestore ? (
+                <button className="btn-secondary" onClick={() => setConfirmingRestore(true)}>
+                  <Upload size={15} /> Επαναφορά από backup…
+                </button>
+              ) : (
+                <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <strong style={{ fontSize: 14 }}>Σίγουρα; Τα τρέχοντα δεδομένα θα αντικατασταθούν.</strong>
+                  <button className="btn-ghost" onClick={() => setConfirmingRestore(false)}>Άκυρο</button>
+                  <button
+                    className="btn-primary"
+                    style={{ background: "#c0392b" }}
+                    onClick={() => {
+                      setConfirmingRestore(false);
+                      fullBackupInputRef.current?.click();
+                    }}
+                  >
+                    Επιλογή αρχείου backup
+                  </button>
+                </span>
+              )}
+              <input type="file" accept="application/json" ref={fullBackupInputRef} onChange={importAllData} style={{ display: "none" }} />
+            </div>
           </div>
         </>
       )}
@@ -6922,110 +7183,8 @@ export default function TournamentManager() {
                 <button className="btn-primary" onClick={goToNewTournament}>
                   <Plus size={16} /> New Tournament
                 </button>
-                <button className="btn-secondary" onClick={() => setPhase("trash")}>
-                  <Trash2 size={15} /> Κάδος ({trash.length})
-                </button>
               </div>
             )}
-
-            {isAdmin && (() => {
-              const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
-              const comps = competitionsFrom(sysState);
-              const migrated = sysState.tournamentMetaVersion === 1;
-              const rows = metaPlan ? metaPlan.rows : [];
-              const toFill = rows.filter((r) => r.needsCompetition || r.needsOrganisation || r.needsSeason);
-              const mismatches = rows.filter((r) => r.seasonMismatch);
-              const noDate = rows.filter((r) => r.noDate);
-              return (
-                <div className="card" style={{ marginBottom: 20, padding: "14px 18px" }}>
-                  <strong>Διοργανώσεις, σεζόν και λέσχη</strong>
-
-                  <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
-                    <div className="field">
-                      <label>Η λέσχη σου (προεπιλογή σε κάθε νέο τουρνουά)</label>
-                      <input
-                        type="text"
-                        value={homeClubDraft ?? (sysState.homeClub || "")}
-                        onChange={(e) => setHomeClubDraft(e.target.value)}
-                        placeholder="Όνομα λέσχης"
-                      />
-                    </div>
-                    <button className="btn-secondary" onClick={saveHomeClub} disabled={homeClubDraft === null || homeClubDraft.trim() === (sysState.homeClub || "")}>
-                      <Save size={15} /> Αποθήκευση
-                    </button>
-                  </div>
-
-                  <p style={{ margin: "10px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
-                    Διοργανώσεις: {comps.map((c) => `${c.name} (${COMPETITION_LEVEL_LABEL[c.level] || c.level})`).join(", ")}. Μέχρι το Build 3, σε ELO και Βαθμολογία μετράνε μόνο τα επίσημα τουρνουά Premier League.
-                  </p>
-
-                  <div style={{ marginTop: 12 }}>
-                    {migrated && !metaPlan ? (
-                      <p style={{ margin: 0, fontSize: 13, color: "var(--win)" }}>
-                        ✓ Όλα τα τουρνουά έχουν διοργάνωση και λέσχη{sysState.tournamentMetaMigratedAt ? ` (μετάπτωση ${formatDate(sysState.tournamentMetaMigratedAt)})` : ""}.{" "}
-                        <button className="btn-ghost" onClick={runMetaPlan} disabled={metaBusy} style={{ padding: "2px 8px" }}>
-                          {metaBusy ? "Έλεγχος…" : "Έλεγχος ξανά"}
-                        </button>
-                      </p>
-                    ) : !metaPlan ? (
-                      <>
-                        <p style={{ margin: "0 0 8px 0", fontSize: 13 }}>
-                          Τα υπάρχοντα τουρνουά δεν έχουν ακόμα διοργάνωση και λέσχη. Η μετάπτωση τους δίνει Premier League και τη λέσχη σου· σεζόν και ημερομηνία που ήδη υπάρχουν δεν αλλάζουν. Πρώτα βλέπεις αναφορά.
-                        </p>
-                        <button className="btn-secondary" onClick={runMetaPlan} disabled={metaBusy}>
-                          {metaBusy ? "Έλεγχος…" : "Αναφορά μετάπτωσης (δεν αλλάζει τίποτα)"}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <p style={{ margin: "0 0 6px 0", fontSize: 13 }}>
-                          Ελέγχθηκαν <strong>{rows.length}</strong> τουρνουά ({rows.filter((r) => r.inTrash).length} στον κάδο).{" "}
-                          {toFill.length === 0 ? "Κανένα δεν χρειάζεται συμπλήρωση." : <>Θα συμπληρωθούν <strong>{toFill.length}</strong>: διοργάνωση Premier League, λέσχη «{sysState.homeClub || "—"}».</>}
-                        </p>
-                        {metaPlan.unreadable.length > 0 && (
-                          <p className="field-warning">⚠ Δεν διαβάστηκαν: {metaPlan.unreadable.join(", ")}. Ξανατρέξε την αναφορά πριν την εφαρμογή.</p>
-                        )}
-                        {mismatches.length > 0 && (
-                          <div className="field-warning">
-                            ⚠ Σεζόν που δεν ταιριάζει με την ημερομηνία (δεν αλλάζει αυτόματα· διόρθωσέ τη μέσα στο τουρνουά αν χρειάζεται):
-                            <ul style={{ margin: "4px 0 0 0", paddingLeft: 18 }}>
-                              {mismatches.map((r) => (
-                                <li key={r.id}>{r.name} — {formatDate(r.date)}, σεζόν {r.seasonYear} (η ημερομηνία ανήκει στη {r.expectedSeason})</li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        {noDate.length > 0 && (
-                          <p className="field-warning">⚠ Χωρίς έγκυρη ημερομηνία ή πριν από τις 27/9/2025: {noDate.map((r) => r.name).join(", ")}.</p>
-                        )}
-                        {mismatches.length === 0 && noDate.length === 0 && metaPlan.unreadable.length === 0 && (
-                          <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 6px 0" }}>✓ Όλες οι σεζόν ταιριάζουν με τις ημερομηνίες.</p>
-                        )}
-                        {!sysState.homeClub && (
-                          <p className="field-warning">Συμπλήρωσε και αποθήκευσε πρώτα τη λέσχη σου.</p>
-                        )}
-                        {!exportFresh && (
-                          <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                            <span>Για να εφαρμόσεις τη μετάπτωση χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
-                            <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
-                          </div>
-                        )}
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                          <button className="btn-secondary" onClick={() => setMetaPlan(null)} disabled={metaBusy}>Άκυρο</button>
-                          <button
-                            className="btn-primary"
-                            onClick={applyMetaMigration}
-                            disabled={metaBusy || !exportFresh || !sysState.homeClub || metaPlan.unreadable.length > 0}
-                          >
-                            {metaBusy ? "Μετάπτωση… (περίμενε)" : "Εφαρμογή μετάπτωσης"}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })()}
 
             <div className="filters">
               <div className="field">
@@ -7089,8 +7248,8 @@ export default function TournamentManager() {
             ) : (
               <>
                 <div className="footer-actions" style={{ marginTop: 0, marginBottom: 16 }}>
-                  <button className="btn-secondary" onClick={goToArchive}>
-                    <ArrowLeft size={15} /> Πίσω στα τουρνουά
+                  <button className="btn-secondary" onClick={() => setPhase("control")}>
+                    <ArrowLeft size={15} /> Πίσω στη Διαχείριση
                   </button>
                 </div>
                 <div className="notice">
