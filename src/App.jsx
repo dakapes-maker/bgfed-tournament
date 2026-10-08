@@ -26,6 +26,8 @@ import {
   LogOut,
   Trash2,
   AlertTriangle,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 
 import {
@@ -176,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.18";
+const APP_BUILD_VERSION = "2026-10-08.19";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -202,6 +204,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.19",
+    date: "2026-10-08",
+    items: [
+      "Pairings: νέα εμφάνιση «Λίστα» δίπλα στις «Κάρτες» (προεπιλογή οι κάρτες· η επιλογή θυμάται ανά συσκευή). Στη λίστα ο admin πατά το σκορ για να καταχωρήσει ή να αναιρέσει αποτέλεσμα, όπως και στις κάρτες.",
+    ],
+  },
   {
     version: "2026-10-08.18",
     date: "2026-10-08",
@@ -2604,6 +2613,13 @@ export default function TournamentManager() {
   const [recomputeLockConflict, setRecomputeLockConflict] = useState(null); // { years, indexOverride }
   const [excelDoneAt, setExcelDoneAt] = useState(null);
   const [eloLedgerOpen, setEloLedgerOpen] = useState(null);
+  const [pairingsLayout, setPairingsLayout] = useState(() => {
+    try {
+      return localStorage.getItem("bgfed.pairingsLayout") === "list" ? "list" : "cards";
+    } catch {
+      return "cards";
+    }
+  }); // Pairings: "cards" (default) or "list", remembered per device
   const [importsList, setImportsList] = useState(null); // null = not loaded; [] = none
   const [importPreview, setImportPreview] = useState(null); // { doc, problems, summary, fileName, replaceId }
   const [importView, setImportView] = useState(null); // { id, doc, tab, round }
@@ -5482,6 +5498,102 @@ export default function TournamentManager() {
     );
   }
 
+  /* ---- Pairings: list layout (same data and actions as the cards) ---- */
+
+  /** Compact table of a round. Admin clicks the score to open the same
+   * result actions the cards offer. `live` = tournament still running. */
+  function renderPairingsList(live) {
+    if (!roundData) return null;
+    const rows = [];
+    if (roundData.bye) {
+      rows.push(
+        <tr key="bye" className="pl-decided">
+          <td className="cal-note">BYE</td>
+          <td className="pl-name pl-win">{byId[roundData.bye]?.name}</td>
+          <td className="pl-score">bye</td>
+          <td className="pl-name cal-note">—</td>
+        </tr>
+      );
+    }
+    roundData.pairs.forEach((pr, i) => {
+      const p1 = byId[pr.p1];
+      const p2 = byId[pr.p2];
+      if (!p1 || !p2) return;
+      const result = pr.result;
+      const isDoubleRet = result && result.method === "double_retirement";
+      const ret = result && result.method === "retirement";
+      const s1 = !result || isDoubleRet ? 0 : result.winnerId === p1.id ? matchLength : 0;
+      const s2 = !result || isDoubleRet ? 0 : result.winnerId === p2.id ? matchLength : 0;
+      const doSetResult = (winnerId, loserId, method) =>
+        live && roundData.editable ? setResult(i, winnerId, loserId, method) : setHistoricalResult(selectedRound, i, winnerId, loserId, method);
+      const doClearResult = () => (live && roundData.editable ? clearResult(i) : clearHistoricalResult(selectedRound, i));
+      const open = isAdmin && expandedMatch === i;
+      rows.push(
+        <tr key={`m${i}`} className={result ? "pl-decided" : ""}>
+          <td className="cal-note">M{i + 1}-{selectedRound}</td>
+          <td className={`pl-name ${result && !isDoubleRet ? (result.winnerId === p1.id ? "pl-win" : "pl-lose") : isDoubleRet ? "pl-lose" : ""}`}>{p1.name}</td>
+          <td className="pl-score">
+            {isAdmin ? (
+              <button className={`pl-score-btn ${open ? "active" : ""}`} onClick={() => setExpandedMatch(open ? null : i)} title="Καταχώρηση / αλλαγή αποτελέσματος">
+                {result ? (isDoubleRet ? "Α.Α. – Α.Α." : `${s1} – ${s2}`) : "–  :  –"}
+                <Pencil size={11} style={{ marginLeft: 6, opacity: 0.6 }} />
+              </button>
+            ) : result ? (
+              isDoubleRet ? "Α.Α. – Α.Α." : `${s1} – ${s2}`
+            ) : (
+              <span className="cal-note">εκκρεμεί</span>
+            )}
+          </td>
+          <td className={`pl-name ${result && !isDoubleRet ? (result.winnerId === p2.id ? "pl-win" : "pl-lose") : isDoubleRet ? "pl-lose" : ""}`}>
+            {p2.name}
+            {ret && <span className="cal-note"> · {byId[result.loserId]?.name} Α.Α.</span>}
+          </td>
+        </tr>
+      );
+      if (open) {
+        rows.push(
+          <tr key={`e${i}`} className="pl-edit">
+            <td colSpan={4}>
+              {!result ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <button className="btn-secondary" onClick={() => { doSetResult(p1.id, p2.id, "normal"); setExpandedMatch(null); }}>Νίκη {p1.name}</button>
+                  <button className="btn-secondary" onClick={() => { doSetResult(p2.id, p1.id, "normal"); setExpandedMatch(null); }}>Νίκη {p2.name}</button>
+                  <button className="btn-ghost" onClick={() => { doSetResult(p2.id, p1.id, "retirement"); setExpandedMatch(null); }}><UserX size={13} /> {p1.name} Α.Α.</button>
+                  <button className="btn-ghost" onClick={() => { doSetResult(p1.id, p2.id, "retirement"); setExpandedMatch(null); }}><UserX size={13} /> {p2.name} Α.Α.</button>
+                  <button className="btn-ghost" style={{ color: "var(--muted)" }} onClick={() => { doSetResult(null, null, "double_retirement"); setExpandedMatch(null); }}><UserX size={13} /> Και οι δύο Α.Α.</button>
+                  <button className="btn-ghost" onClick={() => setExpandedMatch(null)}>Κλείσιμο</button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13 }}>Για να αλλάξεις το αποτέλεσμα, αναίρεσέ το πρώτα.</span>
+                  <button className="btn-secondary" onClick={doClearResult}>Αναίρεση αποτελέσματος</button>
+                  <button className="btn-ghost" onClick={() => setExpandedMatch(null)}>Κλείσιμο</button>
+                </div>
+              )}
+            </td>
+          </tr>
+        );
+      }
+    });
+    return (
+      <div style={{ overflowX: "auto" }}>
+        <table className="cal-table pairings-list">
+          <tbody>{rows}</tbody>
+        </table>
+      </div>
+    );
+  }
+
+  function choosePairingsLayout(layout) {
+    setPairingsLayout(layout);
+    setExpandedMatch(null);
+    try {
+      localStorage.setItem("bgfed.pairingsLayout", layout);
+    } catch {
+      /* per-device convenience only */
+    }
+  }
+
   /* ---- Imported tournaments (isolated preview) ---- */
 
   async function loadImportsList() {
@@ -6862,6 +6974,18 @@ export default function TournamentManager() {
         .close-steps li.done { color: var(--win); }
         .ledger-table td.pos { color: var(--win); }
         .ledger-btn { padding: 4px 6px; }
+        .layout-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 0 0 14px 0; }
+        .layout-toggle button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: none; background: var(--surface, #fff); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
+        .layout-toggle button + button { border-left: 1px solid var(--border); }
+        .layout-toggle button.active { background: var(--accent); color: #fff; font-weight: 600; }
+        .pairings-list td { padding: 7px 8px; font-size: 15px; }
+        .pairings-list .pl-name { width: 40%; }
+        .pairings-list .pl-win { font-weight: 700; }
+        .pairings-list .pl-lose { color: var(--muted); }
+        .pairings-list .pl-score { text-align: center; white-space: nowrap; width: 110px; }
+        .pl-score-btn { border: 1px dashed var(--border); background: transparent; border-radius: 6px; padding: 3px 10px; font: inherit; font-variant-numeric: tabular-nums; cursor: pointer; color: var(--ink); }
+        .pl-score-btn:hover, .pl-score-btn.active { border-style: solid; border-color: var(--accent); background: var(--accent-soft); }
+        .pairings-list tr.pl-edit > td { background: var(--accent-soft); }
         .ledger-btn.active { background: var(--accent-soft); color: var(--accent); }
         .ledger-row > td { background: var(--accent-soft); padding: 12px 14px; }
         .ledger-table td.neg { color: var(--loss, #b03a2e); }
@@ -9368,6 +9492,18 @@ export default function TournamentManager() {
                   ))}
                 </div>
 
+                <div className="layout-toggle" role="group" aria-label="Εμφάνιση αγώνων">
+                  <button className={pairingsLayout === "cards" ? "active" : ""} onClick={() => choosePairingsLayout("cards")}>
+                    <LayoutGrid size={14} /> Κάρτες
+                  </button>
+                  <button className={pairingsLayout === "list" ? "active" : ""} onClick={() => choosePairingsLayout("list")}>
+                    <List size={14} /> Λίστα
+                  </button>
+                </div>
+
+                {pairingsLayout === "list" ? (
+                  renderPairingsList(true)
+                ) : (
                 <div className="pairings-grid">
                 {roundData && roundData.bye && (
                   <div className="match-compact decided">
@@ -9453,6 +9589,7 @@ export default function TournamentManager() {
                   );
                 })}
                 </div>
+                )}
 
 
                 {isAdmin && roundData && roundData.editable && (
@@ -9588,6 +9725,18 @@ export default function TournamentManager() {
                   ))}
                 </div>
 
+                <div className="layout-toggle" role="group" aria-label="Εμφάνιση αγώνων">
+                  <button className={pairingsLayout === "cards" ? "active" : ""} onClick={() => choosePairingsLayout("cards")}>
+                    <LayoutGrid size={14} /> Κάρτες
+                  </button>
+                  <button className={pairingsLayout === "list" ? "active" : ""} onClick={() => choosePairingsLayout("list")}>
+                    <List size={14} /> Λίστα
+                  </button>
+                </div>
+
+                {pairingsLayout === "list" ? (
+                  renderPairingsList(false)
+                ) : (
                 <div className="pairings-grid">
                 {roundData && roundData.bye && (
                   <div className="match-compact decided">
@@ -9664,6 +9813,7 @@ export default function TournamentManager() {
                   );
                 })}
                 </div>
+                )}
               </>
             )}
 
