@@ -170,7 +170,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.04";
+const APP_BUILD_VERSION = "2026-10-08.05";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -194,6 +194,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.05",
+    date: "2026-10-08",
+    items: [
+      "Διόρθωση στη μετάβαση σε μόνιμα ID: η εφαρμογή θεωρούσε ότι η αποθήκευση του μητρώου αποτύγχανε ακόμα κι όταν πετύχαινε, και σταματούσε πριν το Recompute. Τώρα επαληθεύει διαβάζοντας το μητρώο πίσω από τη βάση.",
+    ],
+  },
   {
     version: "2026-10-08.04",
     date: "2026-10-08",
@@ -3285,9 +3292,13 @@ export default function TournamentManager() {
     setIdentityBusy(true);
     try {
       const migrated = buildMigratedRegistry(registry, identityPlan.unmatched, identityDecisions);
-      const saved = await saveRegistry(migrated);
-      if (!saved) {
-        showToast("Η αποθήκευση του μητρώου απέτυχε — δεν άλλαξε τίποτα.");
+      // saveRegistry does not report success, so verify by reading it back.
+      await saveRegistry(migrated);
+      const check = await loadRegistry();
+      const written =
+        check && check.identityVersion === 2 && Object.keys(check.players || {}).length === Object.keys(migrated.players).length;
+      if (!written) {
+        showToast("Η αποθήκευση του μητρώου δεν επιβεβαιώθηκε — δεν συνεχίζω. Έλεγξε τη σύνδεση και δοκίμασε ξανά.");
         return;
       }
       setPersonLookup(migrated);
