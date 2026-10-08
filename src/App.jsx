@@ -175,7 +175,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.08";
+const APP_BUILD_VERSION = "2026-10-08.09";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -200,6 +200,14 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.09",
+    date: "2026-10-08",
+    items: [
+      "Στην ολοκλήρωση τουρνουά, η ερώτηση αφορά πλέον ELO και Βαθμολογία μαζί: «Ναι» ενημερώνει και τα δύο, «Όχι» κανένα (το επίσημο τουρνουά μετράει στο επόμενο Recompute).",
+      "Διόρθωση: η σελίδα ELO έδειχνε τα νούμερα από το άνοιγμα της εφαρμογής, ενώ η ELO είχε ήδη ενημερωθεί στη βάση. Τώρα δείχνει αμέσως τα νέα νούμερα, χωρίς Recompute ή ανανέωση σελίδας.",
+    ],
+  },
   {
     version: "2026-10-08.08",
     date: "2026-10-08",
@@ -2335,6 +2343,14 @@ export default function TournamentManager() {
   const saveIndexChecked = (list) => guardedSave(saveIndex, "Κατάλογος τουρνουά", list);
   const saveFeedItemsChecked = (items) => guardedSave(saveFeedItems, "RSS feed", items);
 
+  /** After the app itself saved a new ELO (end of tournament, live round),
+   * show it at once instead of the copy read when the app was opened. */
+  function showFreshElo(elo) {
+    setEloData(elo);
+    setEloTimeline(null);
+    setPlayerMatchStatsCache({});
+  }
+
   const [archive, setArchive] = useState([]);
   const [searchName, setSearchName] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -2574,6 +2590,13 @@ export default function TournamentManager() {
   useEffect(() => {
     loadElo().then(setEloData);
   }, []);
+
+  // The ELO page always shows what is in the database now (e.g. after
+  // another device closed a tournament). A failed read keeps what is shown.
+  useEffect(() => {
+    if (phase !== "elo") return;
+    loadEloStrict().then(setEloData).catch(() => {});
+  }, [phase]);
 
   useEffect(() => {
     if (!expandedRegistryPlayer || !registry.players[expandedRegistryPlayer]) {
@@ -3058,7 +3081,10 @@ export default function TournamentManager() {
         .then((elo) => {
           applyEloRoundBatch(elo, eloRoundMatches, matchLength);
           markEloApplied(elo, tournamentId, tournamentName, "live");
-          return saveEloChecked(elo);
+          return saveEloChecked(elo).then((ok) => {
+            if (ok) showFreshElo(elo);
+            return ok;
+          });
         })
         .catch(() => reportSaveFailure(`Κατάταξη ELO (γύρος ${round}) — η ELO δεν διαβάστηκε, δεν γράφτηκε τίποτα· τρέξε Recompute`));
     }
@@ -3084,7 +3110,7 @@ export default function TournamentManager() {
       setPhase("finished");
       setCurrentPairings(null);
       await persistCurrent("finished", round, updatedPlayers, null, newHistory);
-      if (!liveStandingsEnabled && ratingsCount) {
+      if (!liveStandingsEnabled && ratingsCount && updateSeasonRequested) {
         let elo = null;
         try {
           elo = await loadEloStrict();
@@ -3096,13 +3122,13 @@ export default function TournamentManager() {
             applyEloRoundBatch(elo, buildEloRoundMatches(entry.pairs, byId), matchLength);
           });
           markEloApplied(elo, tournamentId, tournamentName, "end");
-          await saveEloChecked(elo);
+          if (await saveEloChecked(elo)) showFreshElo(elo);
         }
       }
       if (updateSeason) {
         const seasonOk = await pushSeasonUpdateWithRetry();
         if (seasonOk) {
-          showToast("Η βαθμολογία ενημερώθηκε.");
+          showToast("ELO και Βαθμολογία ενημερώθηκαν.");
         } else {
           noticeMsg = [
             noticeMsg,
@@ -3112,7 +3138,12 @@ export default function TournamentManager() {
       } else if (!ratingsCount) {
         noticeMsg = [noticeMsg, `Το τουρνουά τελείωσε. Ως «${competitionName(competitionsFrom(sysState), competitionId)}» δεν μετράει σε ELO και Βαθμολογία.`].filter(Boolean).join(" ");
       } else {
-        noticeMsg = [noticeMsg, "Tournament finished (Season Standings not updated, as requested)."].filter(Boolean).join(" ");
+        noticeMsg = [
+          noticeMsg,
+          liveStandingsEnabled
+            ? "Το τουρνουά τελείωσε. Η τελική Βαθμολογία δεν ενημερώθηκε, όπως ζήτησες (η ELO είχε ήδη ενημερωθεί σε κάθε γύρο, λόγω live ενημέρωσης)."
+            : "Το τουρνουά τελείωσε. ELO και Βαθμολογία δεν ενημερώθηκαν, όπως ζήτησες· αν το τουρνουά είναι επίσημο, θα μετρήσει στο επόμενο Recompute.",
+        ].filter(Boolean).join(" ");
       }
     } else {
       const nextRound = round + 1;
@@ -5909,9 +5940,13 @@ export default function TournamentManager() {
       {confirmingFinish && (
         <div className="modal-overlay" onClick={() => setConfirmingFinish(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Finish tournament</p>
+            <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Ολοκλήρωση τουρνουά</p>
             <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 16px 0" }}>
-              Ενημέρωση της Season Standings με το αποτέλεσμα αυτού του τουρνουά;
+              {competitionId !== DEFAULT_COMPETITION_ID
+                ? "Το τουρνουά δεν είναι Premier League, οπότε δεν θα μετρήσει σε ELO και Βαθμολογία, ό,τι κι αν απαντήσεις."
+                : liveStandingsEnabled
+                ? "Ενημέρωση της Βαθμολογίας με το τελικό αποτέλεσμα; (Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο, λόγω live ενημέρωσης.)"
+                : "Ενημέρωση ELO και Βαθμολογίας με τα αποτελέσματα αυτού του τουρνουά;"}
             </p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button
