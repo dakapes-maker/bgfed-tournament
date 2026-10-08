@@ -176,7 +176,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.11";
+const APP_BUILD_VERSION = "2026-10-08.12";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -194,6 +194,7 @@ const FEATURES_SUMMARY = [
   "Διαχείριση Α.Α. (αποχώρηση παίκτη), με ρητή απόσυρση από το τουρνουά και ένδειξη διπλού Α.Α.",
   "Σημαία \"Official League Day\" και Recompute ELO/Standings από την αρχή, μόνο για επίσημες μέρες.",
   "Διοργανώσεις (Premier League, Τελική φάση, Κύπελλο), σεζόν και λέσχη για κάθε τουρνουά.",
+  "Ημερολόγιο σεζόν με πρόοδο αγωνιστικών, ορατό σε όλους στη Βαθμολογία.",
   "Πλήρες Export / Import δεδομένων (backup) από το Dashboard.",
   "Statistics — αναλυτικά στατιστικά παίκτη έναντι κάθε αντιπάλου, σερί νικών/συμμετοχών, κατακτήσεις τουρνουά, πρωτοπορία σε βαθμολογία/ELO.",
   "Κύριο μενού και τίτλοι σελίδων στα Ελληνικά (προεπιλογή), με εναλλαγή σε Αγγλικά.",
@@ -201,6 +202,16 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.12",
+    date: "2026-10-08",
+    items: [
+      "Ημερολόγιο σεζόν: στη Διαχείριση, κάθε σεζόν έχει τις αγωνιστικές της (ημερομηνία, διοργάνωση, σημείωση) με αυτόματη αρίθμηση «Ημέρα N» και κατάσταση (προγραμματισμένη, σε εξέλιξη, ολοκληρώθηκε). Για το 2026, ένα κουμπί συμπληρώνει τις αγωνιστικές από τα υπάρχοντα τουρνουά.",
+      "«Νέα σεζόν» στη Διαχείριση: δημιουργεί τη σεζόν με τους κανόνες της προηγούμενης και κενό ημερολόγιο.",
+      "Το «New Tournament» προτείνει την επόμενη αγωνιστική του ημερολογίου, με όνομα, ημερομηνία, σεζόν και διοργάνωση συμπληρωμένα.",
+      "Στη Βαθμολογία, όλοι βλέπουν την πρόοδο της σεζόν (π.χ. «Αγωνιστική 12 από 15 · Επόμενη: …») και το πρόγραμμα, με links στα αποτελέσματα.",
+    ],
+  },
   {
     version: "2026-10-08.11",
     date: "2026-10-08",
@@ -1312,6 +1323,64 @@ function rulesForSeason(sys, year) {
   return { ...DEFAULT_SEASON_RULES, inherited: true, from: null };
 }
 
+/* ---- Season calendar (Build 3B2) ---------------------------------------
+ * Stored in the system document as seasonCalendars: { "2027": [entry] },
+ * entry = { id, date: "YYYY-MM-DD", competitionId, note, tournamentId? }.
+ * A tournament is linked to an entry either by the entry's tournamentId
+ * (filled from existing tournaments) or by the tournament's own
+ * calendarEntryId (tournaments created from the calendar). A linked
+ * tournament that is moved to the trash simply stops counting. */
+function newCalendarEntryId() {
+  return `cal_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function todayYMD() {
+  return isoToLocalYMD(new Date().toISOString());
+}
+
+/** The calendar of a season, ordered and enriched for display:
+ * { ...entry, day (Premier League only), tournament, status, effectiveDate }. */
+function buildCalendarView(sys, year, archive) {
+  const entries = ((sys && sys.seasonCalendars && sys.seasonCalendars[String(year)]) || []).map((e) => {
+    const t =
+      (e.tournamentId && archive.find((a) => a.id === e.tournamentId)) ||
+      archive.find((a) => a.calendarEntryId === e.id) ||
+      null;
+    const effectiveDate = t ? isoToLocalYMD(t.date) || e.date : e.date;
+    let status;
+    if (t) status = t.status === "Completed" ? "done" : "live";
+    else status = effectiveDate < todayYMD() ? "missed" : "scheduled";
+    return { ...e, tournament: t, status, effectiveDate };
+  });
+  entries.sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : a.effectiveDate > b.effectiveDate ? 1 : 0));
+  let n = 0;
+  entries.forEach((e) => {
+    if ((e.competitionId || DEFAULT_COMPETITION_ID) === DEFAULT_COMPETITION_ID) e.day = ++n;
+  });
+  return entries;
+}
+
+/** Progress of a season's Premier League calendar. */
+function calendarProgress(view) {
+  const league = view.filter((e) => e.day);
+  const done = league.filter((e) => e.status === "done").length;
+  const next = league.find((e) => e.status === "live") || league.find((e) => e.status === "scheduled") || null;
+  return { total: league.length, done, next };
+}
+
+function calendarEntryTitle(entry, year, competitions) {
+  if (entry.day) return `Backgammon Premier League ${year} - Ημέρα ${entry.day}`;
+  return `${competitionName(competitions, entry.competitionId)} ${year}`;
+}
+
+const CAL_STATUS_LABEL = { done: "Ολοκληρώθηκε", live: "Σε εξέλιξη", scheduled: "Προγραμματισμένη", missed: "Χωρίς τουρνουά" };
+
+function formatYMD(ymd) {
+  if (!ymd) return "—";
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("el-GR", { weekday: "long", day: "numeric", month: "numeric", year: "numeric" });
+}
+
 /** Human-readable range of a season, for warnings. */
 function seasonRangeLabel(year) {
   if (year === 2026) return "27/9/2025 – 31/12/2026";
@@ -2341,6 +2410,11 @@ export default function TournamentManager() {
   const [metaBusy, setMetaBusy] = useState(false);
   const [controlSeasons, setControlSeasons] = useState([]); // seasons listed on the admin page
   const [confirmingRestore, setConfirmingRestore] = useState(false);
+  const [calendarEntryId, setCalendarEntryId] = useState(null); // the calendar day the open tournament belongs to
+  const [calDraft, setCalDraft] = useState(null); // { year, id?, date, competitionId, note } while adding/editing a calendar day
+  const [newSeasonYear, setNewSeasonYear] = useState(null); // "Νέα σεζόν" form
+  const [calBusy, setCalBusy] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false); // visitors' schedule on the Season page
   const [rulesDraft, setRulesDraft] = useState(null); // { year, bestOf, cutoffR32, cutoffR48 } while editing season rules
   const [players, setPlayers] = useState([]);
   const [round, setRound] = useState(1);
@@ -2655,17 +2729,25 @@ export default function TournamentManager() {
   useEffect(() => {
     if (phase !== "season") return;
     listSeasonYears().then((years) => {
-      const withCurrent = years.includes(seasonBrowseYear) ? years : [seasonBrowseYear, ...years];
-      setSeasonYearsAvailable(withCurrent);
+      const opened = Object.keys(sysState.seasonCalendars || {}).map(Number).filter((y) => !isNaN(y));
+      const all = [...new Set([seasonBrowseYear, ...years, ...opened])].sort((a, b) => b - a);
+      setSeasonYearsAvailable(all);
     });
     loadSeason(seasonBrowseYear).then(setSeasonData);
   }, [phase, seasonBrowseYear]);
 
+  // A calendar link that no longer fits the chosen season is dropped.
+  useEffect(() => {
+    if (phase !== "setup" || !calendarEntryId) return;
+    if (!buildCalendarView(sysState, seasonYear, archive).some((e) => e.id === calendarEntryId)) setCalendarEntryId(null);
+  }, [phase, seasonYear]);
+
   useEffect(() => {
     if (phase !== "control") return;
     const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
-    listSeasonYears().then((years) => setControlSeasons([...new Set([current, ...years])].sort((x, y) => y - x)));
-  }, [phase]);
+    const opened = [...Object.keys(sysState.seasonCalendars || {}), ...Object.keys(sysState.seasonRules || {})].map(Number).filter((y) => !isNaN(y));
+    listSeasonYears().then((years) => setControlSeasons([...new Set([current, ...years, ...opened])].sort((x, y) => y - x)));
+  }, [phase, sysState.seasonCalendars, sysState.seasonRules]);
 
   // The season-statistics selector needs the list of seasons too, even when
   // the Season page has not been opened in this visit.
@@ -2679,7 +2761,7 @@ export default function TournamentManager() {
   /* ---- archive persistence ---- */
 
   function currentSnapshot() {
-    return { tournamentName, totalRounds, matchLength, seasonYear, competitionId, organisation, liveStandingsEnabled, isOfficial, sideBets, calcuttaEntries, phase, players, round, currentPairings, history, createdAt };
+    return { tournamentName, totalRounds, matchLength, seasonYear, competitionId, organisation, calendarEntryId, liveStandingsEnabled, isOfficial, sideBets, calcuttaEntries, phase, players, round, currentPairings, history, createdAt };
   }
 
   async function persistCurrent(nextPhase, nextRound, nextPlayers, nextPairings, nextHistory, nextSideBets = sideBets, nextCalcuttaEntries = calcuttaEntries) {
@@ -2691,6 +2773,7 @@ export default function TournamentManager() {
       seasonYear,
       competitionId,
       organisation,
+      calendarEntryId,
       liveStandingsEnabled,
       isOfficial,
       sideBets: nextSideBets,
@@ -2714,6 +2797,7 @@ export default function TournamentManager() {
         isOfficial,
         seasonYear,
         competitionId,
+        calendarEntryId: calendarEntryId || null,
       });
       saveIndexChecked(next);
       return next;
@@ -2733,9 +2817,20 @@ export default function TournamentManager() {
     setSeasonYear(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
     setCompetitionId(DEFAULT_COMPETITION_ID);
     setOrganisation(sysState.homeClub || "");
+    setCalendarEntryId(null);
     setLiveStandingsEnabled(false);
     setIsOfficial(true);
     setPlayers([]);
+    // Prefill from the next open calendar day (current season, then next).
+    const cur = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
+    for (const y of [cur, cur + 1]) {
+      const view = buildCalendarView(sysState, y, archive);
+      const open = view.find((e) => !e.tournament && e.status === "scheduled");
+      if (open) {
+        applyCalendarEntry(open, y);
+        break;
+      }
+    }
     setRound(1);
     setCurrentPairings(null);
     setHistory([]);
@@ -3442,6 +3537,7 @@ export default function TournamentManager() {
         setSeasonYear(data.seasonYear || seasonForDate(data.createdAt) || new Date().getFullYear());
         setCompetitionId(data.competitionId || DEFAULT_COMPETITION_ID);
         setOrganisation(data.organisation ?? (sysState.homeClub || ""));
+        setCalendarEntryId(null);
         setLiveStandingsEnabled(!!data.liveStandingsEnabled);
         setIsOfficial(!!data.isOfficial);
         setPhase(data.phase || "setup");
@@ -3476,6 +3572,7 @@ export default function TournamentManager() {
     setSeasonYear(data.seasonYear || seasonForDate(data.createdAt) || new Date().getFullYear());
     setCompetitionId(data.competitionId || DEFAULT_COMPETITION_ID);
     setOrganisation(data.organisation ?? (sysState.homeClub || ""));
+    setCalendarEntryId(data.calendarEntryId || null);
     setMetaEdit(null);
     setLiveStandingsEnabled(!!data.liveStandingsEnabled);
     setIsOfficial(!!data.isOfficial);
@@ -5012,6 +5109,252 @@ export default function TournamentManager() {
   const archiveHasFilter = searchName || dateFrom || dateTo;
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
 
+  /* ---- Build 3B2: calendar ---- */
+
+  /** Fills the new-tournament form from a calendar day (or clears the link). */
+  function applyCalendarEntry(entry, year) {
+    if (!entry) {
+      setCalendarEntryId(null);
+      return;
+    }
+    setCalendarEntryId(entry.id);
+    setTournamentName(calendarEntryTitle(entry, year, competitionsFrom(sysState)));
+    setCreatedAt((prev) => withLocalDate(prev || new Date().toISOString(), entry.date));
+    setSeasonYear(year);
+    setCompetitionId(entry.competitionId || DEFAULT_COMPETITION_ID);
+  }
+
+  async function saveCalendar(year, entries) {
+    const all = { ...(sysState.seasonCalendars || {}), [String(year)]: entries };
+    setCalBusy(true);
+    try {
+      if (await saveSysState({ seasonCalendars: all })) {
+        setSysState((st) => ({ ...st, seasonCalendars: all }));
+        return true;
+      }
+      reportSaveFailure(`Ημερολόγιο σεζόν ${year} — δεν αποθηκεύτηκε`);
+      return false;
+    } finally {
+      setCalBusy(false);
+    }
+  }
+
+  function calendarOf(year) {
+    return [...((sysState.seasonCalendars && sysState.seasonCalendars[String(year)]) || [])];
+  }
+
+  async function saveCalDraft() {
+    if (!calDraft || !calDraft.date) return;
+    const { year } = calDraft;
+    const entries = calendarOf(year);
+    const clean = { date: calDraft.date, competitionId: calDraft.competitionId || DEFAULT_COMPETITION_ID, note: (calDraft.note || "").trim() };
+    let next;
+    if (calDraft.id) next = entries.map((e) => (e.id === calDraft.id ? { ...e, ...clean } : e));
+    else next = [...entries, { id: newCalendarEntryId(), ...clean, tournamentId: null }];
+    if (await saveCalendar(year, next)) {
+      setCalDraft(null);
+      showToast("Το ημερολόγιο αποθηκεύτηκε.");
+    }
+  }
+
+  async function deleteCalEntry(year, id) {
+    const next = calendarOf(year).filter((e) => e.id !== id);
+    if (await saveCalendar(year, next)) showToast("Η αγωνιστική διαγράφηκε από το ημερολόγιο.");
+  }
+
+  /** Adds a calendar day for every tournament of the season that is not on
+   * the calendar yet (used once, for 2026). Dates come from the tournaments. */
+  async function fillCalendarFromTournaments(year) {
+    const entries = calendarOf(year);
+    const linked = new Set(entries.map((e) => e.tournamentId).filter(Boolean));
+    const view = buildCalendarView(sysState, year, archive);
+    view.forEach((e) => e.tournament && linked.add(e.tournament.id));
+    const toAdd = archive
+      .filter((t) => Number(t.seasonYear) === Number(year) && t.isOfficial && !linked.has(t.id))
+      .map((t) => ({ id: newCalendarEntryId() + t.id.slice(-4), date: isoToLocalYMD(t.date), competitionId: t.competitionId || DEFAULT_COMPETITION_ID, note: "", tournamentId: t.id }));
+    if (toAdd.length === 0) {
+      showToast("Όλα τα επίσημα τουρνουά της σεζόν υπάρχουν ήδη στο ημερολόγιο.");
+      return;
+    }
+    if (await saveCalendar(year, [...entries, ...toAdd])) showToast(`Προστέθηκαν ${toAdd.length} αγωνιστικές από τα υπάρχοντα τουρνουά.`);
+  }
+
+  async function createSeason() {
+    const year = Number(newSeasonYear);
+    if (!Number.isInteger(year) || year < 2027 || year > 2100) {
+      showToast("Δώσε έγκυρο έτος (από 2027).");
+      return;
+    }
+    if (controlSeasons.includes(year) || (sysState.seasonCalendars && sysState.seasonCalendars[String(year)])) {
+      showToast(`Η σεζόν ${year} υπάρχει ήδη.`);
+      return;
+    }
+    // Pin the rules of earlier seasons that still inherit, then give the new
+    // season a copy of the latest rules (adjust them to the announcement).
+    const rules = { ...(sysState.seasonRules || {}) };
+    controlSeasons.filter((y) => y < year && !rules[String(y)]).forEach((y) => {
+      const r = rulesForSeason({ seasonRules: rules }, y);
+      rules[String(y)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: new Date().toISOString() };
+    });
+    const base = rulesForSeason({ seasonRules: rules }, year);
+    rules[String(year)] = { bestOf: base.bestOf, cutoffR32: base.cutoffR32, cutoffR48: base.cutoffR48, setAt: new Date().toISOString() };
+    const calendars = { ...(sysState.seasonCalendars || {}), [String(year)]: [] };
+    const patch = { seasonRules: rules, seasonCalendars: calendars, seasonsOpened: { ...(sysState.seasonsOpened || {}), [String(year)]: new Date().toISOString() } };
+    if (await saveSysState(patch)) {
+      setSysState((st) => ({ ...st, ...patch }));
+      setNewSeasonYear(null);
+      showToast(`Η σεζόν ${year} δημιουργήθηκε· έλεγξε τους κανόνες και πρόσθεσε τις αγωνιστικές.`);
+    } else {
+      reportSaveFailure(`Νέα σεζόν ${year} — δεν δημιουργήθηκε`);
+    }
+  }
+
+  /** Admin: calendar card of one season (inside the admin page). */
+  function renderCalendarCard(year) {
+    const comps = competitionsFrom(sysState);
+    const view = buildCalendarView(sysState, year, archive);
+    const prog = calendarProgress(view);
+    const editing = calDraft && calDraft.year === year;
+    const unlinkedOfficial = archive.filter(
+      (t) => Number(t.seasonYear) === Number(year) && t.isOfficial && !view.some((e) => e.tournament && e.tournament.id === t.id)
+    );
+    return (
+      <div className="control-sub-card">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <strong>Σεζόν {year} — ημερολόγιο</strong>
+          <span style={{ fontSize: 13, color: "var(--muted)" }}>
+            {prog.total > 0 ? `Premier League: ${prog.done} από ${prog.total} αγωνιστικές` : "Χωρίς αγωνιστικές ακόμα"}
+          </span>
+        </div>
+        {view.length > 0 && (
+          <div style={{ overflowX: "auto", marginTop: 8 }}>
+            <table className="cal-table">
+              <thead>
+                <tr><th>Αγωνιστική</th><th>Ημερομηνία</th><th>Διοργάνωση</th><th>Κατάσταση</th><th></th></tr>
+              </thead>
+              <tbody>
+                {view.map((e) => (
+                  <tr key={e.id} className={`cal-${e.status}`}>
+                    <td>{e.day ? `Ημέρα ${e.day}` : "—"}{e.note ? <span className="cal-note"> · {e.note}</span> : null}</td>
+                    <td>{formatYMD(e.effectiveDate)}</td>
+                    <td>{competitionName(comps, e.competitionId)}</td>
+                    <td>
+                      {e.tournament ? (
+                        <button className="history-link" onClick={() => openArchived(e.tournament.id)}>{CAL_STATUS_LABEL[e.status]}</button>
+                      ) : (
+                        CAL_STATUS_LABEL[e.status]
+                      )}
+                    </td>
+                    <td style={{ whiteSpace: "nowrap" }}>
+                      {!e.tournament && (
+                        <>
+                          <button className="btn-ghost" style={{ padding: "2px 6px" }} onClick={() => setCalDraft({ year, id: e.id, date: e.date, competitionId: e.competitionId || DEFAULT_COMPETITION_ID, note: e.note || "" })} title="Αλλαγή ημερομηνίας">
+                            <Pencil size={13} />
+                          </button>
+                          <button className="btn-ghost" style={{ padding: "2px 6px" }} onClick={() => deleteCalEntry(year, e.id)} disabled={calBusy} title="Διαγραφή αγωνιστικής">
+                            <Trash2 size={13} />
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {editing ? (
+          <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
+            <div style={{ width: 160 }}>
+              <label>Ημερομηνία</label>
+              <input type="date" value={calDraft.date} onChange={(ev) => setCalDraft({ ...calDraft, date: ev.target.value })} />
+            </div>
+            <div style={{ width: 200 }}>
+              <label>Διοργάνωση</label>
+              <select
+                value={calDraft.competitionId}
+                onChange={(ev) => setCalDraft({ ...calDraft, competitionId: ev.target.value })}
+                style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+              >
+                {comps.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Σημείωση (προαιρετική)</label>
+              <input type="text" value={calDraft.note} onChange={(ev) => setCalDraft({ ...calDraft, note: ev.target.value })} placeholder="π.χ. χώρος, ώρα" />
+            </div>
+            <button className="btn-secondary" onClick={() => setCalDraft(null)}>Άκυρο</button>
+            <button className="btn-primary" onClick={saveCalDraft} disabled={!calDraft.date || calBusy}>Αποθήκευση</button>
+            {calDraft.date && seasonForDate(withLocalDate(null, calDraft.date)) !== year && (
+              <p className="field-warning" style={{ width: "100%" }}>⚠ Η ημερομηνία δεν ανήκει στη σεζόν {year} ({seasonRangeLabel(year)}).</p>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            <button className="btn-secondary" onClick={() => setCalDraft({ year, date: "", competitionId: DEFAULT_COMPETITION_ID, note: "" })}>
+              <Plus size={14} /> Προσθήκη αγωνιστικής
+            </button>
+            {unlinkedOfficial.length > 0 && (
+              <button className="btn-secondary" onClick={() => fillCalendarFromTournaments(year)} disabled={calBusy}>
+                Συμπλήρωση από τα υπάρχοντα τουρνουά ({unlinkedOfficial.length})
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /** Visitors and admin: progress line + collapsible schedule (Season page). */
+  function renderSeasonSchedule(year) {
+    const view = buildCalendarView(sysState, year, archive);
+    if (view.length === 0) return null;
+    const prog = calendarProgress(view);
+    const comps = competitionsFrom(sysState);
+    return (
+      <div className="card" style={{ padding: "12px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 15 }}>
+            {prog.total > 0 && <><strong>Αγωνιστική {prog.done} από {prog.total}</strong></>}
+            {prog.next && (
+              <span style={{ color: "var(--muted)" }}>
+                {prog.total > 0 ? " · " : ""}
+                {prog.next.status === "live" ? "Σε εξέλιξη: " : "Επόμενη: "}
+                {formatYMD(prog.next.effectiveDate)}
+              </span>
+            )}
+            {!prog.next && prog.total > 0 && <span style={{ color: "var(--muted)" }}> · Η σεζόν ολοκληρώθηκε</span>}
+          </span>
+          <button className="btn-ghost" onClick={() => setShowSchedule(!showSchedule)}>
+            {showSchedule ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Πρόγραμμα σεζόν
+          </button>
+        </div>
+        {showSchedule && (
+          <div style={{ overflowX: "auto", marginTop: 8 }}>
+            <table className="cal-table">
+              <tbody>
+                {view.map((e) => (
+                  <tr key={e.id} className={`cal-${e.status}`}>
+                    <td>{e.day ? `Ημέρα ${e.day}` : competitionName(comps, e.competitionId)}</td>
+                    <td>{formatYMD(e.effectiveDate)}</td>
+                    <td>
+                      {e.tournament && e.status === "done" ? (
+                        <button className="history-link" onClick={() => openArchived(e.tournament.id)}>Αποτελέσματα</button>
+                      ) : (
+                        CAL_STATUS_LABEL[e.status]
+                      )}
+                      {e.note ? <span className="cal-note"> · {e.note}</span> : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   /** Admin card on the Season page: the rules of the season being viewed. */
   function renderSeasonRulesCard(year) {
     const rules = rulesForSeason(sysState, year);
@@ -5496,6 +5839,14 @@ export default function TournamentManager() {
         .history-link { background: none; border: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
         .history-link:hover { color: var(--ink); }
         .control-section { padding: 16px 20px; margin-bottom: 16px; }
+        .control-season { border-top: 2px solid var(--border); margin-top: 14px; padding-top: 6px; }
+        .cal-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .cal-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+        .cal-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+        .cal-table tr.cal-done td { color: var(--muted); }
+        .cal-table tr.cal-live td { font-weight: 700; }
+        .cal-table tr.cal-missed td { color: #9a5b00; }
+        .cal-note { color: var(--muted); font-size: 13px; }
         .control-h { font-size: 19px; margin: 0 0 8px 0; }
         .control-sub { font-size: 13px; color: var(--muted); margin: 0 0 10px 0; }
         .control-sub-card { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
@@ -6195,6 +6546,8 @@ export default function TournamentManager() {
               </span>
             </div>
 
+            {renderSeasonSchedule(seasonBrowseYear)}
+
             {staleNotice}
 
             {(() => {
@@ -6875,6 +7228,18 @@ export default function TournamentManager() {
                   <dl className="details-list">
                     <dt>Τρέχουσα σεζόν</dt>
                     <dd>{current} ({seasonRangeLabel(current)})</dd>
+                    {(() => {
+                      const prog = calendarProgress(buildCalendarView(sysState, current, archive));
+                      return (
+                        <>
+                          <dt>Πρόοδος σεζόν</dt>
+                          <dd>
+                            {prog.total > 0 ? `Αγωνιστική ${prog.done} από ${prog.total}` : "Χωρίς ημερολόγιο ακόμα"}
+                            {prog.next ? ` · ${prog.next.status === "live" ? "σε εξέλιξη" : "επόμενη"}: ${formatYMD(prog.next.effectiveDate)}` : ""}
+                          </dd>
+                        </>
+                      );
+                    })()}
                     <dt>Τελευταίο Export All Data</dt>
                     <dd style={{ color: !lastExport || daysSince > 30 ? "#9a5b00" : undefined }}>
                       {lastExport ? `${formatDate(sysState.lastExportAt)} (πριν ${daysSince} ${daysSince === 1 ? "ημέρα" : "ημέρες"})` : "Ποτέ"}
@@ -6895,9 +7260,29 @@ export default function TournamentManager() {
             {/* 2. Seasons */}
             <div className="card control-section">
               <h2 className="control-h">Σεζόν</h2>
-              <p className="control-sub">Οι κανόνες Βαθμολογίας κάθε σεζόν. Το ημερολόγιο και το κλείσιμο σεζόν θα προστεθούν εδώ.</p>
+              <p className="control-sub">Κανόνες Βαθμολογίας και ημερολόγιο κάθε σεζόν. Το κλείσιμο σεζόν θα προστεθεί εδώ.</p>
+              {newSeasonYear === null ? (
+                <button className="btn-secondary" onClick={() => setNewSeasonYear(String(Math.max(...controlSeasons, seasonForDate(new Date().toISOString()) || 2026) + 1))}>
+                  <Plus size={14} /> Νέα σεζόν
+                </button>
+              ) : (
+                <div className="row" style={{ alignItems: "flex-end" }}>
+                  <div style={{ width: 120 }}>
+                    <label>Έτος</label>
+                    <input type="number" value={newSeasonYear} onChange={(e) => setNewSeasonYear(e.target.value)} />
+                  </div>
+                  <span style={{ fontSize: 13, color: "var(--muted)", paddingBottom: 10 }}>
+                    {Number(newSeasonYear) >= 2027 ? `Διάρκεια ${seasonRangeLabel(Number(newSeasonYear))}· οι κανόνες αντιγράφονται από την προηγούμενη σεζόν.` : ""}
+                  </span>
+                  <button className="btn-secondary" onClick={() => setNewSeasonYear(null)}>Άκυρο</button>
+                  <button className="btn-primary" onClick={createSeason}>Δημιουργία</button>
+                </div>
+              )}
               {controlSeasons.map((y) => (
-                <React.Fragment key={y}>{renderSeasonRulesCard(y)}</React.Fragment>
+                <div key={y} className="control-season">
+                  {renderSeasonRulesCard(y)}
+                  {renderCalendarCard(y)}
+                </div>
               ))}
             </div>
 
@@ -7307,6 +7692,28 @@ export default function TournamentManager() {
               </div>
             )}
             <div className="card">
+              {(() => {
+                const view = buildCalendarView(sysState, seasonYear, archive);
+                const options = view.filter((e) => !e.tournament || e.id === calendarEntryId);
+                if (view.length === 0) return null;
+                return (
+                  <div style={{ marginBottom: 14 }}>
+                    <label>Αγωνιστική ημερολογίου (σεζόν {seasonYear})</label>
+                    <select
+                      value={calendarEntryId || ""}
+                      onChange={(e) => applyCalendarEntry(view.find((x) => x.id === e.target.value) || null, seasonYear)}
+                      style={{ width: "100%", maxWidth: 520, fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+                    >
+                      <option value="">Χωρίς αγωνιστική (έκτακτο ή δοκιμαστικό τουρνουά)</option>
+                      {options.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {(e.day ? `Ημέρα ${e.day}` : competitionName(competitionsFrom(sysState), e.competitionId))} — {formatYMD(e.effectiveDate)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })()}
               <div className="row" style={{ marginBottom: 14 }}>
                 <div className="field">
                   <label>Tournament name (optional)</label>
