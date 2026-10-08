@@ -176,7 +176,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.16";
+const APP_BUILD_VERSION = "2026-10-08.17";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -202,6 +202,15 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.17",
+    date: "2026-10-08",
+    items: [
+      "Κατάταξη ELO: δίπλα σε κάθε παίκτη, κουμπί που ανοίγει το «Πώς προέκυψε η ELO» κατευθείαν μέσα στον πίνακα.",
+      "Κλείσιμο σεζόν: εξήγηση κάτω από το κουμπί όταν είναι ανενεργό· η εξαγωγή Excel μετράει από όπου κι αν γίνει.",
+      "Export All Data: το backup περιλαμβάνει πλέον όλες τις ρυθμίσεις — λίστα συλλόγων, ημερολόγια σεζόν, κλειδώματα — και η επαναφορά τις ξαναγράφει όλες.",
+    ],
+  },
   {
     version: "2026-10-08.16",
     date: "2026-10-08",
@@ -2540,7 +2549,8 @@ export default function TournamentManager() {
   const [lockTyped, setLockTyped] = useState(""); // typed year for lock / unlock confirmations
   const [lockAction, setLockAction] = useState(null); // { kind: "lock" | "unlock" | "tournament", year }
   const [recomputeLockConflict, setRecomputeLockConflict] = useState(null); // { years, indexOverride }
-  const [excelDoneAt, setExcelDoneAt] = useState(null); // final standings exported in this session
+  const [excelDoneAt, setExcelDoneAt] = useState(null);
+  const [eloLedgerOpen, setEloLedgerOpen] = useState(null); // ELO page: player whose rating breakdown is open // final standings exported in this session
   const [statsScope, setStatsScope] = useState("all"); // Build 3C: Statistics period — "all" or a season year
   const [archiveSeason, setArchiveSeason] = useState(""); // Build 3C: tournaments list filters
   const [archiveCompetition, setArchiveCompetition] = useState("");
@@ -3500,7 +3510,13 @@ export default function TournamentManager() {
       tournaments,
       trash: trashList,
       trashedTournaments,
-      sysState: { purgedIds: sysNow.purgedIds || [], homeClub: sysNow.homeClub || "", competitions: competitionsFrom(sysNow), seasonRules: sysNow.seasonRules || {} },
+      // Every application setting (clubs, competitions, season rules,
+      // calendars, season locks, …) — all of the system document except the
+      // time of the last export itself.
+      sysState: (() => {
+        const { lastExportAt: _ignored, ...settings } = sysNow;
+        return { ...settings, purgedIds: sysNow.purgedIds || [], competitions: competitionsFrom(sysNow) };
+      })(),
     };
     const blob = new Blob([JSON.stringify(fullBackup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -3604,6 +3620,7 @@ export default function TournamentManager() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       showToast("Το αρχείο Excel κατέβηκε.");
+      setExcelDoneAt(new Date().toISOString());
     } catch (err) {
       showToast("Η εξαγωγή σε Excel απέτυχε — δοκίμασε ξανά.");
     }
@@ -3645,13 +3662,14 @@ export default function TournamentManager() {
           await saveSysState({ purgedIds });
           setSysState((s) => ({ ...s, purgedIds }));
         }
-        if (data.sysState && (typeof data.sysState.homeClub === "string" || Array.isArray(data.sysState.competitions) || data.sysState.seasonRules)) {
-          const patch = {};
-          if (data.sysState.seasonRules && typeof data.sysState.seasonRules === "object") patch.seasonRules = data.sysState.seasonRules;
-          if (typeof data.sysState.homeClub === "string") patch.homeClub = data.sysState.homeClub;
-          if (Array.isArray(data.sysState.competitions)) patch.competitions = data.sysState.competitions;
-          if (await saveSysState(patch)) setSysState((s) => ({ ...s, ...patch }));
-          else reportSaveFailure("Επαναφορά backup — δεν γράφτηκαν οι ρυθμίσεις συλλόγων/διοργανώσεων/κανόνων σεζόν");
+        if (data.sysState && typeof data.sysState === "object") {
+          // All settings from the backup (purgedIds were merged above; the
+          // time of the last export stays this installation's own).
+          const { purgedIds: _p, lastExportAt: _l, ...patch } = data.sysState;
+          if (Object.keys(patch).length > 0) {
+            if (await saveSysState(patch)) setSysState((s) => ({ ...s, ...patch }));
+            else reportSaveFailure("Επαναφορά backup — δεν γράφτηκαν οι ρυθμίσεις (σύλλογοι, διοργανώσεις, κανόνες, ημερολόγια, κλειδώματα)");
+          }
         }
         setPersonLookup(data.registry);
         setRegistry(data.registry);
@@ -5348,6 +5366,50 @@ export default function TournamentManager() {
   const archiveSeasonOptions = [...new Set(archive.map((t) => Number(t.seasonYear) || seasonForDate(t.date)).filter(Boolean))].sort((a, b) => b - a);
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
 
+  /** "How this rating was reached" for one player: summary line and the
+   * per-match table. Used on the player card and on the ELO page. Needs the
+   * ELO replay (computeEloTimeline) to have run. */
+  function renderEloLedger(key) {
+    if (!eloTimeline || !eloTimeline.__ledger) {
+      return <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0" }}>Υπολογισμός…</p>;
+    }
+    const rows = eloTimeline.__ledger[key] || [];
+    const stored = eloData.players?.[key]?.rating;
+    const final = rows.length ? rows[rows.length - 1].ratingAfter : ELO_INITIAL;
+    const agrees = stored === undefined || Math.abs(stored - final) < 0.5;
+    return (
+      <>
+        <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0" }}>
+          Αφετηρία {ELO_INITIAL}. Κάθε αγώνας της Premier League αλλάζει την ELO ανάλογα με τη διαφορά δυναμικότητας και το μήκος του αγώνα· οι αγώνες ενός γύρου υπολογίζονται μαζί. Οι νίκες με Α.Α. δεν μετράνε.
+          {" "}Τελική: <strong>{Math.round(final)}</strong>
+          {agrees ? " ✓ ίδια με την κατάταξη." : ` ⚠ η αποθηκευμένη ELO είναι ${Math.round(stored)} — χρειάζεται Recompute.`}
+        </p>
+        <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto" }}>
+          <table className="cal-table ledger-table">
+            <thead>
+              <tr><th>Τουρνουά</th><th>Γύρος</th><th>Αντίπαλος (ELO)</th><th>Αποτ.</th><th>Μεταβολή</th><th>ELO</th></tr>
+            </thead>
+            <tbody>
+              {[...rows].reverse().map((r, i) => (
+                <tr key={i}>
+                  <td>
+                    <button className="history-link" onClick={() => openTournamentFromPlayer(r.tournamentId, key)}>{shortTournamentLabel(r.tournamentName)}</button>
+                    <span className="cal-note"> · {formatDate(r.date)}</span>
+                  </td>
+                  <td>{r.round}</td>
+                  <td>{r.opponent} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
+                  <td>{r.ret ? (r.result === "win" ? "Ν (Α.Α.)" : "Η (Α.Α.)") : r.result === "win" ? "Νίκη" : "Ήττα"}</td>
+                  <td className={r.delta > 0 ? "pos" : r.delta < 0 ? "neg" : ""}>{r.ret ? "—" : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}`}</td>
+                  <td>{Math.round(r.ratingAfter)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  }
+
   /* ---- Build 3D: locked seasons ---- */
 
   /** True when the open tournament may be changed. In a locked season the
@@ -5445,6 +5507,11 @@ export default function TournamentManager() {
             <button className="btn-primary" disabled={!exportFresh || !excelDoneAt || !!lockAction} onClick={() => { setLockAction({ kind: "lock", year }); setLockTyped(""); }}>
               🔒 Κλείσιμο σεζόν {year}
             </button>
+            {(!exportFresh || !excelDoneAt) && (
+              <div className="cal-note" style={{ marginTop: 4 }}>
+                Ενεργοποιείται όταν ολοκληρωθούν {!exportFresh && !excelDoneAt ? "τα βήματα 1 και 2" : !exportFresh ? "το βήμα 1" : "το βήμα 2"}.
+              </div>
+            )}
           </li>
         </ol>
         {renderLockPrompt("lock", year, `Μετά το κλείσιμο, οι κανόνες, το ημερολόγιο και τα αποτελέσματα της σεζόν ${year} προστατεύονται από αλλαγές.`)}
@@ -6450,6 +6517,9 @@ export default function TournamentManager() {
         .close-steps { margin: 6px 0 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 14px; }
         .close-steps li.done { color: var(--win); }
         .ledger-table td.pos { color: var(--win); }
+        .ledger-btn { padding: 4px 6px; }
+        .ledger-btn.active { background: var(--accent-soft); color: var(--accent); }
+        .ledger-row > td { background: var(--accent-soft); padding: 12px 14px; }
         .ledger-table td.neg { color: var(--loss, #b03a2e); }
         .scope-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; font-size: 14px; color: var(--muted); }
         .cal-table { width: 100%; border-collapse: collapse; font-size: 14px; }
@@ -7367,19 +7437,50 @@ export default function TournamentManager() {
                         <th>Matches</th>
                         <th>Win %<br /><span className="th-sub">(all-time)</span></th>
                         <th>Experience<br /><span className="th-sub">(points played)</span></th>
+                        <th style={{ width: 44 }} title="Πώς προέκυψε η ELO"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {standings.map((p, i) => (
-                        <tr key={p.name}>
+                      {standings.map((p, i) => {
+                        const pk = normalizeName(p.name);
+                        const open = eloLedgerOpen === pk;
+                        return (
+                        <React.Fragment key={p.name}>
+                        <tr>
                           <td className="rank">{i + 1}</td>
                           <td style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => openPlayerDetail(normalizeName(p.name))}>{formatNameForDisplay(p.name, nameDisplayMode)}</td>
                           <td><strong>{Math.round(p.rating)}</strong></td>
                           <td>{p.matches ?? p.games}</td>
                           <td style={{ fontWeight: 700 }}>{p.matches > 0 ? `${Math.round(((p.wins ?? 0) / p.matches) * 1000) / 10}%` : "—"}</td>
                           <td>{p.experience ?? p.games * 7}</td>
+                          <td>
+                            <button
+                              className={`btn-ghost ledger-btn ${open ? "active" : ""}`}
+                              title="Πώς προέκυψε η ELO"
+                              onClick={() => {
+                                if (open) {
+                                  setEloLedgerOpen(null);
+                                  return;
+                                }
+                                setEloLedgerOpen(pk);
+                                if (eloTimeline === null && !eloTimelineLoading) computeEloTimeline();
+                              }}
+                            >
+                              <TrendingUp size={15} />
+                            </button>
+                          </td>
                         </tr>
-                      ))}
+                        {open && (
+                          <tr className="ledger-row">
+                            <td colSpan={7}>
+                              <strong>Πώς προέκυψε η ELO — {formatNameForDisplay(p.name, nameDisplayMode)}</strong>
+                              {renderEloLedger(pk)}
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -7744,45 +7845,14 @@ export default function TournamentManager() {
                   <p className="trend-chart-title" style={{ marginTop: 4 }}>Performance trend</p>
                   <PlayerTrendCharts rows={eloTimeline ? eloTimeline[key] : null} />
 
-                  {(() => {
-                    const rows = eloTimeline && eloTimeline.__ledger ? eloTimeline.__ledger[key] || [] : null;
-                    if (!rows) return null;
-                    const stored = eloData.players?.[key]?.rating;
-                    const final = rows.length ? rows[rows.length - 1].ratingAfter : ELO_INITIAL;
-                    const agrees = stored === undefined || Math.abs(stored - final) < 0.5;
-                    return (
-                      <details className="ledger" style={{ marginTop: 14 }}>
-                        <summary style={{ cursor: "pointer", fontWeight: 600 }}>Πώς προέκυψε η ELO ({rows.filter((r) => !r.ret).length} αγώνες)</summary>
-                        <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0" }}>
-                          Αφετηρία {ELO_INITIAL}. Κάθε αγώνας της Premier League αλλάζει την ELO ανάλογα με τη διαφορά δυναμικότητας και το μήκος του αγώνα· οι αγώνες ενός γύρου υπολογίζονται μαζί. Οι νίκες με Α.Α. δεν μετράνε.
-                          {" "}Τελική: <strong>{Math.round(final)}</strong>
-                          {agrees ? " ✓ ίδια με την κατάταξη." : ` ⚠ η αποθηκευμένη ELO είναι ${Math.round(stored)} — χρειάζεται Recompute.`}
-                        </p>
-                        <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto" }}>
-                          <table className="cal-table ledger-table">
-                            <thead>
-                              <tr><th>Τουρνουά</th><th>Γύρος</th><th>Αντίπαλος (ELO)</th><th>Αποτ.</th><th>Μεταβολή</th><th>ELO</th></tr>
-                            </thead>
-                            <tbody>
-                              {[...rows].reverse().map((r, i) => (
-                                <tr key={i}>
-                                  <td>
-                                    <button className="history-link" onClick={() => openTournamentFromPlayer(r.tournamentId, key)}>{shortTournamentLabel(r.tournamentName)}</button>
-                                    <span className="cal-note"> · {formatDate(r.date)}</span>
-                                  </td>
-                                  <td>{r.round}</td>
-                                  <td>{r.opponent} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
-                                  <td>{r.ret ? (r.result === "win" ? "Ν (Α.Α.)" : "Η (Α.Α.)") : r.result === "win" ? "Νίκη" : "Ήττα"}</td>
-                                  <td className={r.delta > 0 ? "pos" : r.delta < 0 ? "neg" : ""}>{r.ret ? "—" : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}`}</td>
-                                  <td>{Math.round(r.ratingAfter)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </details>
-                    );
-                  })()}
+                  {eloTimeline && eloTimeline.__ledger && (
+                    <details className="ledger" style={{ marginTop: 14 }}>
+                      <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                        Πώς προέκυψε η ELO ({(eloTimeline.__ledger[key] || []).filter((r) => !r.ret).length} αγώνες)
+                      </summary>
+                      {renderEloLedger(key)}
+                    </details>
+                  )}
 
                   <label style={{ marginTop: 18, display: "block" }}>Tournament history</label>
                   {!playerHistoryCache[key] && <p style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</p>}
