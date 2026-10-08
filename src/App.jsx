@@ -176,7 +176,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.14";
+const APP_BUILD_VERSION = "2026-10-08.15";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -202,6 +202,16 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.15",
+    date: "2026-10-08",
+    items: [
+      "Στατιστικά: κοινή επιλογή περιόδου για όλα τα tabs — «Όλα» (all-time, προεπιλογή) ή συγκεκριμένη σεζόν. Η ELO μένει συνεχής· με σεζόν μετράνε μόνο οι αγωνιστικές της για σερί, κατακτήσεις και πρωτοπορία.",
+      "Λίστα τουρνουά: φίλτρα σεζόν και διοργάνωσης, και η σεζόν και η διοργάνωση κάθε τουρνουά στη γραμμή του.",
+      "Κατατάξεις ELO ανά δεξαμενή: η σημερινή ELO είναι η κατάταξη συλλόγων (Premier League)· η πανελλήνια κατάταξη (Τελική φάση, Κύπελλο) προετοιμάστηκε και θα ενεργοποιηθεί με την Τελική φάση.",
+      "Μητρώο παικτών: ο Αριθμός Μητρώου σε δική του στήλη.",
+    ],
+  },
   {
     version: "2026-10-08.14",
     date: "2026-10-08",
@@ -1271,10 +1281,24 @@ async function saveSysState(patch) {
 
 const DEFAULT_COMPETITION_ID = "premier-league";
 const DEFAULT_COMPETITIONS = [
-  { id: "premier-league", name: "Premier League", level: "club" },
-  { id: "final-phase", name: "Τελική φάση", level: "national" },
-  { id: "cup", name: "Κύπελλο", level: "national" },
+  { id: "premier-league", name: "Premier League", level: "club", pool: "club" },
+  { id: "final-phase", name: "Τελική φάση", level: "national", pool: "national" },
+  { id: "cup", name: "Κύπελλο", level: "national", pool: "national" },
 ];
+
+/* ---- ELO pools (Build 3C) ---------------------------------------------
+ * Each competition feeds one ELO pool. Only the club pool (Premier League)
+ * is active today and it is the existing ELO, unchanged; the national pool
+ * (Τελική φάση, Κύπελλο) gets its own ranking when the final phase arrives. */
+const ELO_POOLS = {
+  club: { label: "Κατάταξη συλλόγων (Premier League)", active: true },
+  national: { label: "Πανελλήνια κατάταξη (Τελική φάση, Κύπελλο)", active: false },
+};
+
+function eloPoolOf(competitionId) {
+  const c = DEFAULT_COMPETITIONS.find((x) => x.id === (competitionId || DEFAULT_COMPETITION_ID));
+  return c ? c.pool : "club";
+}
 const COMPETITION_LEVEL_LABEL = { club: "επίπεδο συλλόγου", national: "εθνικό επίπεδο" };
 
 function competitionsFrom(sys) {
@@ -1285,7 +1309,7 @@ function competitionsFrom(sys) {
  * tournaments feed the ELO and the season standings. A catalogue entry with
  * no competition yet (before the Build 2 migration) is Premier League. */
 function countsTowardRatings(t) {
-  return !!t && !!t.isOfficial && (t.competitionId || DEFAULT_COMPETITION_ID) === DEFAULT_COMPETITION_ID;
+  return !!t && !!t.isOfficial && eloPoolOf(t.competitionId) === "club" && ELO_POOLS.club.active;
 }
 
 function competitionName(competitions, id) {
@@ -1437,6 +1461,16 @@ function formatYMD(ymd) {
   if (!ymd) return "—";
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("el-GR", { weekday: "long", day: "numeric", month: "numeric", year: "numeric" });
+}
+
+/** Statistics period filter (Build 3C): "all" or a season year. */
+function tournamentInScope(t, scope) {
+  if (scope === "all") return true;
+  return (Number(t.seasonYear) || seasonForDate(t.date)) === Number(scope);
+}
+
+function scopeLabel(scope) {
+  return scope === "all" ? "Όλες οι σεζόν" : `Σεζόν ${scope}`;
 }
 
 /** Human-readable range of a season, for warnings. */
@@ -2468,6 +2502,9 @@ export default function TournamentManager() {
   const [metaBusy, setMetaBusy] = useState(false);
   const [controlSeasons, setControlSeasons] = useState([]); // seasons listed on the admin page
   const [controlTab, setControlTab] = useState("overview"); // admin page sub-menu
+  const [statsScope, setStatsScope] = useState("all"); // Build 3C: Statistics period — "all" or a season year
+  const [archiveSeason, setArchiveSeason] = useState(""); // Build 3C: tournaments list filters
+  const [archiveCompetition, setArchiveCompetition] = useState("");
   const [controlSeasonYear, setControlSeasonYear] = useState(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
   const [confirmingRestore, setConfirmingRestore] = useState(false);
   const [calendarEntryId, setCalendarEntryId] = useState(null); // the calendar day the open tournament belongs to
@@ -2816,14 +2853,11 @@ export default function TournamentManager() {
     listSeasonYears().then((years) => setControlSeasons([...new Set([current, ...years, ...opened])].sort((x, y) => y - x)));
   }, [phase, sysState.seasonCalendars, sysState.seasonRules]);
 
-  // The season-statistics selector needs the list of seasons too, even when
-  // the Season page has not been opened in this visit.
+  // The Statistics period selector needs the list of seasons.
   useEffect(() => {
-    if (statsTab !== "season") return;
-    listSeasonYears().then((years) => {
-      setSeasonYearsAvailable(years.includes(seasonStatsYear) ? years : [seasonStatsYear, ...years]);
-    });
-  }, [statsTab, seasonStatsYear]);
+    if (phase !== "h2h") return;
+    listSeasonYears().then((years) => setSeasonYearsAvailable([...years].sort((a, b) => b - a)));
+  }, [phase]);
 
   /* ---- archive persistence ---- */
 
@@ -4669,14 +4703,16 @@ export default function TournamentManager() {
    * aggregation elsewhere in the app). Returns one row per opponent with
    * the full meeting list, so the UI can show a compact table with an
    * expandable per-opponent detail instead of one pair at a time. */
-  async function computeOpponentBreakdown(playerName) {
+  async function computeOpponentBreakdown(playerName, scope = statsScope) {
     setH2hLoading(true);
     setH2hResult(null);
     try {
       const key = normalizeName(playerName);
       const opponentsMap = {};
 
-      const others = archive.filter((t) => t.isOfficial).sort((a, b) => new Date(a.date) - new Date(b.date));
+      const others = archive
+        .filter((t) => t.isOfficial && tournamentInScope(t, scope))
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
       for (const t of others) {
         const data = await fetchTournamentData(t.id);
         if (!data || !data.history || !data.players) continue;
@@ -4716,7 +4752,7 @@ export default function TournamentManager() {
       });
       rows.sort((a, b) => b.total - a.total);
 
-      setH2hResult({ playerName, rows });
+      setH2hResult({ playerName, rows, scope });
     } catch (err) {
       showToast("Αποτυχία υπολογισμού — δοκίμασε ξανά.");
     } finally {
@@ -4742,7 +4778,20 @@ export default function TournamentManager() {
     setSeasonStatsLoading(true);
     setSeasonStatsResult(null);
     try {
-      const season = await loadSeason(year);
+      // "all": every season merged into one (each tournament belongs to one season).
+      let season;
+      if (year === "all") {
+        season = { players: {} };
+        for (const y of await listSeasonYears()) {
+          const s = await loadSeason(y);
+          Object.entries(s.players || {}).forEach(([k, p]) => {
+            if (!season.players[k]) season.players[k] = { name: p.name, entries: {} };
+            Object.assign(season.players[k].entries, p.entries || {});
+          });
+        }
+      } else {
+        season = await loadSeason(year);
+      }
       const playerEntries = Object.entries(season.players || {}).filter(([, p]) => Object.keys(p.entries || {}).length > 0);
       const tournamentIdSet = new Set();
       const perTournamentCounts = {};
@@ -4763,13 +4812,13 @@ export default function TournamentManager() {
 
       const allYears = await listSeasonYears();
       const priorKeys = new Set();
-      for (const y of allYears.filter((y) => y < year)) {
+      for (const y of year === "all" ? [] : allYears.filter((y) => y < year)) {
         const s = await loadSeason(y);
         Object.entries(s.players || {}).forEach(([key, p]) => {
           if (Object.keys(p.entries || {}).length > 0) priorKeys.add(key);
         });
       }
-      const newPlayers = playerEntries.filter(([key]) => !priorKeys.has(key)).length;
+      const newPlayers = year === "all" ? null : playerEntries.filter(([key]) => !priorKeys.has(key)).length;
 
       const seenIds = new Set();
       const chronological = [...archive]
@@ -4849,7 +4898,7 @@ export default function TournamentManager() {
         }
       });
 
-      setSeasonStatsResult({ year, tournamentCount, playerCount, avgParticipants, newPlayers, totalMatches, biggestUpset, mostImproved, upsetRate, mostSurprisingTournament });
+      setSeasonStatsResult({ year, scope: year, tournamentCount, playerCount, avgParticipants, newPlayers, totalMatches, biggestUpset, mostImproved, upsetRate, mostSurprisingTournament });
     } catch (err) {
       showToast("Αποτυχία υπολογισμού στατιστικών σεζόν — δοκίμασε ξανά.");
     } finally {
@@ -4857,7 +4906,7 @@ export default function TournamentManager() {
     }
   }
 
-  async function computeStatistics() {
+  async function computeStatistics(scope = statsScope) {
     setStatsLoading(true);
     setStatsResult(null);
     try {
@@ -4881,6 +4930,16 @@ export default function TournamentManager() {
         const tPlayers = data.players;
         const byId = {};
         tPlayers.forEach((p) => { byId[p.id] = p; });
+        // ELO is continuous: every counting tournament is replayed, but only
+        // tournaments inside the chosen period add to streaks, titles and
+        // leadership days.
+        const feedsElo = countsTowardRatings(t);
+        if (!tournamentInScope(t, scope)) {
+          if (feedsElo && data.history) {
+            data.history.forEach((entry) => applyEloRoundBatch(eloRunning, buildEloRoundMatches(entry.pairs, byId), data.matchLength || 7));
+          }
+          continue;
+        }
 
         // Participation streak: every player ever seen gets bumped this
         // round — present (in tPlayers) extends their streak, absent
@@ -4927,7 +4986,7 @@ export default function TournamentManager() {
         });
 
         // ELO running total + leader snapshot for this tournament
-        if (data.history) {
+        if (data.history && feedsElo) {
           data.history.forEach((entry) => {
             applyEloRoundBatch(eloRunning, buildEloRoundMatches(entry.pairs, byId), data.matchLength || 7);
           });
@@ -4987,7 +5046,7 @@ export default function TournamentManager() {
         }))
         .sort((a, b) => b.days - a.days);
 
-      setStatsResult({
+      setStatsResult({ scope,
         topWinStreaks: winStreaks.slice(0, 3),
         topParticipationStreaks: participationStreaks.slice(0, 3),
         titles,
@@ -5188,8 +5247,11 @@ export default function TournamentManager() {
     .filter((t) => (searchName ? t.name.toLowerCase().includes(searchName.toLowerCase()) : true))
     .filter((t) => (dateFrom ? new Date(t.date) >= new Date(dateFrom) : true))
     .filter((t) => (dateTo ? new Date(t.date) <= new Date(dateTo + "T23:59:59") : true))
+    .filter((t) => (archiveSeason ? (Number(t.seasonYear) || seasonForDate(t.date)) === Number(archiveSeason) : true))
+    .filter((t) => (archiveCompetition ? (t.competitionId || DEFAULT_COMPETITION_ID) === archiveCompetition : true))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
-  const archiveHasFilter = searchName || dateFrom || dateTo;
+  const archiveHasFilter = searchName || dateFrom || dateTo || archiveSeason || archiveCompetition;
+  const archiveSeasonOptions = [...new Set(archive.map((t) => Number(t.seasonYear) || seasonForDate(t.date)).filter(Boolean))].sort((a, b) => b - a);
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
 
   /* ---- Build 3B3: clubs and registry numbers ---- */
@@ -6168,6 +6230,7 @@ export default function TournamentManager() {
         .control-section { padding: 16px 20px; margin-bottom: 16px; }
         .control-season { margin-top: 6px; }
         .control-tabs { flex-wrap: wrap; row-gap: 4px; }
+        .scope-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; font-size: 14px; color: var(--muted); }
         .cal-table { width: 100%; border-collapse: collapse; font-size: 14px; }
         .cal-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--border); }
         .cal-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
@@ -6463,6 +6526,25 @@ export default function TournamentManager() {
             </div>
           </div>
           <div className="content" style={{ maxWidth: 780 }}>
+            <div className="scope-bar">
+              <span>Περίοδος:</span>
+              {["all", ...seasonYearsAvailable].map((y) => (
+                <button
+                  key={y}
+                  className={`round-pill ${statsScope === y ? "active" : ""}`}
+                  onClick={() => {
+                    if (statsScope === y) return;
+                    setStatsScope(y);
+                    setStatsResult(null);
+                    setSeasonStatsResult(null);
+                    if (h2hResult && h2hSelectedPlayer) computeOpponentBreakdown(h2hSelectedPlayer, y);
+                    else setH2hResult(null);
+                  }}
+                >
+                  {y === "all" ? "Όλα" : `Σεζόν ${y}`}
+                </button>
+              ))}
+            </div>
             {statsTab === "h2h" && (
               <>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
@@ -6586,7 +6668,7 @@ export default function TournamentManager() {
             )}
 
             {statsTab !== "h2h" && !statsResult && (
-              <button className="btn-secondary" disabled={statsLoading} onClick={computeStatistics}>
+              <button className="btn-secondary" disabled={statsLoading} onClick={() => computeStatistics()}>
                 <TrendingUp size={15} /> {statsLoading ? "Υπολογισμός…" : "Υπολόγισε στατιστικά"}
               </button>
             )}
@@ -6637,7 +6719,7 @@ export default function TournamentManager() {
                     </ol>
                   </div>
                 </div>
-                <button className="btn-ghost" style={{ justifySelf: "start" }} disabled={statsLoading} onClick={computeStatistics}>
+                <button className="btn-ghost" style={{ justifySelf: "start" }} disabled={statsLoading} onClick={() => computeStatistics()}>
                   <RotateCcw size={13} /> Ξαναϋπολόγισε
                 </button>
               </div>
@@ -6654,7 +6736,7 @@ export default function TournamentManager() {
                     </li>
                   ))}
                 </ol>
-                <button className="btn-ghost" style={{ marginTop: 16 }} disabled={statsLoading} onClick={computeStatistics}>
+                <button className="btn-ghost" style={{ marginTop: 16 }} disabled={statsLoading} onClick={() => computeStatistics()}>
                   <RotateCcw size={13} /> Ξαναϋπολόγισε
                 </button>
               </div>
@@ -6663,18 +6745,10 @@ export default function TournamentManager() {
             {statsTab === "season" && (
               <div>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
-                  <select
-                    value={seasonStatsYear}
-                    onChange={(e) => { setSeasonStatsYear(Number(e.target.value)); setSeasonStatsResult(null); }}
-                    style={{ fontSize: 15, border: "1px solid var(--border)", borderRadius: 7, padding: "8px 10px", background: "var(--surface)" }}
-                  >
-                    {seasonYearsAvailable.map((y) => (
-                      <option key={y} value={y}>{y}</option>
-                    ))}
-                  </select>
-                  <button className="btn-primary" disabled={seasonStatsLoading} onClick={() => computeSeasonOverview(seasonStatsYear)}>
+                  <button className="btn-primary" disabled={seasonStatsLoading} onClick={() => computeSeasonOverview(statsScope)}>
                     {seasonStatsLoading ? "Υπολογισμός…" : "Υπολόγισε"}
                   </button>
+                  {seasonStatsResult && <span className="cal-note">{scopeLabel(seasonStatsResult.scope)}</span>}
                 </div>
 
                 {seasonStatsResult && (
@@ -6683,7 +6757,7 @@ export default function TournamentManager() {
                       {[
                         { icon: "🏆", label: "Τουρνουά", value: seasonStatsResult.tournamentCount },
                         { icon: "👥", label: "Παίκτες", value: seasonStatsResult.playerCount },
-                        { icon: "🆕", label: "Νέοι παίκτες", value: seasonStatsResult.newPlayers },
+                        { icon: "🆕", label: "Νέοι παίκτες", value: seasonStatsResult.newPlayers ?? "—" },
                         { icon: "📊", label: "Μ.Ο. συμμετοχών/τουρνουά", value: seasonStatsResult.avgParticipants },
                         { icon: "🎲", label: "Σύνολο αγώνων (προσέγγιση)", value: seasonStatsResult.totalMatches },
                         { icon: "😲", label: "Ποσοστό εκπλήξεων", value: `${seasonStatsResult.upsetRate}%` },
@@ -6998,7 +7072,7 @@ export default function TournamentManager() {
       {phase === "elo" && (
         <>
           <div className="header">
-            <p className="eyebrow">{L.eloEyebrow}</p>
+            <p className="eyebrow">{L.eloEyebrow} · {ELO_POOLS.club.label}</p>
             <h1>{L.eloTitle}</h1>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
@@ -7143,8 +7217,9 @@ export default function TournamentManager() {
                   <table>
                     <thead>
                       <tr>
+                        <th style={{ width: 70 }}>Α.Μ.</th>
                         <th>Player</th>
-                        <th>Club</th>
+                        <th>Σύλλογος</th>
                         <th>{currentYear} status</th>
                         <th></th>
                       </tr>
@@ -7154,8 +7229,8 @@ export default function TournamentManager() {
                         const thisYear = p.membership.find((m) => m.year === currentYear);
                         return (
                           <tr key={key} style={{ cursor: "pointer" }} onClick={() => openPlayerDetail(key)}>
+                            <td style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{formatRegNo(p.regNo) || "—"}</td>
                             <td>
-                              {p.regNo ? <span className="cal-note">{formatRegNo(p.regNo)} </span> : null}
                               {formatNameForDisplay(p.name, nameDisplayMode)}
                               {p.needsInfo && <span className="needs-info-badge"> ⚠ Needs info</span>}
                             </td>
@@ -7724,7 +7799,7 @@ export default function TournamentManager() {
                     )}
 
                     <p style={{ margin: "10px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
-                      Διοργανώσεις: {comps.map((c) => `${c.name} (${COMPETITION_LEVEL_LABEL[c.level] || c.level})`).join(", ")}. Μέχρι το Build 3, σε ELO και Βαθμολογία μετράνε μόνο τα επίσημα τουρνουά Premier League.
+                      Διοργανώσεις: {comps.map((c) => `${c.name} (${COMPETITION_LEVEL_LABEL[c.level] || c.level}, ${ELO_POOLS[eloPoolOf(c.id)]?.active ? "μετράει στην " + ELO_POOLS[eloPoolOf(c.id)].label : "δεξαμενή ELO: " + (ELO_POOLS[eloPoolOf(c.id)]?.label || "—") + ", ανενεργή ακόμα"})`).join("; ")}. Μέχρι το Build 3, σε ELO και Βαθμολογία μετράνε μόνο τα επίσημα τουρνουά Premier League.
                     </p>
 
                     <div style={{ marginTop: 12 }}>
@@ -8184,6 +8259,20 @@ export default function TournamentManager() {
                 <label>To date</label>
                 <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
               </div>
+              <div style={{ width: 140 }}>
+                <label>Σεζόν</label>
+                <select value={archiveSeason} onChange={(e) => setArchiveSeason(e.target.value)} style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
+                  <option value="">Όλες</option>
+                  {archiveSeasonOptions.map((y) => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <div style={{ width: 180 }}>
+                <label>Διοργάνωση</label>
+                <select value={archiveCompetition} onChange={(e) => setArchiveCompetition(e.target.value)} style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
+                  <option value="">Όλες</option>
+                  {competitionsFrom(sysState).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
             </div>
 
             {visibleArchive.length === 0 && (
@@ -8200,6 +8289,9 @@ export default function TournamentManager() {
                   {!t.isOfficial && <span className="status-chip test" style={{ marginLeft: 8 }}>Test</span>}
                 </span>
                 <span className="archive-meta">
+                  <span className="cal-note">
+                    Σεζόν {Number(t.seasonYear) || seasonForDate(t.date) || "—"} · {competitionName(competitionsFrom(sysState), t.competitionId || DEFAULT_COMPETITION_ID)}
+                  </span>
                   {formatDate(t.date)}
                   <span className={`status-chip ${t.status === "Completed" ? "done" : "live"}`}>{t.status}</span>
                 </span>
