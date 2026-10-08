@@ -28,9 +28,9 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 /* ---------------------------------------------------------------------- */
-/* Generic helpers — every call is best-effort: on failure, reads return  */
-/* null/[] and writes return false, mirroring the app's previous          */
-/* window.storage-based behavior so the calling code needs no changes.    */
+/* Generic helpers — on failure, reads return null/[] and EVERY write     */
+/* returns false (true on success), so the caller can tell the admin.    */
+/* The *Strict loaders throw instead, for start-up (see below).          */
 /* ---------------------------------------------------------------------- */
 
 async function getDocData(collectionName, id) {
@@ -40,6 +40,16 @@ async function getDocData(collectionName, id) {
   } catch {
     return null;
   }
+}
+
+/** Strict read: returns the data, or null when the document truly does not
+ * exist, but THROWS when the read itself failed (offline, timeout, rules).
+ * Used at start-up, where "could not read" must never be mistaken for
+ * "nothing stored yet" — otherwise the app would re-seed or re-initialise
+ * and overwrite real data. */
+async function getDocDataStrict(collectionName, id) {
+  const snap = await getDoc(doc(db, collectionName, id));
+  return snap.exists() ? snap.data() : null;
 }
 
 async function setDocData(collectionName, id, data) {
@@ -93,8 +103,15 @@ export async function loadRegistry() {
   return data || { players: {} };
 }
 
+/** Same as loadRegistry, but throws if the read failed (see getDocDataStrict). */
+export async function loadRegistryStrict() {
+  const data = await getDocDataStrict("meta", "registry");
+  return data || { players: {} };
+}
+
+/** Returns true on success, false on failure. */
 export async function saveRegistry(data) {
-  await setDocData("meta", "registry", data);
+  return await setDocData("meta", "registry", data);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -106,8 +123,15 @@ export async function loadElo() {
   return data || { players: {}, initialized: false };
 }
 
+/** Same as loadElo, but throws if the read failed (see getDocDataStrict). */
+export async function loadEloStrict() {
+  const data = await getDocDataStrict("meta", "elo");
+  return data || { players: {}, initialized: false };
+}
+
+/** Returns true on success, false on failure. */
 export async function saveElo(data) {
-  await setDocData("meta", "elo", data);
+  return await setDocData("meta", "elo", data);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -121,8 +145,9 @@ export async function loadFeedItems() {
   return data?.items || [];
 }
 
+/** Returns true on success, false on failure. */
 export async function saveFeedItems(items) {
-  await setDocData("meta", "rssFeed", { items });
+  return await setDocData("meta", "rssFeed", { items });
 }
 
 /* ---------------------------------------------------------------------- */
@@ -134,12 +159,15 @@ export async function loadIndex() {
   return data ? data.list : [];
 }
 
+/** Same as loadIndex, but throws if the read failed (see getDocDataStrict). */
+export async function loadIndexStrict() {
+  const data = await getDocDataStrict("meta", "tournamentsIndex");
+  return data ? data.list : [];
+}
+
+/** Returns true on success, false on failure. */
 export async function saveIndex(list) {
-  try {
-    await setDoc(doc(db, "meta", "tournamentsIndex"), { list });
-  } catch {
-    /* archive listing is best-effort */
-  }
+  return await setDocData("meta", "tournamentsIndex", { list });
 }
 
 /* ---------------------------------------------------------------------- */
@@ -152,6 +180,11 @@ export async function saveTournamentData(id, data) {
 
 export async function fetchTournamentData(id) {
   return await getDocData("tournaments", id);
+}
+
+/** Same as fetchTournamentData, but throws if the read failed. */
+export async function fetchTournamentDataStrict(id) {
+  return await getDocDataStrict("tournaments", id);
 }
 
 export async function deleteTournamentData(id) {
@@ -171,6 +204,12 @@ export async function loadSeason(year) {
   return data || { players: {} };
 }
 
+/** Same as loadSeason, but throws if the read failed (see getDocDataStrict). */
+export async function loadSeasonStrict(year) {
+  const data = await getDocDataStrict("seasons", seasonDocId(year));
+  return data || { players: {} };
+}
+
 export async function saveSeason(year, data) {
   return await setDocData("seasons", seasonDocId(year), data);
 }
@@ -178,5 +217,12 @@ export async function saveSeason(year, data) {
 export async function listSeasonYears() {
   const ids = await listDocIds("seasons");
   const years = ids.map((id) => parseInt(id, 10)).filter((y) => !isNaN(y));
+  return years.sort((a, b) => b - a);
+}
+
+/** Same as listSeasonYears, but throws if the listing failed. */
+export async function listSeasonYearsStrict() {
+  const snap = await getDocs(collection(db, "seasons"));
+  const years = snap.docs.map((d) => parseInt(d.id, 10)).filter((y) => !isNaN(y));
   return years.sort((a, b) => b - a);
 }
