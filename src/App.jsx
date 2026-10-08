@@ -176,7 +176,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.12";
+const APP_BUILD_VERSION = "2026-10-08.13";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -202,6 +202,14 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.13",
+    date: "2026-10-08",
+    items: [
+      "Η Διαχείριση έγινε υπο-μενού: Επισκόπηση, Σεζόν & ημερολόγιο, Διοργανώσεις & σύλλογοι, Παίκτες, Δεδομένα, Backup, Ρυθμίσεις — κάθε ενότητα σε δική της προβολή.",
+      "Στο «Σεζόν & ημερολόγιο» διαλέγεις μία σεζόν τη φορά και βλέπεις μόνο τους κανόνες και τις αγωνιστικές της.",
+    ],
+  },
   {
     version: "2026-10-08.12",
     date: "2026-10-08",
@@ -2409,6 +2417,8 @@ export default function TournamentManager() {
   const [metaPlan, setMetaPlan] = useState(null); // dry-run report of the competitions/club migration
   const [metaBusy, setMetaBusy] = useState(false);
   const [controlSeasons, setControlSeasons] = useState([]); // seasons listed on the admin page
+  const [controlTab, setControlTab] = useState("overview"); // admin page sub-menu
+  const [controlSeasonYear, setControlSeasonYear] = useState(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
   const [confirmingRestore, setConfirmingRestore] = useState(false);
   const [calendarEntryId, setCalendarEntryId] = useState(null); // the calendar day the open tournament belongs to
   const [calDraft, setCalDraft] = useState(null); // { year, id?, date, competitionId, note } while adding/editing a calendar day
@@ -3795,6 +3805,7 @@ export default function TournamentManager() {
       setIdentityPlan(null);
       await recomputeEloAndSeasonFromScratch();
       await runConsistencyCheck();
+      setControlTab("data");
       setPhase("control"); // the consistency report is shown there
       showToast("Η μετάβαση σε μόνιμα ID ολοκληρώθηκε.");
     } finally {
@@ -5027,7 +5038,7 @@ export default function TournamentManager() {
   const staleNotice = staleBlock ? (
     <div style={{ marginBottom: 16 }}>
       {staleBlock}
-      <button className="btn-secondary" onClick={() => setPhase("control")}>Άνοιγμα Διαχείρισης για Recompute</button>
+      <button className="btn-secondary" onClick={() => { setControlTab("data"); setPhase("control"); }}>Άνοιγμα Διαχείρισης για Recompute</button>
     </div>
   ) : null;
 
@@ -5203,6 +5214,7 @@ export default function TournamentManager() {
     if (await saveSysState(patch)) {
       setSysState((st) => ({ ...st, ...patch }));
       setNewSeasonYear(null);
+      setControlSeasonYear(year);
       showToast(`Η σεζόν ${year} δημιουργήθηκε· έλεγξε τους κανόνες και πρόσθεσε τις αγωνιστικές.`);
     } else {
       reportSaveFailure(`Νέα σεζόν ${year} — δεν δημιουργήθηκε`);
@@ -5839,7 +5851,8 @@ export default function TournamentManager() {
         .history-link { background: none; border: none; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; text-align: left; }
         .history-link:hover { color: var(--ink); }
         .control-section { padding: 16px 20px; margin-bottom: 16px; }
-        .control-season { border-top: 2px solid var(--border); margin-top: 14px; padding-top: 6px; }
+        .control-season { margin-top: 6px; }
+        .control-tabs { flex-wrap: wrap; row-gap: 4px; }
         .cal-table { width: 100%; border-collapse: collapse; font-size: 14px; }
         .cal-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--border); }
         .cal-table td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
@@ -6009,7 +6022,7 @@ export default function TournamentManager() {
             </button>
           )}
           {isAdmin && (
-            <button className="btn-ghost" onClick={() => setPhase("control")}>
+            <button className="btn-ghost" onClick={() => { setControlTab("overview"); setPhase("control"); }}>
               <Lock size={14} /> {L.navControl}
             </button>
           )}
@@ -7145,7 +7158,7 @@ export default function TournamentManager() {
                       <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         <AlertTriangle size={16} style={{ flexShrink: 0 }} /> Το ELO / η Βαθμολογία ίσως δεν ταιριάζουν με τα τουρνουά ({staleReasons.length} {staleReasons.length === 1 ? "λόγος" : "λόγοι"}).
                       </span>
-                      <button className="btn-secondary" onClick={() => setPhase("control")}>Άνοιγμα Διαχείρισης</button>
+                      <button className="btn-secondary" onClick={() => { setControlTab("data"); setPhase("control"); }}>Άνοιγμα Διαχείρισης</button>
                     </div>
                   )}
                 </>
@@ -7180,7 +7193,7 @@ export default function TournamentManager() {
                 </button>
               )}
               {isAdmin && (
-                <button className="dashboard-card" onClick={() => setPhase("control")}>
+                <button className="dashboard-card" onClick={() => { setControlTab("overview"); setPhase("control"); }}>
                   <Lock size={26} />
                   <span className="dashboard-card-title">{L.navControl}</span>
                   <span className="dashboard-card-desc">Σεζόν, κανόνες, δεδομένα, backup, ρυθμίσεις</span>
@@ -7216,6 +7229,18 @@ export default function TournamentManager() {
               </div>
             )}
 
+            <div className="tabs control-tabs">
+              <button className={`tab ${controlTab === "overview" ? "active" : ""}`} onClick={() => setControlTab("overview")}>Επισκόπηση</button>
+              <button className={`tab ${controlTab === "seasons" ? "active" : ""}`} onClick={() => setControlTab("seasons")}>Σεζόν & ημερολόγιο</button>
+              <button className={`tab ${controlTab === "competitions" ? "active" : ""}`} onClick={() => setControlTab("competitions")}>Διοργανώσεις & σύλλογοι</button>
+              <button className={`tab ${controlTab === "players" ? "active" : ""}`} onClick={() => setControlTab("players")}>Παίκτες</button>
+              <button className={`tab ${controlTab === "data" ? "active" : ""}`} onClick={() => setControlTab("data")}>Δεδομένα</button>
+              <button className={`tab ${controlTab === "backup" ? "active" : ""}`} onClick={() => setControlTab("backup")}>Backup</button>
+              <button className={`tab ${controlTab === "settings" ? "active" : ""}`} onClick={() => setControlTab("settings")}>Ρυθμίσεις</button>
+            </div>
+
+            {controlTab === "overview" && (
+              <>
             {/* 1. Status */}
             {(() => {
               const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
@@ -7248,7 +7273,7 @@ export default function TournamentManager() {
                     <dd>{builtFrom ? `${formatDate(builtFrom.at)} — ${builtFrom.tournaments} τουρνουά, ${builtFrom.matches} αγώνες` : "—"}</dd>
                     <dt>Συνέπεια δεδομένων</dt>
                     <dd style={{ color: health ? (healthOk ? "var(--win)" : "#9a5b00") : undefined }}>
-                      {!health ? "Έλεγχος…" : healthOk ? "✓ ELO και Βαθμολογία ταιριάζουν με τα τουρνουά" : `⚠ ${staleReasons.length} ${staleReasons.length === 1 ? "εύρημα" : "ευρήματα"} — δες «Δεδομένα»`}
+                      {!health ? "Έλεγχος…" : healthOk ? "✓ ELO και Βαθμολογία ταιριάζουν με τα τουρνουά" : `⚠ ${staleReasons.length} ${staleReasons.length === 1 ? "εύρημα" : "ευρήματα"} — δες το tab «Δεδομένα»`}
                     </dd>
                     <dt>Build</dt>
                     <dd>{APP_BUILD_VERSION}</dd>
@@ -7257,10 +7282,41 @@ export default function TournamentManager() {
               );
             })()}
 
+              <div className="dashboard-grid" style={{ marginTop: 4 }}>
+                <button className="dashboard-card" onClick={() => setControlTab("seasons")}>
+                  <span className="dashboard-card-title">Σεζόν & ημερολόγιο</span>
+                  <span className="dashboard-card-desc">Νέα σεζόν, κανόνες Βαθμολογίας, αγωνιστικές</span>
+                </button>
+                <button className="dashboard-card" onClick={() => setControlTab("competitions")}>
+                  <span className="dashboard-card-title">Διοργανώσεις & σύλλογοι</span>
+                  <span className="dashboard-card-desc">Διοργανώσεις, ο σύλλογός σου</span>
+                </button>
+                <button className="dashboard-card" onClick={() => setControlTab("players")}>
+                  <span className="dashboard-card-title">Παίκτες</span>
+                  <span className="dashboard-card-desc">Μόνιμα ID παικτών</span>
+                </button>
+                <button className="dashboard-card" onClick={() => setControlTab("data")}>
+                  <span className="dashboard-card-title">Δεδομένα</span>
+                  <span className="dashboard-card-desc">Recompute, έλεγχος συνέπειας, Excel, Κάδος</span>
+                </button>
+                <button className="dashboard-card" onClick={() => setControlTab("backup")}>
+                  <span className="dashboard-card-title">Backup</span>
+                  <span className="dashboard-card-desc">Export All Data, επαναφορά</span>
+                </button>
+                <button className="dashboard-card" onClick={() => setControlTab("settings")}>
+                  <span className="dashboard-card-title">Ρυθμίσεις</span>
+                  <span className="dashboard-card-desc">RSS feed, κωδικός admin</span>
+                </button>
+              </div>
+              </>
+            )}
+
+            {controlTab === "seasons" && (
+              <>
             {/* 2. Seasons */}
             <div className="card control-section">
               <h2 className="control-h">Σεζόν</h2>
-              <p className="control-sub">Κανόνες Βαθμολογίας και ημερολόγιο κάθε σεζόν. Το κλείσιμο σεζόν θα προστεθεί εδώ.</p>
+              <p className="control-sub">Διάλεξε σεζόν για τους κανόνες Βαθμολογίας και το ημερολόγιό της. Το κλείσιμο σεζόν θα προστεθεί εδώ.</p>
               {newSeasonYear === null ? (
                 <button className="btn-secondary" onClick={() => setNewSeasonYear(String(Math.max(...controlSeasons, seasonForDate(new Date().toISOString()) || 2026) + 1))}>
                   <Plus size={14} /> Νέα σεζόν
@@ -7278,17 +7334,29 @@ export default function TournamentManager() {
                   <button className="btn-primary" onClick={createSeason}>Δημιουργία</button>
                 </div>
               )}
-              {controlSeasons.map((y) => (
-                <div key={y} className="control-season">
-                  {renderSeasonRulesCard(y)}
-                  {renderCalendarCard(y)}
+              {controlSeasons.length > 0 && (
+                <div className="round-pills" style={{ marginTop: 12 }}>
+                  {controlSeasons.map((y) => (
+                    <button key={y} className={`round-pill ${controlSeasonYear === y ? "active" : ""}`} onClick={() => { setControlSeasonYear(y); setCalDraft(null); setRulesDraft(null); }}>
+                      Σεζόν {y}
+                    </button>
+                  ))}
                 </div>
-              ))}
+              )}
+              {controlSeasons.includes(controlSeasonYear) && (
+                <div className="control-season">
+                  {renderSeasonRulesCard(controlSeasonYear)}
+                  {renderCalendarCard(controlSeasonYear)}
+                </div>
+              )}
             </div>
+              </>
+            )}
 
-            {/* 3. Competitions, club, identities */}
+            {controlTab === "competitions" && (
+              <>
             <div className="card control-section">
-              <h2 className="control-h">Διοργανώσεις, λέσχη και παίκτες</h2>
+              <h2 className="control-h">Διοργανώσεις & σύλλογοι</h2>
               {isAdmin && (() => {
                 const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
                 const comps = competitionsFrom(sysState);
@@ -7387,6 +7455,14 @@ export default function TournamentManager() {
                   </div>
                 );
               })()}
+            </div>
+              </>
+            )}
+
+            {controlTab === "players" && (
+              <>
+            <div className="card control-section">
+              <h2 className="control-h">Παίκτες</h2>
               {(() => {
                 const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
                 const sortedPersons = Object.entries(registry.players).sort((a, b) => a[1].name.localeCompare(b[1].name, "el"));
@@ -7462,7 +7538,11 @@ export default function TournamentManager() {
                 );
               })()}
             </div>
+              </>
+            )}
 
+            {controlTab === "data" && (
+              <>
             {/* 4. Data */}
             <div className="card control-section">
               <h2 className="control-h">Δεδομένα</h2>
@@ -7473,7 +7553,11 @@ export default function TournamentManager() {
                 </button>
               </div>
             </div>
+              </>
+            )}
 
+            {controlTab === "backup" && (
+              <>
             {/* 5. Backup */}
             <div className="card control-section">
               <h2 className="control-h">Backup</h2>
@@ -7484,32 +7568,6 @@ export default function TournamentManager() {
                 <Download size={15} /> Export All Data (full backup)
               </button>
             </div>
-
-            {/* 6. Publishing */}
-            <div className="card control-section">
-              <h2 className="control-h">Δημοσίευση (RSS feed για το bgfed.gr)</h2>
-              {!confirmingClearFeed ? (
-                <button className="btn-secondary" onClick={() => setConfirmingClearFeed(true)}>
-                  <X size={15} /> Άδειασμα RSS feed
-                </button>
-              ) : (
-                <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)", flexWrap: "wrap" }}>
-                  Σίγουρα; Δεν επηρεάζει άρθρα που έχουν ήδη μπει στο bgfed.gr.
-                  <button className="btn-ghost" onClick={() => setConfirmingClearFeed(false)}>Άκυρο</button>
-                  <button className="btn-secondary" onClick={() => { clearFeed(); setConfirmingClearFeed(false); }}>Ναι, άδειασμα</button>
-                </span>
-              )}
-            </div>
-
-            {/* 7. Security */}
-            {!inIframe && (
-              <div className="card control-section">
-                <h2 className="control-h">Ασφάλεια</h2>
-                <button className="btn-secondary" onClick={() => setShowChangePassword(true)}>
-                  <Lock size={15} /> Αλλαγή κωδικού admin
-                </button>
-              </div>
-            )}
 
             {/* 8. Danger zone */}
             <div className="card control-section control-danger">
@@ -7539,6 +7597,39 @@ export default function TournamentManager() {
               )}
               <input type="file" accept="application/json" ref={fullBackupInputRef} onChange={importAllData} style={{ display: "none" }} />
             </div>
+              </>
+            )}
+
+            {controlTab === "settings" && (
+              <>
+            {/* 6. Publishing */}
+            <div className="card control-section">
+              <h2 className="control-h">Δημοσίευση (RSS feed για το bgfed.gr)</h2>
+              {!confirmingClearFeed ? (
+                <button className="btn-secondary" onClick={() => setConfirmingClearFeed(true)}>
+                  <X size={15} /> Άδειασμα RSS feed
+                </button>
+              ) : (
+                <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)", flexWrap: "wrap" }}>
+                  Σίγουρα; Δεν επηρεάζει άρθρα που έχουν ήδη μπει στο bgfed.gr.
+                  <button className="btn-ghost" onClick={() => setConfirmingClearFeed(false)}>Άκυρο</button>
+                  <button className="btn-secondary" onClick={() => { clearFeed(); setConfirmingClearFeed(false); }}>Ναι, άδειασμα</button>
+                </span>
+              )}
+            </div>
+
+            {/* 7. Security */}
+            {!inIframe && (
+              <div className="card control-section">
+                <h2 className="control-h">Ασφάλεια</h2>
+                <button className="btn-secondary" onClick={() => setShowChangePassword(true)}>
+                  <Lock size={15} /> Αλλαγή κωδικού admin
+                </button>
+              </div>
+            )}
+              </>
+            )}
+
           </div>
         </>
       )}
@@ -7633,7 +7724,7 @@ export default function TournamentManager() {
             ) : (
               <>
                 <div className="footer-actions" style={{ marginTop: 0, marginBottom: 16 }}>
-                  <button className="btn-secondary" onClick={() => setPhase("control")}>
+                  <button className="btn-secondary" onClick={() => { setControlTab("data"); setPhase("control"); }}>
                     <ArrowLeft size={15} /> Πίσω στη Διαχείριση
                   </button>
                 </div>
