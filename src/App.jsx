@@ -176,7 +176,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.17";
+const APP_BUILD_VERSION = "2026-10-08.18";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -202,6 +202,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.18",
+    date: "2026-10-08",
+    items: [
+      "Δοκιμαστικό: Διαχείριση → «Εισαγωγές» — εισαγωγή τουρνουά που έγιναν εκτός εφαρμογής (π.χ. Κύπελλα από DrawBoss), μόνο για προβολή (κατάταξη, γύροι, στοιχεία). Εντελώς απομονωμένα: δεν μετράνε σε Βαθμολογία, ELO, Στατιστικά ή μητρώο. Περιλαμβάνονται στο Export All Data.",
+    ],
+  },
   {
     version: "2026-10-08.17",
     date: "2026-10-08",
@@ -1482,6 +1489,52 @@ function formatYMD(ymd) {
   return new Date(y, m - 1, d).toLocaleDateString("el-GR", { weekday: "long", day: "numeric", month: "numeric", year: "numeric" });
 }
 
+/* ---- Imported tournaments (isolated preview) ----------------------------
+ * Tournaments run outside the app (e.g. DrawBoss), stored in the generic
+ * model — brackets, matches, final placements — as separate documents
+ * ("imp-…") listed in "sys-imports". They are deliberately NOT in the
+ * tournament catalogue and use plain player names, so no standings, ELO,
+ * statistics, registry or consistency check ever sees them. */
+const SYS_IMPORTS_ID = "sys-imports";
+
+function validateImport(doc) {
+  const problems = [];
+  if (!doc || doc.format !== "bgfed-import/1") return { problems: ["Το αρχείο δεν είναι αρχείο εισαγωγής της εφαρμογής (bgfed-import/1)."], summary: null };
+  const players = new Set(doc.players || []);
+  const wins = {};
+  const losses = {};
+  const byRound = {};
+  (doc.matches || []).forEach((m) => {
+    const key = `${m.bracket}|${m.round}`;
+    byRound[key] = byRound[key] || new Set();
+    [m.p1, m.p2].filter(Boolean).forEach((p) => {
+      if (!players.has(p)) problems.push(`Γύρος ${m.round}: άγνωστος παίκτης «${p}».`);
+      if (byRound[key].has(p)) problems.push(`Γύρος ${m.round}: ο «${p}» παίζει δύο φορές.`);
+      byRound[key].add(p);
+    });
+    if (m.winner !== m.p1 && m.winner !== m.p2) problems.push(`Γύρος ${m.round}: ο νικητής δεν είναι ένας από τους δύο παίκτες.`);
+    wins[m.winner] = (wins[m.winner] || 0) + 1;
+    if (m.p2 && m.method !== "bye") {
+      const loser = m.winner === m.p1 ? m.p2 : m.p1;
+      losses[loser] = (losses[loser] || 0) + 1;
+    }
+  });
+  (doc.placements || []).forEach((p) => {
+    if ((wins[p.name] || 0) !== p.wins) problems.push(`Νίκες «${p.name}»: ${wins[p.name] || 0} από τους αγώνες, ${p.wins} στην κατάταξη της πηγής.`);
+  });
+  const real = (doc.matches || []).filter((m) => m.method !== "bye");
+  return {
+    problems,
+    summary: {
+      players: players.size,
+      matches: real.length,
+      byes: (doc.matches || []).length - real.length,
+      rounds: Math.max(0, ...(doc.matches || []).map((m) => m.round)),
+      winner: doc.placements && doc.placements[0] ? doc.placements[0].name : "—",
+    },
+  };
+}
+
 /* ---- Season closing (Build 3D) ------------------------------------------
  * seasonLocks: { "2026": { lockedAt } } in the system document. A locked
  * season's rules and calendar are read-only, changes to its tournaments
@@ -2550,7 +2603,14 @@ export default function TournamentManager() {
   const [lockAction, setLockAction] = useState(null); // { kind: "lock" | "unlock" | "tournament", year }
   const [recomputeLockConflict, setRecomputeLockConflict] = useState(null); // { years, indexOverride }
   const [excelDoneAt, setExcelDoneAt] = useState(null);
-  const [eloLedgerOpen, setEloLedgerOpen] = useState(null); // ELO page: player whose rating breakdown is open // final standings exported in this session
+  const [eloLedgerOpen, setEloLedgerOpen] = useState(null);
+  const [importsList, setImportsList] = useState(null); // null = not loaded; [] = none
+  const [importPreview, setImportPreview] = useState(null); // { doc, problems, summary, fileName, replaceId }
+  const [importView, setImportView] = useState(null); // { id, doc, tab, round }
+  const [importBusy, setImportBusy] = useState(false);
+  const [importDateDraft, setImportDateDraft] = useState(null); // { date, dateEnd, dateAssumed }
+  const [importConfirmDelete, setImportConfirmDelete] = useState(false);
+  const importFileRef = useRef(null); // ELO page: player whose rating breakdown is open // final standings exported in this session
   const [statsScope, setStatsScope] = useState("all"); // Build 3C: Statistics period — "all" or a season year
   const [archiveSeason, setArchiveSeason] = useState(""); // Build 3C: tournaments list filters
   const [archiveCompetition, setArchiveCompetition] = useState("");
@@ -3474,7 +3534,7 @@ export default function TournamentManager() {
     // Every read is strict: a backup with a silently missing part is worse
     // than no backup, because it would also reset the "last export" clock
     // that the migrations rely on.
-    let registryData, eloData2, index, seasons, tournaments, trashList, trashedTournaments, sysNow;
+    let registryData, eloData2, index, seasons, tournaments, trashList, trashedTournaments, sysNow, importsBackup;
     try {
       registryData = await loadRegistryStrict();
       eloData2 = await loadEloStrict();
@@ -3496,6 +3556,9 @@ export default function TournamentManager() {
       }
       const sysDoc = await fetchTournamentDataStrict(SYS_STATE_ID);
       sysNow = sysDoc && typeof sysDoc === "object" ? sysDoc : {};
+      const impDoc = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
+      importsBackup = { list: impDoc && Array.isArray(impDoc.list) ? impDoc.list : [], docs: {} };
+      for (const t of importsBackup.list) importsBackup.docs[t.id] = await fetchTournamentDataStrict(t.id);
     } catch {
       reportSaveFailure("Export All Data — η βάση δεν διαβάστηκε πλήρως, ΔΕΝ κατέβηκε αρχείο. Δοκίμασε ξανά.");
       return;
@@ -3510,6 +3573,7 @@ export default function TournamentManager() {
       tournaments,
       trash: trashList,
       trashedTournaments,
+      imports: importsBackup,
       // Every application setting (clubs, competitions, season rules,
       // calendars, season locks, …) — all of the system document except the
       // time of the last export itself.
@@ -3677,6 +3741,14 @@ export default function TournamentManager() {
         setArchive(data.archiveIndex);
         setEloTimeline(null);
         setPlayerMatchStatsCache({});
+        if (data.imports && Array.isArray(data.imports.list)) {
+          for (const [id, d] of Object.entries(data.imports.docs || {})) {
+            if (d && !(await saveTournamentData(id, d))) failed.push(`εισαγωγή ${id}`);
+          }
+          if (!(await saveTournamentData(SYS_IMPORTS_ID, { list: data.imports.list }))) failed.push("λίστα εισαγωγών");
+          setImportsList(null);
+          if (failed.length > 0) reportSaveFailure(`Επαναφορά backup — δεν γράφτηκαν: ${failed.join(", ")}. Ξανατρέξε την επαναφορά.`);
+        }
         if (failed.length === 0) showToast("Full backup restored.");
       } catch {
         setNotice("That file wasn't valid, or wasn't a full backup.");
@@ -5407,6 +5479,278 @@ export default function TournamentManager() {
           </table>
         </div>
       </>
+    );
+  }
+
+  /* ---- Imported tournaments (isolated preview) ---- */
+
+  async function loadImportsList() {
+    try {
+      const d = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
+      setImportsList(d && Array.isArray(d.list) ? d.list : []);
+    } catch {
+      setImportsList(null);
+      showToast("Η λίστα εισαγωγών δεν διαβάστηκε — δοκίμασε ξανά.");
+    }
+  }
+
+  function onImportFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let doc = null;
+      try {
+        doc = JSON.parse(String(reader.result));
+      } catch {
+        showToast("Το αρχείο δεν διαβάζεται (δεν είναι έγκυρο JSON).");
+        return;
+      }
+      const { problems, summary } = validateImport(doc);
+      const existing = (importsList || []).find((t) => doc && t.sourceUrl && t.sourceUrl === doc.sourceUrl);
+      setImportView(null);
+      setImportPreview({ doc, problems, summary, fileName: file.name, replaceId: existing ? existing.id : null });
+    };
+    reader.readAsText(file);
+  }
+
+  async function saveImportList(list) {
+    if (await saveTournamentData(SYS_IMPORTS_ID, { list })) {
+      setImportsList(list);
+      return true;
+    }
+    reportSaveFailure("Εισαγωγές — η λίστα δεν αποθηκεύτηκε");
+    return false;
+  }
+
+  async function confirmImport() {
+    if (!importPreview || importPreview.problems.length > 0 || !importsList) return;
+    setImportBusy(true);
+    try {
+      const { doc, summary, replaceId } = importPreview;
+      const id = replaceId || `imp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+      const stored = { ...doc, importedAt: new Date().toISOString() };
+      if (!(await saveTournamentData(id, stored))) {
+        reportSaveFailure(`Εισαγωγή «${doc.name}» — δεν αποθηκεύτηκε`);
+        return;
+      }
+      const entry = {
+        id, name: doc.name, date: doc.date || "", dateEnd: doc.dateEnd || "", dateAssumed: !!doc.dateAssumed,
+        competition: doc.competition || "", organiser: doc.organiser || "", sourceUrl: doc.sourceUrl || "",
+        players: summary.players, matches: summary.matches, winner: summary.winner, importedAt: stored.importedAt,
+      };
+      const list = [...importsList.filter((t) => t.id !== id), entry];
+      if (await saveImportList(list)) {
+        setImportPreview(null);
+        showToast(replaceId ? "Το τουρνουά αντικαταστάθηκε." : "Το τουρνουά εισήχθη.");
+      }
+    } finally {
+      setImportBusy(false);
+    }
+  }
+
+  async function openImport(id) {
+    try {
+      const doc = await fetchTournamentDataStrict(id);
+      if (!doc) {
+        showToast("Το τουρνουά δεν βρέθηκε.");
+        return;
+      }
+      setImportPreview(null);
+      setImportDateDraft(null);
+      setImportConfirmDelete(false);
+      setImportView({ id, doc, tab: "standings", round: Math.max(1, ...(doc.matches || []).map((m) => m.round)) });
+    } catch {
+      showToast("Το τουρνουά δεν διαβάστηκε — δοκίμασε ξανά.");
+    }
+  }
+
+  async function saveImportDates() {
+    if (!importView || !importDateDraft || !importsList) return;
+    const doc = { ...importView.doc, date: importDateDraft.date, dateEnd: importDateDraft.dateEnd, dateAssumed: !!importDateDraft.dateAssumed };
+    if (!(await saveTournamentData(importView.id, doc))) {
+      reportSaveFailure("Εισαγωγές — οι ημερομηνίες δεν αποθηκεύτηκαν");
+      return;
+    }
+    const list = importsList.map((t) => (t.id === importView.id ? { ...t, date: doc.date, dateEnd: doc.dateEnd, dateAssumed: doc.dateAssumed } : t));
+    if (await saveImportList(list)) {
+      setImportView({ ...importView, doc });
+      setImportDateDraft(null);
+      showToast("Οι ημερομηνίες αποθηκεύτηκαν.");
+    }
+  }
+
+  async function deleteImport() {
+    if (!importView || !importsList) return;
+    const list = importsList.filter((t) => t.id !== importView.id);
+    if (!(await saveImportList(list))) return;
+    await deleteTournamentData(importView.id);
+    setImportView(null);
+    setImportConfirmDelete(false);
+    showToast("Το εισαγόμενο τουρνουά διαγράφηκε.");
+  }
+
+  function importDateLabel(t) {
+    if (!t.date) return "χωρίς ημερομηνία";
+    const f = (d) => { const [y, m, dd] = d.split("-"); return `${Number(dd)}/${Number(m)}/${y}`; };
+    return `${f(t.date)}${t.dateEnd && t.dateEnd !== t.date ? ` – ${f(t.dateEnd)}` : ""}${t.dateAssumed ? " (εκτίμηση)" : ""}`;
+  }
+
+  function renderImportsTab() {
+    if (importView) {
+      const { doc, tab, round } = importView;
+      const rounds = [...new Set((doc.matches || []).map((m) => m.round))].sort((a, b) => a - b);
+      const roundMatches = (doc.matches || []).filter((m) => m.round === round);
+      return (
+        <div className="card control-section">
+          <button className="btn-ghost" onClick={() => setImportView(null)} style={{ marginBottom: 8 }}>
+            <ArrowLeft size={14} /> Πίσω στις εισαγωγές
+          </button>
+          <h2 className="control-h">{doc.name}</h2>
+          <p className="control-sub">
+            {importDateLabel(doc)} · {doc.competition} · {doc.organiser} · Εισαγόμενο από {doc.sourceName || "εξωτερική πηγή"} — δεν μετράει πουθενά.
+          </p>
+          <div className="tabs" style={{ marginBottom: 12 }}>
+            {[["standings", "Κατάταξη"], ["rounds", "Γύροι"], ["info", "Στοιχεία"]].map(([k, v]) => (
+              <button key={k} className={`tab ${tab === k ? "active" : ""}`} onClick={() => setImportView({ ...importView, tab: k })}>{v}</button>
+            ))}
+          </div>
+          {tab === "standings" && (
+            <div style={{ overflowX: "auto" }}>
+              <table className="cal-table">
+                <thead><tr><th>Θέση</th><th>Παίκτης</th><th>Νίκες</th><th>Ήττες</th><th>Αγώνες</th></tr></thead>
+                <tbody>
+                  {(doc.placements || []).map((p) => (
+                    <tr key={p.name}><td>{p.position}</td><td>{p.name}</td><td>{p.wins}</td><td>{p.losses}</td><td>{p.matches}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="cal-note" style={{ marginTop: 6 }}>Οι νίκες περιλαμβάνουν τα bye, όπως στην πηγή. Η σειρά είναι αυτή της πηγής.</p>
+            </div>
+          )}
+          {tab === "rounds" && (
+            <>
+              <div className="round-pills" style={{ marginBottom: 10 }}>
+                {rounds.map((r) => (
+                  <button key={r} className={`round-pill ${round === r ? "active" : ""}`} onClick={() => setImportView({ ...importView, round: r })}>Γύρος {r}</button>
+                ))}
+              </div>
+              <table className="cal-table">
+                <tbody>
+                  {roundMatches.map((m) => (
+                    <tr key={m.match}>
+                      <td className="cal-note">{m.match}</td>
+                      <td style={{ fontWeight: m.winner === m.p1 ? 700 : 400 }}>{m.p1}</td>
+                      <td style={{ whiteSpace: "nowrap", textAlign: "center" }}>{m.method === "bye" ? "bye" : `${m.score1} – ${m.score2}`}</td>
+                      <td style={{ fontWeight: m.winner === m.p2 ? 700 : 400 }}>{m.p2 || ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+          {tab === "info" && (
+            <>
+              <dl className="details-list">
+                <dt>Ημερομηνίες</dt><dd>{importDateLabel(doc)}</dd>
+                <dt>Διοργάνωση</dt><dd>{doc.competition || "—"}</dd>
+                <dt>Διοργανωτής</dt><dd>{doc.organiser || "—"}</dd>
+                <dt>Σύστημα</dt><dd>{doc.system || "—"}</dd>
+                <dt>Μήκος αγώνα</dt><dd>{doc.matchLength ? `${doc.matchLength} πόντοι` : "—"}</dd>
+                <dt>Παίκτες / αγώνες</dt><dd>{(doc.players || []).length} / {(doc.matches || []).filter((m) => m.method !== "bye").length}</dd>
+                <dt>Πηγή</dt><dd>{doc.sourceUrl ? <a href={doc.sourceUrl} target="_blank" rel="noreferrer">{doc.sourceName || doc.sourceUrl}</a> : "—"}</dd>
+                <dt>Εισαγωγή</dt><dd>{doc.importedAt ? formatDate(doc.importedAt) : "—"}</dd>
+              </dl>
+              {importDateDraft ? (
+                <div className="row" style={{ marginTop: 12, alignItems: "flex-end" }}>
+                  <div style={{ width: 160 }}><label>Από</label><input type="date" value={importDateDraft.date} onChange={(e) => setImportDateDraft({ ...importDateDraft, date: e.target.value })} /></div>
+                  <div style={{ width: 160 }}><label>Έως</label><input type="date" value={importDateDraft.dateEnd} onChange={(e) => setImportDateDraft({ ...importDateDraft, dateEnd: e.target.value })} /></div>
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", paddingBottom: 10 }}>
+                    <input type="checkbox" checked={!!importDateDraft.dateAssumed} onChange={(e) => setImportDateDraft({ ...importDateDraft, dateAssumed: e.target.checked })} /> εκτίμηση
+                  </label>
+                  <button className="btn-secondary" onClick={() => setImportDateDraft(null)}>Άκυρο</button>
+                  <button className="btn-primary" onClick={saveImportDates} disabled={!importDateDraft.date}>Αποθήκευση</button>
+                </div>
+              ) : (
+                <button className="btn-secondary" style={{ marginTop: 12 }} onClick={() => setImportDateDraft({ date: doc.date || "", dateEnd: doc.dateEnd || "", dateAssumed: !!doc.dateAssumed })}>
+                  <Pencil size={14} /> Αλλαγή ημερομηνιών
+                </button>
+              )}
+              <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+                {!importConfirmDelete ? (
+                  <button className="btn-ghost" onClick={() => setImportConfirmDelete(true)}><Trash2 size={14} /> Διαγραφή εισαγωγής</button>
+                ) : (
+                  <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 14 }}>
+                    Οριστική διαγραφή του «{doc.name}»; (Δεν επηρεάζει τίποτα άλλο.)
+                    <button className="btn-ghost" onClick={() => setImportConfirmDelete(false)}>Άκυρο</button>
+                    <button className="btn-secondary" onClick={deleteImport}>Ναι, διαγραφή</button>
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="card control-section">
+        <h2 className="control-h">Εισαγωγές (δοκιμαστικά)</h2>
+        <p className="control-sub">
+          Τουρνουά που έγιναν εκτός εφαρμογής (π.χ. DrawBoss), μόνο για προβολή. Είναι εντελώς απομονωμένα: δεν μπαίνουν στον κατάλογο τουρνουά και δεν μετράνε σε Βαθμολογία, ELO, Στατιστικά ή μητρώο παικτών. Φαίνονται μόνο εδώ.
+        </p>
+        {importsList === null ? (
+          <button className="btn-secondary" onClick={loadImportsList}>Φόρτωση</button>
+        ) : importsList.length === 0 ? (
+          <p style={{ fontSize: 14 }}>Δεν υπάρχουν εισαγόμενα τουρνουά.</p>
+        ) : (
+          <table className="cal-table">
+            <thead><tr><th>Τουρνουά</th><th>Ημερομηνίες</th><th>Παίκτες</th><th>Αγώνες</th><th>Νικητής</th></tr></thead>
+            <tbody>
+              {[...importsList].sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((t) => (
+                <tr key={t.id}>
+                  <td><button className="history-link" onClick={() => openImport(t.id)}>{t.name}</button></td>
+                  <td>{importDateLabel(t)}</td>
+                  <td>{t.players}</td>
+                  <td>{t.matches}</td>
+                  <td>{t.winner}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        {importsList !== null && !importPreview && (
+          <button className="btn-secondary" style={{ marginTop: 12 }} onClick={() => importFileRef.current?.click()}>
+            <Upload size={15} /> Εισαγωγή αρχείου (.json)
+          </button>
+        )}
+        <input type="file" accept="application/json,.json" ref={importFileRef} onChange={onImportFile} style={{ display: "none" }} />
+        {importPreview && (
+          <div className="control-sub-card">
+            <strong>Προεπισκόπηση: {importPreview.doc?.name || importPreview.fileName}</strong>
+            {importPreview.summary && (
+              <p style={{ fontSize: 14, margin: "6px 0" }}>
+                {importDateLabel(importPreview.doc)} · {importPreview.summary.players} παίκτες · {importPreview.summary.matches} αγώνες + {importPreview.summary.byes} bye · {importPreview.summary.rounds} γύροι · Νικητής: <strong>{importPreview.summary.winner}</strong>
+              </p>
+            )}
+            {importPreview.problems.length === 0 ? (
+              <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 8px 0" }}>✓ Οι έλεγχοι πέρασαν: κανείς δεν παίζει δύο φορές στον ίδιο γύρο, και οι νίκες κάθε παίκτη συμφωνούν με την κατάταξη της πηγής.</p>
+            ) : (
+              <div className="field-warning">
+                ⚠ Το αρχείο έχει προβλήματα και δεν μπορεί να εισαχθεί:
+                <ul style={{ margin: "4px 0 0 0", paddingLeft: 18 }}>{importPreview.problems.slice(0, 12).map((p, i) => <li key={i}>{p}</li>)}</ul>
+              </div>
+            )}
+            {importPreview.replaceId && <p className="field-warning">Το ίδιο τουρνουά (ίδιο link πηγής) υπάρχει ήδη· η εισαγωγή θα το αντικαταστήσει.</p>}
+            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+              <button className="btn-secondary" onClick={() => setImportPreview(null)}>Άκυρο</button>
+              <button className="btn-primary" onClick={confirmImport} disabled={importBusy || importPreview.problems.length > 0}>
+                {importBusy ? "Αποθήκευση…" : importPreview.replaceId ? "Αντικατάσταση" : "Εισαγωγή"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     );
   }
 
@@ -8004,6 +8348,7 @@ export default function TournamentManager() {
               <button className={`tab ${controlTab === "data" ? "active" : ""}`} onClick={() => setControlTab("data")}>Δεδομένα</button>
               <button className={`tab ${controlTab === "backup" ? "active" : ""}`} onClick={() => setControlTab("backup")}>Backup</button>
               <button className={`tab ${controlTab === "settings" ? "active" : ""}`} onClick={() => setControlTab("settings")}>Ρυθμίσεις</button>
+              <button className={`tab ${controlTab === "imports" ? "active" : ""}`} onClick={() => { setControlTab("imports"); if (importsList === null) loadImportsList(); }}>Εισαγωγές</button>
             </div>
 
             {controlTab === "overview" && (
@@ -8550,6 +8895,8 @@ export default function TournamentManager() {
             </div>
               </>
             )}
+
+            {controlTab === "imports" && renderImportsTab()}
 
             {controlTab === "settings" && (
               <>
