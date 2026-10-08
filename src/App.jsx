@@ -56,7 +56,8 @@ import {
 /* Storage helpers                                                        */
 /* ---------------------------------------------------------------------- */
 
-const SEASON_BEST_OF = 12; // counts each player's best N results this season
+// Season rules (best-of, qualification cut-offs) are per season since Build
+// 3A — see rulesForSeason().
 
 // Tournament finance rules (per player, in euros)
 const BUYIN_FULL = 40;
@@ -175,7 +176,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.09";
+const APP_BUILD_VERSION = "2026-10-08.10";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -189,7 +190,7 @@ const FEATURES_SUMMARY = [
   "Μητρώο παικτών με στοιχεία επικοινωνίας, συνδρομή και ιστορικό συμμετοχών.",
   "ELO rating για κάθε παίκτη, με γράφημα εξέλιξης και ιστορικό αγώνων.",
   "Πρόβλεψη νικητή (βάσει ELO) σε κάθε ζευγάρι πριν παιχτεί ο αγώνας.",
-  "Season Standings — ετήσια κατάταξη με άθροισμα των καλύτερων εμφανίσεων.",
+  "Season Standings — ετήσια κατάταξη με άθροισμα των καλύτερων εμφανίσεων, με κανόνες (best-of, προκρίσεις) ανά σεζόν.",
   "Διαχείριση Α.Α. (αποχώρηση παίκτη), με ρητή απόσυρση από το τουρνουά και ένδειξη διπλού Α.Α.",
   "Σημαία \"Official League Day\" και Recompute ELO/Standings από την αρχή, μόνο για επίσημες μέρες.",
   "Διοργανώσεις (Premier League, Τελική φάση, Κύπελλο), σεζόν και λέσχη για κάθε τουρνουά.",
@@ -200,6 +201,15 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.10",
+    date: "2026-10-08",
+    items: [
+      "Κανόνες σεζόν: κάθε σεζόν έχει τους δικούς της κανόνες Βαθμολογίας — πόσα καλύτερα αποτελέσματα μετράνε και μέχρι ποια θέση προκρίνονται στους 32 και στους 48. Ορίζονται από τη σελίδα Βαθμολογίας (admin), μία φορά τον χρόνο με την προκήρυξη.",
+      "Μια νέα σεζόν ξεκινά με τους κανόνες της προηγούμενης· η αλλαγή κανόνων μιας σεζόν δεν αλλάζει ποτέ τις προηγούμενες.",
+      "Οι κανόνες κάθε σεζόν εφαρμόζονται παντού: Βαθμολογία, Excel, σύνοψη ανακοίνωσης/RSS και Πρωτοπορία στα Στατιστικά.",
+    ],
+  },
   {
     version: "2026-10-08.09",
     date: "2026-10-08",
@@ -1273,6 +1283,23 @@ function seasonForDate(iso) {
   return null;
 }
 
+/* ---- Season rules (Build 3A) ------------------------------------------
+ * Each season keeps its own standings rules, set once a year from the
+ * season's announcement: how many best results count, and the
+ * qualification cut-offs. A season with no rules of its own inherits the
+ * closest earlier season's — so changing next year's rules can never
+ * rewrite a past season. Stored in the system document (seasonRules). */
+const DEFAULT_SEASON_RULES = { bestOf: 12, cutoffR32: 5, cutoffR48: 16 };
+
+function rulesForSeason(sys, year) {
+  const all = (sys && sys.seasonRules) || {};
+  const y = Number(year);
+  if (all[String(y)]) return { ...DEFAULT_SEASON_RULES, ...all[String(y)], inherited: false, from: y };
+  const earlier = Object.keys(all).map(Number).filter((k) => !isNaN(k) && k < y).sort((a, b) => b - a);
+  if (earlier.length) return { ...DEFAULT_SEASON_RULES, ...all[String(earlier[0])], inherited: true, from: earlier[0] };
+  return { ...DEFAULT_SEASON_RULES, inherited: true, from: null };
+}
+
 /** Human-readable range of a season, for warnings. */
 function seasonRangeLabel(year) {
   if (year === 2026) return "27/9/2025 – 31/12/2026";
@@ -2297,6 +2324,7 @@ export default function TournamentManager() {
   const [homeClubDraft, setHomeClubDraft] = useState(null);
   const [metaPlan, setMetaPlan] = useState(null); // dry-run report of the competitions/club migration
   const [metaBusy, setMetaBusy] = useState(false);
+  const [rulesDraft, setRulesDraft] = useState(null); // { year, bestOf, cutoffR32, cutoffR48 } while editing season rules
   const [players, setPlayers] = useState([]);
   const [round, setRound] = useState(1);
   const [currentPairings, setCurrentPairings] = useState(null);
@@ -3206,7 +3234,7 @@ export default function TournamentManager() {
       tournaments,
       trash: trashList,
       trashedTournaments,
-      sysState: { purgedIds: sysNow.purgedIds || [], homeClub: sysNow.homeClub || "", competitions: competitionsFrom(sysNow) },
+      sysState: { purgedIds: sysNow.purgedIds || [], homeClub: sysNow.homeClub || "", competitions: competitionsFrom(sysNow), seasonRules: sysNow.seasonRules || {} },
     };
     const blob = new Blob([JSON.stringify(fullBackup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -3254,11 +3282,14 @@ export default function TournamentManager() {
       const sheets = [{ name: "ELO", rows: eloRows }];
 
       let seasonPlayerCounts = [];
+      const seasonBestOf = [];
       for (const y of years) {
         const season = await loadSeasonStrict(y);
-        const standings = computeSeasonStandings(season, SEASON_BEST_OF);
+        const bestOfY = rulesForSeason(sysState, y).bestOf;
+        seasonBestOf.push(`${y}: ${bestOfY}`);
+        const standings = computeSeasonStandings(season, bestOfY);
         seasonPlayerCounts.push(`${y}: ${standings.length}`);
-        const rows = [["Rank", "Παίκτης", "Events", `Points (best ${SEASON_BEST_OF})`, "Total (all events)", "Wins (regular)", "Matches", "%"]];
+        const rows = [["Rank", "Παίκτης", "Events", `Points (best ${bestOfY})`, "Total (all events)", "Wins (regular)", "Matches", "%"]];
         standings.forEach((p, i) => rows.push([i + 1, p.name, p.eventsPlayed, p.total, p.sumAll, p.totalWins, p.totalMatches, p.pct]));
         sheets.push({ name: `Βαθμολογία ${y}`, rows });
 
@@ -3289,7 +3320,7 @@ export default function TournamentManager() {
           ["Παίκτες ανά σεζόν", seasonPlayerCounts.join(" · ") || "—"],
           ["Τουρνουά στον κατάλογο (μοναδικά)", uniqueTournaments.size],
           ["Από αυτά, επίσημα (Official League)", officialTournaments.size],
-          ["Best-of που εφαρμόστηκε", SEASON_BEST_OF],
+          ["Best-of που εφαρμόστηκε", seasonBestOf.join(" · ") || "—"],
           ["Τελευταίο Recompute", elo.builtFrom ? elo.builtFrom.at : "—"],
           ["Recompute: τουρνουά / αγώνες", elo.builtFrom ? `${elo.builtFrom.tournaments} / ${elo.builtFrom.matches}` : "—"],
           ["Τουρνουά που έχουν επηρεάσει το ELO", elo.appliedTournaments ? Object.keys(elo.appliedTournaments).length : "—"],
@@ -3348,12 +3379,13 @@ export default function TournamentManager() {
           await saveSysState({ purgedIds });
           setSysState((s) => ({ ...s, purgedIds }));
         }
-        if (data.sysState && (typeof data.sysState.homeClub === "string" || Array.isArray(data.sysState.competitions))) {
+        if (data.sysState && (typeof data.sysState.homeClub === "string" || Array.isArray(data.sysState.competitions) || data.sysState.seasonRules)) {
           const patch = {};
+          if (data.sysState.seasonRules && typeof data.sysState.seasonRules === "object") patch.seasonRules = data.sysState.seasonRules;
           if (typeof data.sysState.homeClub === "string") patch.homeClub = data.sysState.homeClub;
           if (Array.isArray(data.sysState.competitions)) patch.competitions = data.sysState.competitions;
           if (await saveSysState(patch)) setSysState((s) => ({ ...s, ...patch }));
-          else reportSaveFailure("Επαναφορά backup — δεν γράφτηκαν οι ρυθμίσεις λέσχης/διοργανώσεων");
+          else reportSaveFailure("Επαναφορά backup — δεν γράφτηκαν οι ρυθμίσεις λέσχης/διοργανώσεων/κανόνων σεζόν");
         }
         setPersonLookup(data.registry);
         setRegistry(data.registry);
@@ -4249,10 +4281,11 @@ export default function TournamentManager() {
 
       // 2. Season Standings: compare with vs. without this tournament's entries.
       const seasonFull = await loadSeason(seasonYear);
-      const afterStandings = computeSeasonStandings(seasonFull, SEASON_BEST_OF);
+      const recapBestOf = rulesForSeason(sysState, seasonYear).bestOf;
+      const afterStandings = computeSeasonStandings(seasonFull, recapBestOf);
       const seasonBefore = JSON.parse(JSON.stringify(seasonFull));
       Object.values(seasonBefore.players).forEach((p) => { delete p.entries[tournamentId]; });
-      const beforeStandings = computeSeasonStandings(seasonBefore, SEASON_BEST_OF);
+      const beforeStandings = computeSeasonStandings(seasonBefore, recapBestOf);
       const beforeRank = {};
       beforeStandings.forEach((p, i) => { beforeRank[p.name] = i + 1; });
       const top5Season = afterStandings.slice(0, 5).map((p, i) => {
@@ -4632,7 +4665,7 @@ export default function TournamentManager() {
         .sort((a, b) => new Date(a.date) - new Date(b.date));
 
       const eloRunning = { players: {} };
-      const seasonRunning = { players: {} };
+      const seasonRunningByYear = {}; // each season runs on its own, with its own rules
       const perPlayerSequence = {};
       const titleCounts = {};
       const eloLeaderDays = {};
@@ -4703,6 +4736,9 @@ export default function TournamentManager() {
         }
 
         // Season Standings running total + leader snapshot
+        const runYear = Number(t.seasonYear) || seasonForDate(t.date) || 2026;
+        if (!seasonRunningByYear[runYear]) seasonRunningByYear[runYear] = { players: {} };
+        const seasonRunning = seasonRunningByYear[runYear];
         tPlayers.forEach((p) => {
           const key = normalizeName(p.name);
           if (!seasonRunning.players[key]) seasonRunning.players[key] = { name: p.name, entries: {} };
@@ -4712,7 +4748,7 @@ export default function TournamentManager() {
           const normalMatches = p.matchLog.filter((m) => m.method === "normal").length;
           seasonRunning.players[key].entries[t.id] = { points: p.wins, wins, matches, normalMatches };
         });
-        const seasonStandingsNow = computeSeasonStandings(seasonRunning, SEASON_BEST_OF);
+        const seasonStandingsNow = computeSeasonStandings(seasonRunning, rulesForSeason(sysState, runYear).bestOf);
         if (seasonStandingsNow.length > 0) {
           const leaderKey = normalizeName(seasonStandingsNow[0].name);
           standingsLeaderDays[leaderKey] = (standingsLeaderDays[leaderKey] || 0) + 1;
@@ -4742,7 +4778,10 @@ export default function TournamentManager() {
         .map(([key, days]) => ({ name: eloRunning.players[key]?.name || key, days }))
         .sort((a, b) => b.days - a.days);
       const standingsLeaders = Object.entries(standingsLeaderDays)
-        .map(([key, days]) => ({ name: seasonRunning.players[key]?.name || key, days }))
+        .map(([key, days]) => ({
+          name: Object.values(seasonRunningByYear).map((sr) => sr.players[key]?.name).find(Boolean) || displayNameFor(key, key),
+          days,
+        }))
         .sort((a, b) => b.days - a.days);
 
       setStatsResult({
@@ -4941,6 +4980,101 @@ export default function TournamentManager() {
     .sort((a, b) => new Date(b.date) - new Date(a.date));
   const archiveHasFilter = searchName || dateFrom || dateTo;
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
+
+  /** Admin card on the Season page: the rules of the season being viewed. */
+  function renderSeasonRulesCard() {
+    const year = seasonBrowseYear;
+    const rules = rulesForSeason(sysState, year);
+    const editing = rulesDraft && rulesDraft.year === year;
+    const d = editing ? rulesDraft : null;
+    const valid =
+      d &&
+      Number.isInteger(Number(d.bestOf)) && Number(d.bestOf) >= 1 &&
+      Number.isInteger(Number(d.cutoffR32)) && Number(d.cutoffR32) >= 1 &&
+      Number.isInteger(Number(d.cutoffR48)) && Number(d.cutoffR48) >= Number(d.cutoffR32);
+    return (
+      <div className="card" style={{ marginBottom: 16, padding: "14px 18px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <strong>Κανόνες σεζόν {year}</strong>
+          {!editing && (
+            <button className="btn-ghost" onClick={() => setRulesDraft({ year, bestOf: rules.bestOf, cutoffR32: rules.cutoffR32, cutoffR48: rules.cutoffR48 })}>
+              <Pencil size={13} /> Αλλαγή
+            </button>
+          )}
+        </div>
+        {!editing ? (
+          <>
+            <p style={{ margin: "6px 0 0 0", fontSize: 14 }}>
+              Μετράνε τα <strong>{rules.bestOf}</strong> καλύτερα αποτελέσματα. 1η θέση: Παίκτης της Χρονιάς και πρόκριση στους 32 · θέσεις 2–{rules.cutoffR32}: πρόκριση στους 32 · θέσεις {rules.cutoffR32 + 1}–{rules.cutoffR48}: πρόκριση στους 48.
+            </p>
+            {rules.inherited && (
+              <p style={{ margin: "4px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
+                {rules.from ? `Δεν έχουν οριστεί ακόμα κανόνες για το ${year}· ισχύουν όσοι της σεζόν ${rules.from}.` : "Δεν έχουν οριστεί ακόμα κανόνες· ισχύουν οι αρχικοί."} Όρισέ τους όταν βγει η προκήρυξη.
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="row" style={{ marginTop: 10 }}>
+              <div style={{ width: 150 }}>
+                <label>Καλύτερα αποτελέσματα</label>
+                <input type="number" min={1} value={d.bestOf} onChange={(e) => setRulesDraft({ ...d, bestOf: e.target.value })} />
+              </div>
+              <div style={{ width: 170 }}>
+                <label>Πρόκριση στους 32 έως θέση</label>
+                <input type="number" min={1} value={d.cutoffR32} onChange={(e) => setRulesDraft({ ...d, cutoffR32: e.target.value })} />
+              </div>
+              <div style={{ width: 170 }}>
+                <label>Πρόκριση στους 48 έως θέση</label>
+                <input type="number" min={1} value={d.cutoffR48} onChange={(e) => setRulesDraft({ ...d, cutoffR48: e.target.value })} />
+              </div>
+            </div>
+            {!valid && <p className="field-warning">Ακέραιοι ≥ 1, και η θέση για τους 48 όχι μικρότερη από τη θέση για τους 32.</p>}
+            <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0 0 0" }}>
+              Αφορά μόνο τη σεζόν {year}. Οι άλλες σεζόν δεν αλλάζουν. Δεν χρειάζεται Recompute: η Βαθμολογία υπολογίζεται αμέσως με τους νέους κανόνες.
+            </p>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button className="btn-secondary" onClick={() => setRulesDraft(null)}>Άκυρο</button>
+              <button className="btn-primary" disabled={!valid} onClick={saveSeasonRules}>Αποθήκευση</button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  async function saveSeasonRules() {
+    if (!rulesDraft) return;
+    const year = rulesDraft.year;
+    const next = {
+      bestOf: Number(rulesDraft.bestOf),
+      cutoffR32: Number(rulesDraft.cutoffR32),
+      cutoffR48: Number(rulesDraft.cutoffR48),
+      setAt: new Date().toISOString(),
+    };
+    // Pin the rules of every earlier season that is still only inheriting,
+    // so that rules set for this season can never change a past one.
+    const all = { ...(sysState.seasonRules || {}) };
+    let years = [];
+    try {
+      years = await listSeasonYearsStrict();
+    } catch {
+      reportSaveFailure("Κανόνες σεζόν — η λίστα σεζόν δεν διαβάστηκε· οι κανόνες δεν αποθηκεύτηκαν");
+      return;
+    }
+    years.filter((y) => y < year && !all[String(y)]).forEach((y) => {
+      const r = rulesForSeason({ seasonRules: all }, y);
+      all[String(y)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: next.setAt };
+    });
+    all[String(year)] = next;
+    if (await saveSysState({ seasonRules: all })) {
+      setSysState((st) => ({ ...st, seasonRules: all }));
+      setRulesDraft(null);
+      showToast(`Οι κανόνες της σεζόν ${year} αποθηκεύτηκαν.`);
+    } else {
+      reportSaveFailure(`Κανόνες σεζόν ${year} — δεν αποθηκεύτηκαν`);
+    }
+  }
 
   /** Way back to the player card the tournament was opened from. */
   function renderBackToPlayer() {
@@ -6015,13 +6149,18 @@ export default function TournamentManager() {
           <div className="content">
             <div className="notice">
               <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>Σεζόν {seasonBrowseYear}: {seasonRangeLabel(seasonBrowseYear)}. Counts each player's best {SEASON_BEST_OF} tournament results this season. Names are matched by exact spelling across tournaments — keep spelling consistent when adding players.</span>
+              <span>
+                Σεζόν {seasonBrowseYear}: {seasonRangeLabel(seasonBrowseYear)}. Μετράνε τα {rulesForSeason(sysState, seasonBrowseYear).bestOf} καλύτερα αποτελέσματα κάθε παίκτη στη σεζόν.
+              </span>
             </div>
+
+            {isAdmin && renderSeasonRulesCard()}
 
             {recomputePanel}
 
             {(() => {
-              const qual = { roundA: 32, cutoffA: 5, roundB: 48, cutoffB: 16 };
+              const rules = rulesForSeason(sysState, seasonBrowseYear);
+              const qual = { roundA: 32, cutoffA: rules.cutoffR32, roundB: 48, cutoffB: rules.cutoffR48 };
 
               function rowClassForRank(rank) {
                 if (rank === 1) return "qual-tier1";
@@ -6030,7 +6169,7 @@ export default function TournamentManager() {
                 return "";
               }
 
-              const seasonStandings = computeSeasonStandings(seasonData, SEASON_BEST_OF);
+              const seasonStandings = computeSeasonStandings(seasonData, rules.bestOf);
 
               return (
                 <>
@@ -6059,7 +6198,7 @@ export default function TournamentManager() {
                         <th className="rank">Rank</th>
                         <th>Player</th>
                         <th>Events</th>
-                        <th>Points<br /><span className="th-sub">(best {SEASON_BEST_OF})</span></th>
+                        <th>Points<br /><span className="th-sub">(best {rules.bestOf})</span></th>
                         <th>Total<br /><span className="th-sub">(all events)</span></th>
                         <th>Wins<br /><span className="th-sub">(regular only)</span></th>
                         <th>Matches</th>
