@@ -170,7 +170,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.03";
+const APP_BUILD_VERSION = "2026-10-08.04";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -194,6 +194,20 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.04",
+    date: "2026-10-08",
+    items: [
+      "Μόνιμα ID παικτών: στη σελίδα Παίκτες, νέο πλαίσιο «Μόνιμα ID». Πρώτα αναφορά (δεν αλλάζει τίποτα), μετά εφαρμογή μόνο με Export All Data των τελευταίων 24 ωρών, και αυτόματο Recompute. Τα έγγραφα των τουρνουά δεν αλλάζουν.",
+      "Μια μετονομασία ή διόρθωση γραφής δεν χάνει πια ιστορικό: κάθε πρόσωπο θυμάται όλες τις γραφές του ονόματός του (π.χ. Τζανέτης και Τζανετής είναι ο ίδιος παίκτης).",
+      "Όταν προσθέτεις παίκτη με όνομα που μοιάζει με υπάρχοντα (άλλη σειρά λέξεων ή 1–2 γράμματα διαφορά), η εφαρμογή ρωτά «Είναι ο ίδιος παίκτης;». Νέο εργαλείο «Ένωση με άλλο πρόσωπο» για διπλές εγγραφές.",
+      "Παίκτης με ιστορικό αγώνων: δεν εμφανίζεται κουμπί διαγραφής, μόνο η εξήγηση.",
+      "Αλλαγή του «Official League day» ανοίγει προειδοποίηση για τα δεδομένα, και προς τις δύο κατευθύνσεις, με επιλογή Recompute.",
+      "Διόρθωση: ένα όνομα που είχε μία μόνο κοινή λέξη με υπάρχοντα παίκτη μπορούσε να ταιριάξει με αυτόν κατά λάθος.",
+      "Στατιστικά Παίκτη και γράφημα ELO παίκτη διαβάζουν πλέον από τη βάση και όχι από ενσωματωμένο πίνακα. Μια διπλή αποχώρηση δεν μετράει ως αγώνας.",
+      "Πιο ήπιο μήνυμα όταν το ELO δεν έχει ακόμα καταγραφή προέλευσης.",
+    ],
+  },
   {
     version: "2026-10-08.03",
     date: "2026-10-08",
@@ -684,11 +698,11 @@ function eloPointsAtStake(matchLength) {
 
 function ensureEloPlayer(elo, name) {
   const key = normalizeName(name);
-  if (!elo.players[key]) elo.players[key] = { name, rating: ELO_INITIAL, games: 0, experience: 0, wins: 0, matches: 0 };
+  if (!elo.players[key]) elo.players[key] = { name: displayNameFor(key, name), rating: ELO_INITIAL, games: 0, experience: 0, wins: 0, matches: 0 };
   if (elo.players[key].experience === undefined) elo.players[key].experience = 0;
   if (elo.players[key].wins === undefined) elo.players[key].wins = 0;
   if (elo.players[key].matches === undefined) elo.players[key].matches = 0;
-  elo.players[key].name = name;
+  elo.players[key].name = displayNameFor(key, name);
   return key;
 }
 
@@ -744,8 +758,107 @@ function buildEloRoundMatches(pairs, byId) {
 
 
 
+/* ---------------------------------------------------------------------- */
+/* Player identity                                                         */
+/* A player is a *person* with a permanent id. Every spelling the person    */
+/* has ever had (aliases) leads to the same id, so renaming or correcting   */
+/* a name never splits their history. Until the registry is migrated, a     */
+/* name behaves exactly as it always did.                                   */
+/* ---------------------------------------------------------------------- */
+
+let PERSON_LOOKUP = new Map(); // spelling (trimmed, lower case) -> person id
+let PERSON_DISPLAY = new Map(); // person id -> current display name
+
+function baseName(name) {
+  return String(name ?? "").trim().toLowerCase();
+}
+
+function setPersonLookup(registry) {
+  const lookup = new Map();
+  const display = new Map();
+  if (registry && registry.identityVersion === 2) {
+    Object.entries(registry.players || {}).forEach(([key, p]) => {
+      display.set(key, p.name);
+      new Set([...(p.aliases || []), baseName(p.name)]).forEach((s) => {
+        if (s && !lookup.has(s)) lookup.set(s, key);
+      });
+    });
+  }
+  PERSON_LOOKUP = lookup;
+  PERSON_DISPLAY = display;
+}
+
+/** The key under which a person is stored everywhere (registry, ELO, season,
+ * statistics): their permanent id once the registry is migrated, otherwise
+ * the plain lower-cased name. */
 function normalizeName(name) {
-  return name.trim().toLowerCase();
+  const b = baseName(name);
+  return PERSON_LOOKUP.get(b) || b;
+}
+
+/** The person's current display name, falling back to what was typed. */
+function displayNameFor(key, fallback) {
+  return PERSON_DISPLAY.get(key) || fallback;
+}
+
+function newPersonId(existing) {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  for (;;) {
+    let s = "";
+    for (let i = 0; i < 8; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+    const id = `pl_${s}`;
+    if (!existing || !existing[id]) return id;
+  }
+}
+
+function personSpellings(p) {
+  return [...new Set([...(p.aliases || []), baseName(p.name)])];
+}
+
+function editDistance(a, b) {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function wordsOf(s) {
+  return stripAccents(baseName(s)).split(/\s+/).filter(Boolean);
+}
+
+/** Persons whose name merely LOOKS like the typed one: the same words in a
+ * different order, or one word in common and the other one or two letters
+ * off. It is only used to ASK the admin — never to merge on its own. */
+function findLookalikePersons(typed, players) {
+  const t = wordsOf(typed);
+  if (t.length < 2) return [];
+  const out = [];
+  Object.entries(players).forEach(([key, p]) => {
+    let reason = null;
+    personSpellings(p).forEach((sp) => {
+      if (reason) return;
+      const w = wordsOf(sp);
+      if (w.length !== t.length) return;
+      if ([...w].sort().join(" ") === [...t].sort().join(" ")) {
+        reason = "reordered";
+        return;
+      }
+      const common = t.filter((x) => w.includes(x) && x.length >= 3);
+      if (common.length >= 1 && common.length === t.length - 1) {
+        const restT = t.filter((x) => !w.includes(x));
+        const restW = w.filter((x) => !t.includes(x));
+        if (restT.length === 1 && restW.length === 1 && Math.min(restT[0].length, restW[0].length) >= 4 && editDistance(restT[0], restW[0]) <= 2) {
+          reason = "similar";
+        }
+      }
+    });
+    if (reason) out.push({ key, person: p, reason });
+  });
+  return out;
 }
 
 const GREEK_DIGRAPHS = [
@@ -798,8 +911,8 @@ async function pushSeasonUpdate(year, tournamentId, tournamentName, date, player
   const season = await loadSeason(year);
   playersList.forEach((p) => {
     const key = normalizeName(p.name);
-    if (!season.players[key]) season.players[key] = { name: p.name, entries: {} };
-    season.players[key].name = p.name; // keep latest casing/spelling
+    if (!season.players[key]) season.players[key] = { name: displayNameFor(key, p.name), entries: {} };
+    season.players[key].name = displayNameFor(key, p.name); // keep the person's current name
     const wins = p.matchLog.filter((m) => m.method === "normal" && m.result === "win").length;
     const aa = p.matchLog.filter((m) => m.method === "retirement_win").length;
     const bye = p.matchLog.filter((m) => m.method === "bye").length;
@@ -1046,19 +1159,26 @@ function markEloApplied(elo, tournamentId, name, mode) {
   elo.appliedTournaments[tournamentId] = { name: name || "Untitled", mode, at: new Date().toISOString() };
 }
 
+/** "Backgammon Premier League 2026 - Ημέρα 7" -> "Ημέρα 7" (for compact lists). */
+function shortTournamentLabel(name) {
+  const m = /Ημέρα\s*\d+/.exec(name || "");
+  return m ? m[0] : name;
+}
+
 function stripAccents(s) {
   return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 /** Compares what is stored (ELO, season standings) with the tournament
  * catalogue. Read-only: it never changes anything. */
-function buildConsistencyReport({ elo, seasons, index }) {
+function buildConsistencyReport({ elo, seasons, index, display }) {
   const idx = new Map(index.map((t) => [t.id, t]));
   const finishedOfficial = index.filter((t) => t.isOfficial && t.status === "Completed");
   const report = {
     trackingMissing: !elo.appliedTournaments,
     eloExtra: [], eloMissing: [], seasonExtra: [], seasonMissing: [],
     winsMismatch: [], eloOnly: [], seasonOnly: [], lookalikes: [],
+    unknownKeys: [], nameStale: [],
   };
 
   const applied = elo.appliedTournaments || {};
@@ -1119,7 +1239,20 @@ function buildConsistencyReport({ elo, seasons, index }) {
     if (set.size > 1) report.lookalikes.push([...set]);
   });
 
+  if (display && display.size > 0) {
+    const unknown = new Set();
+    Object.entries(eloPlayers).forEach(([key, p]) => {
+      if (!display.has(key)) unknown.add(p.name);
+      else if (display.get(key) !== p.name) report.nameStale.push({ from: p.name, to: display.get(key) });
+    });
+    Object.entries(seasonNames).forEach(([key, name]) => {
+      if (!display.has(key)) unknown.add(name);
+    });
+    report.unknownKeys = [...unknown].map((name) => ({ name }));
+  }
+
   report.needsRecompute =
+    report.unknownKeys.length > 0 || report.nameStale.length > 0 ||
     report.trackingMissing || report.eloExtra.length > 0 || report.eloMissing.length > 0 ||
     report.seasonExtra.length > 0 || report.seasonMissing.length > 0 ||
     report.winsMismatch.length > 0 || report.eloOnly.length > 0;
@@ -1130,7 +1263,9 @@ function buildConsistencyReport({ elo, seasons, index }) {
 function describeStaleReasons(report) {
   const out = [];
   if (!report) return out;
-  if (report.trackingMissing) out.push("Το ELO δεν έχει ακόμα καταγραφή προέλευσης (ένα Recompute την δημιουργεί).");
+  if (report.trackingMissing) out.push("Χρειάζεται ένα Recompute για να ξεκινήσει η καταγραφή προέλευσης (δεν είναι σφάλμα).");
+  if (report.unknownKeys.length) out.push(`Το ELO ή η Βαθμολογία έχουν ονόματα που δεν αντιστοιχούν σε πρόσωπο του μητρώου (${report.unknownKeys.length}).`);
+  if (report.nameStale.length) out.push(`Το όνομα ${report.nameStale.length === 1 ? "ενός παίκτη" : "κάποιων παικτών"} στο ELO/Βαθμολογία διαφέρει από το μητρώο (${report.nameStale.slice(0, 3).map((x) => `${x.from} → ${x.to}`).join(", ")}).`);
   const label = (x) => `"${x.name}"`;
   const uo = report.eloExtra.filter((x) => x.reason === "unofficial");
   const miss = report.eloExtra.filter((x) => x.reason === "missing");
@@ -1147,6 +1282,79 @@ function describeStaleReasons(report) {
   }
   return out;
 }
+
+/** Dry run: which names used in tournaments are not yet a person in the
+ * registry, and what could they be? Read-only. */
+function buildMigrationPlan({ registry, tournamentNames }) {
+  const players = registry.players || {};
+  const keys = new Set(Object.keys(players));
+  const unmatched = [];
+  tournamentNames.forEach((info, base) => {
+    if (keys.has(base)) return;
+    const sameWords = Object.entries(players).filter(([, p]) => stripAccents(baseName(p.name)) === stripAccents(base));
+    const lookalikes = findLookalikePersons(info.name, players);
+    const candidates = new Map();
+    sameWords.forEach(([k, p]) => candidates.set(k, { key: k, name: p.name }));
+    lookalikes.forEach((l) => candidates.set(l.key, { key: l.key, name: l.person.name }));
+    let defaultChoice = "new";
+    let reason = "";
+    if (sameWords.length === 1) {
+      defaultChoice = sameWords[0][0];
+      reason = "ίδιες λέξεις, διαφέρουν μόνο οι τόνοι ή τα κεφαλαία";
+    } else if (candidates.size > 0) {
+      reason = "μοιάζει με υπάρχον πρόσωπο — επίλεξε εσύ";
+    }
+    unmatched.push({ base, name: info.name, tournaments: info.tournaments, defaultChoice, reason, candidates: [...candidates.values()] });
+  });
+  unmatched.sort((a, b) => a.name.localeCompare(b.name, "el"));
+  const groups = {};
+  Object.values(players).forEach((p) => {
+    const canon = [...wordsOf(p.name)].sort().join(" ");
+    (groups[canon] = groups[canon] || []).push(p.name);
+  });
+  const duplicates = Object.values(groups).filter((g) => g.length > 1);
+  return { persons: Object.keys(players).length, unmatched, duplicates };
+}
+
+/** The registry in its new shape: every entry gets a permanent id and keeps
+ * the spelling it had as an alias; decided names are linked to a person or
+ * become a new one. Pure — it does not save anything. */
+function buildMigratedRegistry(registry, unmatched, decisions) {
+  const players = {};
+  const idByLegacyKey = {};
+  Object.entries(registry.players || {}).forEach(([legacyKey, p]) => {
+    const id = newPersonId(players);
+    idByLegacyKey[legacyKey] = id;
+    players[id] = { ...p, aliases: [...new Set([legacyKey, baseName(p.name)])] };
+  });
+  unmatched.forEach((u) => {
+    const choice = decisions[u.base] ?? u.defaultChoice;
+    if (choice && choice !== "new" && idByLegacyKey[choice]) {
+      const target = players[idByLegacyKey[choice]];
+      target.aliases = [...new Set([...target.aliases, u.base])];
+    } else {
+      const id = newPersonId(players);
+      players[id] = {
+        name: u.name, aliases: [u.base], club: "", email: "", phone: "", membership: [],
+        needsInfo: true, hasDiscount: false, discountAmount: 32,
+      };
+    }
+  });
+  return { ...registry, identityVersion: 2, players, migratedAt: new Date().toISOString() };
+}
+
+function ConfirmDialog({ title, children, actions }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+      <div className="card" style={{ maxWidth: 520, width: "100%", padding: "18px 20px", maxHeight: "90vh", overflow: "auto" }}>
+        <h3 style={{ margin: "0 0 10px 0" }}>{title}</h3>
+        <div style={{ fontSize: 14, lineHeight: 1.5 }}>{children}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", marginTop: 16 }}>{actions}</div>
+      </div>
+    </div>
+  );
+}
+
 
 const SEED_PLAYERS = 
 [
@@ -1981,12 +2189,22 @@ export default function TournamentManager() {
   const [newMembershipYear, setNewMembershipYear] = useState(new Date().getFullYear());
   const [nameDisplayMode, setNameDisplayMode] = useState("normal"); // normal | upper | greeklish
   const [eloData, setEloData] = useState({ players: {} });
+  setPersonLookup(registry);
   const [trash, setTrash] = useState([]); // tournaments moved to the trash (restorable)
   const [sysState, setSysState] = useState({}); // lastExportAt, purgedIds
   const [health, setHealth] = useState(null); // result of buildConsistencyReport (admin only)
   const [consistencyReport, setConsistencyReport] = useState(null);
   const [consistencyLoading, setConsistencyLoading] = useState(false);
   const [trashBusy, setTrashBusy] = useState(false);
+  const [identityPlan, setIdentityPlan] = useState(null); // dry-run report of the migration to permanent ids
+  const [identityDecisions, setIdentityDecisions] = useState({});
+  const [identityBusy, setIdentityBusy] = useState(false);
+  const [identityPrompt, setIdentityPrompt] = useState(null); // "is it the same player?" question
+  const [mergeFor, setMergeFor] = useState(null);
+  const [mergeTarget, setMergeTarget] = useState("");
+  const [mergeRecompute, setMergeRecompute] = useState(true);
+  const [confirmingOfficial, setConfirmingOfficial] = useState(false);
+  const [officialRecompute, setOfficialRecompute] = useState(true);
   const [trashAction, setTrashAction] = useState(null); // { type: "restore" | "purge" | "unofficial", id }
 
   // Minimal deep-link support: a link ending in #season or #elo opens
@@ -2215,23 +2433,49 @@ export default function TournamentManager() {
    * never a guess — mixing up two different people is far worse than an
    * occasional duplicate registry entry. */
   function findRegistryMatch(typedName) {
-    const norm = normalizeName(typedName);
-    if (registry.players[norm]) return registry.players[norm];
-    const tokens = norm.split(/\s+/).filter(Boolean);
-    const candidates = [];
-    Object.values(registry.players).forEach((p) => {
-      const pTokens = normalizeName(p.name).split(/\s+/).filter(Boolean);
-      const overlap = tokens.filter((t) => pTokens.includes(t)).length;
-      const score = overlap / Math.min(tokens.length, pTokens.length, 1);
-      if (score >= 1) candidates.push(p);
+    // 1) the exact spelling, or any spelling this person ever had
+    const key = normalizeName(typedName);
+    if (registry.players[key]) return registry.players[key];
+    // 2) the same words, ignoring accents and capitals
+    const typed = stripAccents(baseName(typedName));
+    for (const p of Object.values(registry.players)) {
+      if (personSpellings(p).some((s) => stripAccents(s) === typed)) return p;
+    }
+    // 3) every typed word belongs to exactly one person (e.g. just a surname)
+    const tokens = typed.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return null;
+    // After the migration only a PART of a name (e.g. a surname) matches on its
+    // own; the same words in another order are left to the "same player?" question.
+    const allowReorder = registry.identityVersion !== 2;
+    const candidates = Object.values(registry.players).filter((p) => {
+      const pTokens = wordsOf(p.name);
+      return tokens.every((t) => pTokens.includes(t)) && (allowReorder || tokens.length < pTokens.length);
     });
     return candidates.length === 1 ? candidates[0] : null;
   }
 
   function addPlayer() {
+    addPlayerCore(undefined);
+  }
+
+  /** forced: undefined (normal), { linkKey } (the admin said "yes, same
+   * player") or { createNew: true } (the admin said "no, a new person"). */
+  function addPlayerCore(forced) {
     const typed = newPlayerName.trim();
     if (!typed) return;
-    const match = findRegistryMatch(typed);
+    let match = forced && forced.linkKey ? registry.players[forced.linkKey] : findRegistryMatch(typed);
+    if (!match && !forced && registry.identityVersion === 2) {
+      const look = findLookalikePersons(typed, registry.players);
+      if (look.length > 0) {
+        setIdentityPrompt({ typed, candidates: look });
+        return;
+      }
+    }
+    if (forced && forced.linkKey && match) {
+      // remember this spelling as another way to write the same person
+      const aliases = [...new Set([...personSpellings(match), baseName(typed)])];
+      persistRegistry({ players: { ...registry.players, [forced.linkKey]: { ...match, aliases } } });
+    }
     let canonicalName = typed;
     let isDiscounted = false;
     let discountAmt = 32;
@@ -2246,10 +2490,8 @@ export default function TournamentManager() {
       return;
     }
     if (!match) {
-      const key = normalizeName(typed);
-      persistRegistry({
-        players: { ...registry.players, [key]: { name: typed, club: "", email: "", phone: "", membership: [], needsInfo: true, hasDiscount: false, discountAmount: 32 } },
-      });
+      const { key, entry } = registryWithNewPerson(typed);
+      persistRegistry({ players: { ...registry.players, [key]: entry } });
     }
     const newId = makeId();
     const updatedPlayers = [
@@ -2371,17 +2613,27 @@ export default function TournamentManager() {
     if (tokens.length === 0) return;
 
     const registryAdditions = {};
+    const batchByName = {};
     const resolvedPlayers = [];
+    const skippedLookalikes = [];
     tokens.forEach((typed) => {
-      const match = findRegistryMatch(typed) || registryAdditions[normalizeName(typed)];
+      const match = findRegistryMatch(typed) || registryAdditions[batchByName[baseName(typed)]];
       if (match) {
         resolvedPlayers.push({ name: match.name, hasDiscount: !!match.hasDiscount, discountAmount: match.discountAmount ?? 32 });
+      } else if (registry.identityVersion === 2 && findLookalikePersons(typed, registry.players).length > 0) {
+        // Never create a possible duplicate person silently — ask when adding one by one.
+        const first = findLookalikePersons(typed, registry.players)[0];
+        skippedLookalikes.push(`${typed} ≈ ${first.person.name}`);
       } else {
-        const key = normalizeName(typed);
-        registryAdditions[key] = { name: typed, club: "", email: "", phone: "", membership: [], needsInfo: true, hasDiscount: false, discountAmount: 32 };
+        const { key, entry } = registryWithNewPerson(typed);
+        registryAdditions[key] = entry;
+        batchByName[baseName(typed)] = key;
         resolvedPlayers.push({ name: typed, hasDiscount: false, discountAmount: 32 });
       }
     });
+    if (skippedLookalikes.length > 0) {
+      setNotice(`Δεν προστέθηκαν (μοιάζουν με υπάρχοντα πρόσωπα): ${skippedLookalikes.join(" · ")}. Πρόσθεσέ τους έναν-έναν, για να επιβεβαιώσεις αν είναι ο ίδιος παίκτης.`);
+    }
 
     if (Object.keys(registryAdditions).length > 0) {
       persistRegistry({ players: { ...registry.players, ...registryAdditions } });
@@ -2991,6 +3243,103 @@ export default function TournamentManager() {
     }
   }
 
+  /* ---- permanent person ids ---- */
+
+  function playerHasHistory(key) {
+    const h = eloData?.players?.[key];
+    return !!h && (h.games > 0 || h.matches > 0);
+  }
+
+  async function runIdentityPlan() {
+    setIdentityBusy(true);
+    try {
+      const names = new Map();
+      const ids = [...new Set([...archive.map((t) => t.id), ...trash.map((t) => t.id)])];
+      for (const id of ids) {
+        const d = await fetchTournamentData(id);
+        if (!d || !d.players) continue;
+        const seen = new Set();
+        d.players.forEach((p) => {
+          const b = baseName(p.name);
+          if (!b || seen.has(b)) return;
+          seen.add(b);
+          const cur = names.get(b) || { name: p.name, tournaments: 0 };
+          cur.tournaments += 1;
+          names.set(b, cur);
+        });
+      }
+      setIdentityPlan({ ...buildMigrationPlan({ registry, tournamentNames: names }), scanned: ids.length });
+      setIdentityDecisions({});
+    } finally {
+      setIdentityBusy(false);
+    }
+  }
+
+  async function applyIdentityMigration() {
+    if (!identityPlan || identityBusy) return;
+    const last = sysState.lastExportAt ? new Date(sysState.lastExportAt).getTime() : 0;
+    if (Date.now() - last > 24 * 3600 * 1000) {
+      showToast("Κάνε πρώτα Export All Data (των τελευταίων 24 ωρών).");
+      return;
+    }
+    setIdentityBusy(true);
+    try {
+      const migrated = buildMigratedRegistry(registry, identityPlan.unmatched, identityDecisions);
+      const saved = await saveRegistry(migrated);
+      if (!saved) {
+        showToast("Η αποθήκευση του μητρώου απέτυχε — δεν άλλαξε τίποτα.");
+        return;
+      }
+      setPersonLookup(migrated);
+      setRegistry(migrated);
+      setIdentityPlan(null);
+      await recomputeEloAndSeasonFromScratch();
+      await runConsistencyCheck();
+      setPhase("elo"); // the consistency report is shown there
+      showToast("Η μετάβαση σε μόνιμα ID ολοκληρώθηκε.");
+    } finally {
+      setIdentityBusy(false);
+    }
+  }
+
+  async function mergePersons(keepKey, absorbKey, runRecompute) {
+    const keep = registry.players[keepKey];
+    const absorb = registry.players[absorbKey];
+    if (!keep || !absorb || keepKey === absorbKey) return;
+    const union = (a, b) => [...new Map([...(a || []), ...(b || [])].map((m) => [JSON.stringify(m), m])).values()];
+    const merged = {
+      ...keep,
+      aliases: [...new Set([...personSpellings(keep), ...personSpellings(absorb)])],
+      club: keep.club || absorb.club,
+      email: keep.email || absorb.email,
+      phone: keep.phone || absorb.phone,
+      membership: union(keep.membership, absorb.membership),
+      hasDiscount: !!(keep.hasDiscount || absorb.hasDiscount),
+      discountAmount: keep.discountAmount ?? absorb.discountAmount ?? 32,
+      needsInfo: !!(keep.needsInfo && absorb.needsInfo),
+    };
+    const nextPlayers = { ...registry.players, [keepKey]: merged };
+    delete nextPlayers[absorbKey];
+    persistRegistry({ players: nextPlayers });
+    setMergeFor(null);
+    setMergeTarget("");
+    setExpandedRegistryPlayer(keepKey);
+    showToast(`Ενώθηκαν: «${absorb.name}» → «${keep.name}».`);
+    if (runRecompute) await recomputeEloAndSeasonFromScratch();
+  }
+
+  async function confirmOfficialToggle(runRecompute) {
+    const next = !isOfficial;
+    setConfirmingOfficial(false);
+    setIsOfficial(next);
+    if (!tournamentId) return;
+    await saveTournamentData(tournamentId, { ...currentSnapshot(), isOfficial: next });
+    const updated = archive.map((t) => (t.id === tournamentId ? { ...t, isOfficial: next } : t));
+    setArchive(updated);
+    await saveIndex(updated);
+    if (runRecompute) await recomputeEloAndSeasonFromScratch(updated);
+  }
+
   /* ---- data health: does the stored ELO / season match the catalogue? ---- */
 
   async function loadHealthInputs(indexOverride) {
@@ -2998,7 +3347,7 @@ export default function TournamentManager() {
     const seasons = {};
     for (const y of years) seasons[y] = await loadSeason(y);
     const index = Array.isArray(indexOverride) ? indexOverride : await loadIndex();
-    return { elo, seasons, index };
+    return { elo, seasons, index, display: new Map(PERSON_DISPLAY) };
   }
 
   async function refreshHealth(indexOverride) {
@@ -3028,24 +3377,35 @@ export default function TournamentManager() {
   /* ---- player registry ---- */
 
   function persistRegistry(next) {
-    setRegistry(next);
-    saveRegistry(next);
+    const merged = { ...registry, ...next };
+    setPersonLookup(merged);
+    setRegistry(merged);
+    saveRegistry(merged);
+  }
+
+  /** A fresh registry entry. After the migration it gets a permanent id and
+   * remembers the spelling it was created with; before it, the old name key. */
+  function registryWithNewPerson(name, extra = {}) {
+    const migrated = registry.identityVersion === 2;
+    const key = migrated ? newPersonId(registry.players) : normalizeName(name);
+    const entry = {
+      name,
+      ...(migrated ? { aliases: [baseName(name)] } : {}),
+      club: "", email: "", phone: "", membership: [], needsInfo: true, hasDiscount: false, discountAmount: 32,
+      ...extra,
+    };
+    return { key, entry };
   }
 
   function addRegistryPlayer() {
     let suffix = 1;
-    let key = normalizeName("New Player");
-    while (registry.players[key]) {
+    let name = "New Player";
+    while (registry.players[normalizeName(name)]) {
       suffix += 1;
-      key = normalizeName(`New Player ${suffix}`);
+      name = `New Player ${suffix}`;
     }
-    const name = suffix === 1 ? "New Player" : `New Player ${suffix}`;
-    const next = {
-      players: {
-        ...registry.players,
-        [key]: { name, club: "", email: "", phone: "", membership: [], needsInfo: true, hasDiscount: false, discountAmount: 32 },
-      },
-    };
+    const { key, entry } = registryWithNewPerson(name);
+    const next = { players: { ...registry.players, [key]: entry } };
     persistRegistry(next);
     setExpandedRegistryPlayer(key);
     loadPlayerTournamentHistory(name);
@@ -3059,8 +3419,22 @@ export default function TournamentManager() {
       showToast("Player needs a name before saving.");
       return;
     }
-    const newKey = normalizeName(newName);
     const stillNeedsInfo = contactDraft.email.trim() || contactDraft.phone.trim() ? false : player.needsInfo;
+    if (registry.identityVersion === 2) {
+      // The person keeps their permanent id; the new spelling becomes an alias
+      // next to the old ones, so every earlier tournament still finds them.
+      const taken = Object.entries(registry.players).find(([k, p]) => k !== key && personSpellings(p).includes(baseName(newName)));
+      if (taken) {
+        showToast(`Το όνομα «${newName}» ανήκει ήδη σε άλλο πρόσωπο (${taken[1].name}). Αν είναι ο ίδιος παίκτης, χρησιμοποίησε «Ένωση με άλλο πρόσωπο».`);
+        return;
+      }
+      const aliases = [...new Set([...personSpellings(player), baseName(newName)])];
+      const updated = { ...player, ...contactDraft, name: newName, aliases, needsInfo: stillNeedsInfo };
+      persistRegistry({ players: { ...registry.players, [key]: updated } });
+      showToast(`${newName} saved.`);
+      return;
+    }
+    const newKey = normalizeName(newName);
     const updated = { ...player, ...contactDraft, name: newName, needsInfo: stillNeedsInfo };
     const nextPlayers = { ...registry.players };
     if (newKey !== key) delete nextPlayers[key];
@@ -3137,7 +3511,6 @@ export default function TournamentManager() {
    * player card — recomputing per player would repeat the same replay. */
   async function computeEloTimeline() {
     setEloTimelineLoading(true);
-    const realDates = HISTORICAL_DAY_DATES;
     const working = { players: {} };
     const timeline = {};
 
@@ -3151,21 +3524,7 @@ export default function TournamentManager() {
       });
     }
 
-    for (let day = 1; day <= 11; day++) {
-      const dayRounds = HISTORICAL_ELO_ROUNDS_2026.slice((day - 1) * 5, day * 5);
-      const participants = new Set();
-      dayRounds.forEach((roundMatches) => {
-        applyEloRoundBatch(working, roundMatches, 7);
-        roundMatches.forEach((m) => {
-          if (m.ret) return;
-          participants.add(normalizeName(m.w));
-          participants.add(normalizeName(m.l));
-        });
-      });
-      snapshot(realDates[day], [...participants]);
-    }
-
-    const extraTournaments = archive.filter((t) => !t.id.startsWith("hist-day") && t.isOfficial).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const extraTournaments = archive.filter((t) => t.isOfficial).sort((a, b) => new Date(a.date) - new Date(b.date));
     for (const t of extraTournaments) {
       const data = await fetchTournamentData(t.id);
       if (!data || !data.history || !data.players) continue;
@@ -3228,8 +3587,8 @@ export default function TournamentManager() {
       if (data.phase === "finished") {
         data.players.forEach((p) => {
           const key = normalizeName(p.name);
-          if (!season.players[key]) season.players[key] = { name: p.name, entries: {} };
-          season.players[key].name = p.name;
+          if (!season.players[key]) season.players[key] = { name: displayNameFor(key, p.name), entries: {} };
+          season.players[key].name = displayNameFor(key, p.name);
           const wins = p.matchLog.filter((m) => m.method === "normal" && m.result === "win").length;
           const aa = p.matchLog.filter((m) => m.method === "retirement_win").length;
           const bye = p.matchLog.filter((m) => m.method === "bye").length;
@@ -3494,28 +3853,7 @@ export default function TournamentManager() {
       const key = normalizeName(playerName);
       const opponentsMap = {};
 
-      for (let day = 1; day <= 11; day++) {
-        const dayRounds = HISTORICAL_ELO_ROUNDS_2026.slice((day - 1) * 5, day * 5);
-        dayRounds.forEach((roundMatches) => {
-          roundMatches.forEach((m) => {
-            const wKey = normalizeName(m.w);
-            const lKey = normalizeName(m.l);
-            if (wKey !== key && lKey !== key) return;
-            const oppName = wKey === key ? m.l : m.w;
-            const oppKey = normalizeName(oppName);
-            if (!opponentsMap[oppKey]) opponentsMap[oppKey] = { name: oppName, meetings: [] };
-            opponentsMap[oppKey].meetings.push({
-              date: HISTORICAL_DAY_DATES[day],
-              tournamentName: `Ημέρα ${day}`,
-              winner: m.w,
-              loser: m.l,
-              method: m.ret ? "retirement" : "normal",
-            });
-          });
-        });
-      }
-
-      const others = archive.filter((t) => !t.id.startsWith("hist-day") && t.isOfficial).sort((a, b) => new Date(a.date) - new Date(b.date));
+      const others = archive.filter((t) => t.isOfficial).sort((a, b) => new Date(a.date) - new Date(b.date));
       for (const t of others) {
         const data = await fetchTournamentData(t.id);
         if (!data || !data.history || !data.players) continue;
@@ -3532,12 +3870,12 @@ export default function TournamentManager() {
             const oppKey = normalizeName(oppPlayer.name);
             if (!opponentsMap[oppKey]) opponentsMap[oppKey] = { name: oppPlayer.name, meetings: [] };
             if (pr.result.method === "double_retirement") {
-              opponentsMap[oppKey].meetings.push({ date: t.date, tournamentName: t.name, winner: null, loser: null, method: "double_retirement" });
+              opponentsMap[oppKey].meetings.push({ date: t.date, tournamentName: shortTournamentLabel(t.name), winner: null, loser: null, method: "double_retirement" });
             } else {
               const w = data.players.find((p) => p.id === pr.result.winnerId);
               const l = data.players.find((p) => p.id === pr.result.loserId);
               if (!w || !l) return;
-              opponentsMap[oppKey].meetings.push({ date: t.date, tournamentName: t.name, winner: w.name, loser: l.name, method: pr.result.method });
+              opponentsMap[oppKey].meetings.push({ date: t.date, tournamentName: shortTournamentLabel(t.name), winner: w.name, loser: l.name, method: pr.result.method });
             }
           });
         });
@@ -3545,8 +3883,10 @@ export default function TournamentManager() {
 
       const rows = Object.values(opponentsMap).map((o) => {
         const meetings = [...o.meetings].sort((a, b) => new Date(a.date) - new Date(b.date));
-        const wins = meetings.filter((m) => m.winner && normalizeName(m.winner) === key).length;
-        const total = meetings.length;
+        // A double retirement is listed but is not a game that anyone won or lost.
+        const decided = meetings.filter((m) => m.method !== "double_retirement");
+        const wins = decided.filter((m) => m.winner && normalizeName(m.winner) === key).length;
+        const total = decided.length;
         const losses = total - wins;
         const pct = total > 0 ? Math.round((wins / total) * 1000) / 10 : 0;
         return { name: o.name, meetings, total, wins, losses, pct };
@@ -4256,6 +4596,67 @@ export default function TournamentManager() {
           <Check size={16} color="var(--win)" />
           {toast}
         </div>
+      )}
+
+      {identityPrompt && (
+        <ConfirmDialog
+          title="Είναι ο ίδιος παίκτης;"
+          actions={
+            <>
+              <button className="btn-secondary" onClick={() => setIdentityPrompt(null)}>Άκυρο</button>
+              <button className="btn-secondary" onClick={() => { setIdentityPrompt(null); addPlayerCore({ createNew: true }); }}>Όχι, νέο πρόσωπο</button>
+            </>
+          }
+        >
+          <p style={{ margin: "0 0 10px 0" }}>
+            Το όνομα «<strong>{identityPrompt.typed}</strong>» μοιάζει με πρόσωπο που υπάρχει ήδη στο μητρώο. Αν είναι ο ίδιος παίκτης, το ιστορικό του μένει ενωμένο.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {identityPrompt.candidates.map((c) => (
+              <button key={c.key} className="btn-primary" onClick={() => { setIdentityPrompt(null); addPlayerCore({ linkKey: c.key }); }}>
+                Ναι, είναι ο/η {c.person.name}
+              </button>
+            ))}
+          </div>
+        </ConfirmDialog>
+      )}
+
+      {confirmingOfficial && (
+        <ConfirmDialog
+          title={isOfficial ? "Αλλαγή σε δοκιμαστικό τουρνουά" : "Αλλαγή σε επίσημο τουρνουά"}
+          actions={
+            <>
+              <button className="btn-secondary" onClick={() => setConfirmingOfficial(false)}>Άκυρο</button>
+              <button className="btn-primary" onClick={() => confirmOfficialToggle(officialRecompute)}>
+                {isOfficial ? "Αλλαγή σε δοκιμαστικό" : "Αλλαγή σε επίσημο"}
+              </button>
+            </>
+          }
+        >
+          {isOfficial ? (
+            <>
+              <p style={{ margin: "0 0 8px 0" }}>
+                Το τουρνουά <strong>παύει να μετράει</strong> στα Στατιστικά αμέσως. Αν έχει ήδη περαστεί στο ELO ή στη Βαθμολογία, μένει εκεί μέχρι το Recompute.
+              </p>
+              <p style={{ margin: "0 0 8px 0" }}>
+                Αυτή η αλλαγή <strong>επηρεάζει τα δεδομένα της Ομοσπονδίας</strong> (Βαθμολογία, ELO, Στατιστικά). Μην την κάνεις σε τουρνουά που έχει παιχτεί κανονικά.
+              </p>
+            </>
+          ) : (
+            <>
+              <p style={{ margin: "0 0 8px 0" }}>
+                Το τουρνουά <strong>αρχίζει να μετράει</strong> στα Στατιστικά, και σε κάθε Recompute στο ELO και στη Βαθμολογία.
+              </p>
+              <p style={{ margin: "0 0 8px 0" }}>
+                Αυτή η αλλαγή <strong>επηρεάζει τα δεδομένα της Ομοσπονδίας</strong>. Βεβαιώσου ότι είναι πραγματικό τουρνουά και όχι τεστ.
+              </p>
+            </>
+          )}
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+            <input type="checkbox" checked={officialRecompute} onChange={(e) => setOfficialRecompute(e.target.checked)} />
+            Μετά, Recompute του ELO και της Βαθμολογίας
+          </label>
+        </ConfirmDialog>
       )}
 
       {/* TOP BAR */}
@@ -5047,6 +5448,81 @@ export default function TournamentManager() {
               <span>Admin-only: contact info and membership status never appear to visitors.</span>
             </div>
 
+            {(() => {
+              const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
+              const sortedPersons = Object.entries(registry.players).sort((a, b) => a[1].name.localeCompare(b[1].name, "el"));
+              return (
+                <div className="card" style={{ marginBottom: 20, padding: "14px 18px" }}>
+                  <strong>Μόνιμα ID παικτών</strong>
+                  {registry.identityVersion === 2 ? (
+                    <p style={{ margin: "6px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
+                      ✓ Ενεργά{registry.migratedAt ? ` (μετάβαση ${formatDate(registry.migratedAt)})` : ""}. Κάθε παίκτης έχει μόνιμο ID και όλες οι γραφές του ονόματός του οδηγούν στο ίδιο πρόσωπο.
+                    </p>
+                  ) : (
+                    <>
+                      <p style={{ margin: "6px 0 10px 0", fontSize: 13, color: "var(--muted)" }}>
+                        Σήμερα ο παίκτης αναγνωρίζεται από το όνομά του. Η μετάβαση δίνει σε κάθε παίκτη μόνιμο ID, ώστε μια μετονομασία ή διόρθωση γραφής να μη χάνει ιστορικό. Πρώτα βλέπεις αναφορά, χωρίς καμία αλλαγή.
+                      </p>
+                      {!identityPlan ? (
+                        <button className="btn-secondary" onClick={runIdentityPlan} disabled={identityBusy}>
+                          {identityBusy ? "Έλεγχος…" : "Αναφορά μετάβασης (δεν αλλάζει τίποτα)"}
+                        </button>
+                      ) : (
+                        <>
+                          <p style={{ margin: "0 0 8px 0", fontSize: 13 }}>
+                            Ελέγχθηκαν {identityPlan.scanned} τουρνουά. Θα δημιουργηθούν <strong>{identityPlan.persons}</strong> μόνιμα ID από το μητρώο.
+                          </p>
+                          {identityPlan.unmatched.length === 0 ? (
+                            <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 8px 0" }}>✓ Όλα τα ονόματα των τουρνουά υπάρχουν στο μητρώο.</p>
+                          ) : (
+                            <div style={{ margin: "0 0 10px 0" }}>
+                              <p style={{ fontSize: 13, margin: "0 0 6px 0" }}>
+                                <strong>{identityPlan.unmatched.length}</strong> {identityPlan.unmatched.length === 1 ? "όνομα" : "ονόματα"} στα τουρνουά δεν υπάρχουν στο μητρώο. Για καθένα, διάλεξε αν είναι ήδη κάποιος παίκτης ή νέο πρόσωπο:
+                              </p>
+                              {identityPlan.unmatched.map((u) => (
+                                <div key={u.base} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6, fontSize: 13 }}>
+                                  <span style={{ minWidth: 190 }}><strong>{u.name}</strong> ({u.tournaments} τουρνουά)</span>
+                                  <select value={identityDecisions[u.base] ?? u.defaultChoice} onChange={(e) => setIdentityDecisions({ ...identityDecisions, [u.base]: e.target.value })}>
+                                    <option value="new">Νέο πρόσωπο</option>
+                                    {u.candidates.map((c) => (
+                                      <option key={c.key} value={c.key}>Είναι ο/η {c.name}</option>
+                                    ))}
+                                    <optgroup label="Άλλος παίκτης του μητρώου">
+                                      {sortedPersons.filter(([k]) => !u.candidates.some((c) => c.key === k)).map(([k, q]) => (
+                                        <option key={k} value={k}>{q.name}</option>
+                                      ))}
+                                    </optgroup>
+                                  </select>
+                                  {u.reason && <span style={{ color: "var(--muted)" }}>{u.reason}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {identityPlan.duplicates.length > 0 && (
+                            <p style={{ fontSize: 13, margin: "0 0 10px 0" }}>
+                              Πιθανά διπλά πρόσωπα στο μητρώο (θα μπορείς να τα ενώσεις μετά): {identityPlan.duplicates.map((g) => g.join(" ↔ ")).join(" · ")}
+                            </p>
+                          )}
+                          {!exportFresh && (
+                            <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+                              <span>Για να εφαρμόσεις τη μετάβαση χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
+                              <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
+                            </div>
+                          )}
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button className="btn-secondary" onClick={() => setIdentityPlan(null)} disabled={identityBusy}>Άκυρο</button>
+                            <button className="btn-primary" onClick={applyIdentityMigration} disabled={identityBusy || !exportFresh}>
+                              {identityBusy ? "Μετάβαση… (περίμενε)" : "Εφαρμογή μετάβασης"}
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+
             <div className="footer-actions" style={{ marginTop: 0, marginBottom: 20 }}>
               <button className="btn-secondary" onClick={addRegistryPlayer}>
                 <Plus size={16} /> Add Player
@@ -5224,7 +5700,9 @@ export default function TournamentManager() {
                       <button className="btn-primary" onClick={() => saveContactDraft(key)}>
                         <Save size={15} /> Save
                       </button>
-                      {confirmingDeletePlayer !== key ? (
+                      {playerHasHistory(key) ? (
+                        <span style={{ fontSize: 13, color: "var(--muted)" }}>Έχει ιστορικό αγώνων: δεν διαγράφεται από το μητρώο.</span>
+                      ) : confirmingDeletePlayer !== key ? (
                         <button className="btn-ghost" onClick={() => setConfirmingDeletePlayer(key)}>
                           <X size={14} /> Delete player
                         </button>
@@ -5245,6 +5723,38 @@ export default function TournamentManager() {
                         </span>
                       )}
                     </div>
+                    {registry.identityVersion === 2 && (
+                      <div style={{ marginTop: 10 }}>
+                        {mergeFor !== key ? (
+                          <button className="btn-ghost" onClick={() => { setMergeFor(key); setMergeTarget(""); }}>
+                            Ένωση με άλλο πρόσωπο…
+                          </button>
+                        ) : (
+                          <div className="delete-confirm" style={{ flexDirection: "column", alignItems: "stretch", gap: 8 }}>
+                            <span>
+                              Επίλεξε το πρόσωπο που είναι <strong>ο ίδιος παίκτης</strong>. Το ιστορικό και οι γραφές του περνούν στο «{p.name}» και η άλλη εγγραφή αφαιρείται.
+                            </span>
+                            <select value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)}>
+                              <option value="">— διάλεξε —</option>
+                              {Object.entries(registry.players)
+                                .filter(([k]) => k !== key)
+                                .sort((a, b) => a[1].name.localeCompare(b[1].name, "el"))
+                                .map(([k, q]) => (
+                                  <option key={k} value={k}>{q.name}</option>
+                                ))}
+                            </select>
+                            <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+                              <input type="checkbox" checked={mergeRecompute} onChange={(e) => setMergeRecompute(e.target.checked)} />
+                              Μετά, Recompute του ELO και της Βαθμολογίας
+                            </label>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button className="btn-secondary" onClick={() => setMergeFor(null)}>Άκυρο</button>
+                              <button className="btn-primary" disabled={!mergeTarget} onClick={() => mergePersons(key, mergeTarget, mergeRecompute)}>Ένωση</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -5763,7 +6273,7 @@ export default function TournamentManager() {
 
             {isAdmin && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                <button className="btn-ghost" onClick={toggleIsOfficial} title="Only Official days count when you recompute ELO & Season Standings from scratch">
+                <button className="btn-ghost" onClick={() => setConfirmingOfficial(true)} title="Only Official days count when you recompute ELO & Season Standings from scratch">
                   {isOfficial ? <Check size={13} color="var(--win)" /> : <X size={13} />} {isOfficial ? "Official League day" : "Test tournament (excluded from recompute)"}
                 </button>
               </div>
@@ -6009,7 +6519,7 @@ export default function TournamentManager() {
 
             {isAdmin && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                <button className="btn-ghost" onClick={toggleIsOfficial} title="Only Official days count when you recompute ELO & Season Standings from scratch">
+                <button className="btn-ghost" onClick={() => setConfirmingOfficial(true)} title="Only Official days count when you recompute ELO & Season Standings from scratch">
                   {isOfficial ? <Check size={13} color="var(--win)" /> : <X size={13} />} {isOfficial ? "Official League day" : "Test tournament (excluded from recompute)"}
                 </button>
               </div>
@@ -6654,7 +7164,7 @@ function TrashRow({ entry, busy, action, onAction, onRestore, onPurge, onUnoffic
       )}
       {action === "unofficial" && (
         <div className="delete-confirm" style={{ marginTop: 10, marginBottom: 0, flexDirection: "column", alignItems: "stretch", gap: 8 }}>
-          <span>Ένα επίσημο τουρνουά δεν διαγράφεται οριστικά. Αν το σημειώσεις ως ανεπίσημο, θα μπορείς να το διαγράψεις οριστικά από εδώ.</span>
+          <span>Ένα επίσημο τουρνουά δεν διαγράφεται οριστικά. Αν το σημειώσεις ως ανεπίσημο, παύει να μετράει στη Βαθμολογία, στο ELO και στα Στατιστικά, και θα μπορείς να το διαγράψεις οριστικά από εδώ. <strong>Η αλλαγή επηρεάζει τα δεδομένα της Ομοσπονδίας.</strong></span>
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn-secondary" disabled={busy} onClick={() => onAction(null)}>Άκυρο</button>
             <button className="btn-primary" disabled={busy} onClick={onUnofficial}>Σήμανση ως ανεπίσημο</button>
@@ -6680,7 +7190,9 @@ function ConsistencyReportView({ report, onClose }) {
     return arr.length > 12 ? [...shown, `…και ${arr.length - 12} ακόμα`] : shown;
   };
   const findings = [];
-  if (report.trackingMissing) findings.push({ level: "info", title: "Το ELO δεν έχει ακόμα καταγραφή προέλευσης", items: ["Ένα Recompute την δημιουργεί."] });
+  if (report.trackingMissing) findings.push({ level: "info", title: "Χρειάζεται ένα Recompute για να ξεκινήσει η καταγραφή προέλευσης", items: ["Δεν είναι σφάλμα."] });
+  if (report.unknownKeys.length) findings.push({ level: "warn", title: "Ονόματα στο ELO / Βαθμολογία χωρίς πρόσωπο στο μητρώο", items: cap(report.unknownKeys, (x) => x.name) });
+  if (report.nameStale.length) findings.push({ level: "warn", title: "Όνομα στο ELO / Βαθμολογία διαφορετικό από το μητρώο (θα διορθωθεί με Recompute)", items: cap(report.nameStale, (x) => `${x.from} → ${x.to}`) });
   const eloUnofficial = report.eloExtra.filter((x) => x.reason === "unofficial");
   const eloGone = report.eloExtra.filter((x) => x.reason === "missing");
   if (eloUnofficial.length) findings.push({ level: "warn", title: "Το ELO περιλαμβάνει δοκιμαστικά τουρνουά", items: cap(eloUnofficial, (x) => x.name) });
