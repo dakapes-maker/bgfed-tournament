@@ -28,6 +28,7 @@ import {
   AlertTriangle,
   LayoutGrid,
   List,
+  FileSpreadsheet,
 } from "lucide-react";
 
 import {
@@ -178,7 +179,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.07";
+const APP_BUILD_VERSION = "2026-10-09.08";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -204,6 +205,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.08",
+    date: "2026-10-09",
+    items: [
+      "Εισαγόμενα τουρνουά: τρίτη προβολή «Excel» — το αρχικό αρχείο της διοργάνωσης όπως ήταν (φύλλα, γραμμές, στήλες), με λήψη του αρχείου. Ο παίκτης που επιλέγεις στο Δέντρο σημειώνεται και στα κελιά του Excel.",
+    ],
+  },
   {
     version: "2026-10-09.07",
     date: "2026-10-09",
@@ -2787,6 +2795,7 @@ export default function TournamentManager() {
   const [importDateDraft, setImportDateDraft] = useState(null); // { date, dateEnd, dateAssumed }
   const [importConfirmDelete, setImportConfirmDelete] = useState(false);
   const importFileRef = useRef(null);
+  const sourceFileRef = useRef(null);
   const [importDocs, setImportDocs] = useState({}); // id -> imported tournament (public view, history, statistics)
   const [importReturn, setImportReturn] = useState(null); // where the public imported view goes back to
   const [historyCompetition, setHistoryCompetition] = useState(""); // player card history filter
@@ -6064,6 +6073,123 @@ export default function TournamentManager() {
     );
   }
 
+  /** The organiser's original spreadsheet, as it was (read-only). Cells that
+   * contain the highlighted player's surname are marked. */
+  function renderSourceSheets(doc) {
+    const sheets = doc.sourceSheets || [];
+    if (sheets.length === 0) return null;
+    const si = Math.min(importView?.sheet || 0, sheets.length - 1);
+    const sh = sheets[si];
+    const bold = new Set((sh.bold || []).map(([r, c]) => `${r}:${c}`));
+    const hl = importView?.highlight || null;
+    const hlSur = hl ? stripAccents(sourceSurname(hl)).toUpperCase() : null;
+    const colName = (i) => {
+      let n = "";
+      let x = i + 1;
+      while (x > 0) {
+        const m = (x - 1) % 26;
+        n = String.fromCharCode(65 + m) + n;
+        x = Math.floor((x - 1) / 26);
+      }
+      return n;
+    };
+    const download = () => {
+      try {
+        const f = doc.sourceFile;
+        const bin = atob(f.base64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([bytes], { type: f.mime || "application/octet-stream" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = f.name || "source.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+      } catch {
+        showToast("Η λήψη απέτυχε.");
+      }
+    };
+    return (
+      <>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+          <div className="tabs" style={{ margin: 0 }}>
+            {sheets.map((x, i) => (
+              <button key={x.name} className={`tab ${i === si ? "active" : ""}`} onClick={() => setImportView({ ...importView, sheet: i })}>{x.name}</button>
+            ))}
+          </div>
+          {doc.sourceFile && (
+            <button className="btn-secondary" onClick={download}><Download size={14} /> Λήψη αρχικού αρχείου</button>
+          )}
+        </div>
+        <div className="xs-wrap">
+          <table className="xs-table">
+            <thead>
+              <tr>
+                <th className="xs-corner"></th>
+                {(sh.widths || sh.rows[0].map(() => 9)).map((w, c) => (
+                  <th key={c} style={{ minWidth: Math.max(28, Math.round(w * 7)) }}>{colName(c)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sh.rows.map((row, r) => (
+                <tr key={r}>
+                  <th>{r + 1}</th>
+                  {row.map((v, c) => {
+                    const mark = hlSur && v && stripAccents(v).toUpperCase().includes(hlSur);
+                    return (
+                      <td key={c} className={`${bold.has(`${r}:${c}`) ? "b" : ""} ${mark ? "mark" : ""}`}>{v}</td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>
+    );
+  }
+
+  /** Admin: attaches the organiser's original spreadsheet (a prepared
+   * «bgfed-source/1» file) to an imported tournament, keeping everything else. */
+  function onSourceFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !importView) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      let src;
+      try {
+        src = JSON.parse(String(reader.result));
+        if (src.format !== "bgfed-source/1" || !Array.isArray(src.sourceSheets)) throw new Error("format");
+      } catch {
+        showToast("Το αρχείο δεν είναι αρχείο πηγής (bgfed-source/1).");
+        return;
+      }
+      let cur;
+      try {
+        cur = await fetchTournamentDataStrict(importView.id);
+      } catch {
+        cur = null;
+      }
+      if (!cur) {
+        showToast("Το τουρνουά δεν διαβάστηκε — δοκίμασε ξανά.");
+        return;
+      }
+      const next = { ...cur, sourceSheets: src.sourceSheets, ...(src.sourceFile ? { sourceFile: src.sourceFile } : {}) };
+      if (await saveTournamentData(importView.id, next)) {
+        setImportView({ ...importView, doc: next });
+        refreshImports();
+        showToast("Το αρχικό αρχείο προστέθηκε.");
+      } else {
+        reportSaveFailure("Εισαγωγές — το αρχικό αρχείο δεν αποθηκεύτηκε");
+      }
+    };
+    reader.readAsText(file);
+  }
+
   /** The body of an imported tournament (tabs: standings, rounds, details). */
   function renderImportBody(adminMode) {
     if (!importView) return null;
@@ -6115,7 +6241,7 @@ export default function TournamentManager() {
           )}
           {tab === "rounds" && (
             <>
-              {brackets.length > 1 && (
+              {brackets.length > 1 && importView.view !== "excel" && (
                 <div className="tabs" style={{ marginBottom: 8 }}>
                   {brackets.map((b) => (
                     <button
@@ -6131,17 +6257,31 @@ export default function TournamentManager() {
                   ))}
                 </div>
               )}
-              {brackets.length > 1 && (
+              {(brackets.length > 1 || (doc.sourceSheets || []).length > 0) && (
                 <div className="layout-toggle" role="group" aria-label="Εμφάνιση" style={{ marginBottom: 10 }}>
                   <button className={importView.view !== "tree" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "list" })}>
                     <List size={14} /> Λίστα
                   </button>
-                  <button className={importView.view === "tree" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "tree" })}>
-                    <LayoutGrid size={14} /> Δέντρο
-                  </button>
+                  {brackets.length > 1 && (
+                    <button className={importView.view === "tree" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "tree" })}>
+                      <LayoutGrid size={14} /> Δέντρο
+                    </button>
+                  )}
+                  {(doc.sourceSheets || []).length > 0 && (
+                    <button className={importView.view === "excel" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "excel" })}>
+                      <FileSpreadsheet size={14} /> Excel
+                    </button>
+                  )}
                 </div>
               )}
-              {importView.view === "tree" && brackets.length > 1 ? (
+              {importView.view === "excel" && (doc.sourceSheets || []).length > 0 ? (
+                <>
+                  <p className="cal-note" style={{ margin: "0 0 8px 0" }}>
+                    Το αρχικό αρχείο της διοργάνωσης, όπως ήταν. {importView.highlight ? `Σημειώνονται τα κελιά με «${sourceSurname(importView.highlight)}».` : "Διάλεξε έναν παίκτη στο Δέντρο για να σημειωθούν τα κελιά του."}
+                  </p>
+                  {renderSourceSheets(doc)}
+                </>
+              ) : importView.view === "tree" && brackets.length > 1 ? (
                 <>
                   <p className="cal-note" style={{ margin: "0 0 8px 0" }}>
                     Πάτα ένα όνομα για να φωτιστεί η πορεία του. Ετικέτες: <strong>Ο1, Κ6…</strong> θέση πίνακα · <strong>↓85</strong> ήρθε ως χαμένος του αγώνα 85 · <strong>Ν123</strong> ήρθε ως νικητής του αγώνα 123.
@@ -6203,6 +6343,14 @@ export default function TournamentManager() {
                   <Pencil size={14} /> Αλλαγή ημερομηνιών και σεζόν
                 </button>
               ))}
+              {adminMode && (
+                <div style={{ marginTop: 12 }}>
+                  <button className="btn-secondary" onClick={() => sourceFileRef.current?.click()}>
+                    <FileSpreadsheet size={14} /> {(doc.sourceSheets || []).length ? "Αντικατάσταση αρχικού αρχείου" : "Προσθήκη αρχικού αρχείου (.json)"}
+                  </button>
+                  <input type="file" accept="application/json,.json" ref={sourceFileRef} onChange={onSourceFile} style={{ display: "none" }} />
+                </div>
+              )}
               {adminMode && <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
                 {!importConfirmDelete ? (
                   <button className="btn-ghost" onClick={() => setImportConfirmDelete(true)}><Trash2 size={14} /> Διαγραφή εισαγωγής</button>
@@ -8131,6 +8279,14 @@ export default function TournamentManager() {
         .layout-toggle button + button { border-left: 1px solid var(--border); }
         .layout-toggle button.active { background: var(--accent); color: #fff; font-weight: 600; }
         .layout-toggle.mini { margin: 0; }
+        .xs-wrap { overflow: auto; max-height: 78vh; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+        .xs-table { border-collapse: collapse; font-size: 12px; font-family: Arial, sans-serif; }
+        .xs-table th { position: sticky; top: 0; background: #f3f3f3; color: #666; font-weight: 500; border: 1px solid #ddd; padding: 2px 4px; z-index: 1; }
+        .xs-table tbody th { position: sticky; left: 0; z-index: 1; text-align: right; min-width: 28px; }
+        .xs-table .xs-corner { left: 0; z-index: 2; }
+        .xs-table td { border: 1px solid #e6e6e6; padding: 2px 5px; white-space: nowrap; height: 20px; color: #222; }
+        .xs-table td.b { font-weight: 700; }
+        .xs-table td.mark { background: #ffe8a3; }
         .bt-wrap { overflow: auto; max-height: 78vh; border: 1px solid var(--border); border-radius: 10px; background: var(--surface, #fff); padding: 10px; }
         .bt-canvas { position: relative; }
         .bt-col-head { position: absolute; top: 0; font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
