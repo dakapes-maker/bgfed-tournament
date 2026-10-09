@@ -179,7 +179,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.08";
+const APP_BUILD_VERSION = "2026-10-09.09";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -205,6 +205,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.09",
+    date: "2026-10-09",
+    items: [
+      "Διόρθωση: η επισύναψη του αρχικού Excel σε εισαγόμενο τουρνουά απέτυχε, γιατί η βάση δεν δέχεται τα φύλλα στη μορφή που αποθηκεύονταν· τώρα αποθηκεύονται ως κείμενο. (Η αποτυχημένη προσπάθεια δεν είχε γράψει τίποτα.)",
+    ],
+  },
   {
     version: "2026-10-09.08",
     date: "2026-10-09",
@@ -1655,6 +1662,25 @@ function importCompetitionId(doc) {
   const c = String(doc?.competition || "").toLowerCase();
   if (c.includes("πρωταθλ")) return "final-phase";
   return "cup";
+}
+
+/** The organiser's original sheets of an imported tournament. Firestore does
+ * not accept arrays inside arrays, so the grid is stored as JSON text
+ * (sourceSheetsJson); parsed once per document and cached. */
+const SOURCE_SHEETS_CACHE = new Map();
+function sourceSheetsOf(doc) {
+  if (!doc) return [];
+  if (Array.isArray(doc.sourceSheets)) return doc.sourceSheets;
+  const txt = doc.sourceSheetsJson;
+  if (!txt) return [];
+  if (!SOURCE_SHEETS_CACHE.has(txt)) {
+    try {
+      SOURCE_SHEETS_CACHE.set(txt, JSON.parse(txt));
+    } catch {
+      SOURCE_SHEETS_CACHE.set(txt, []);
+    }
+  }
+  return SOURCE_SHEETS_CACHE.get(txt);
 }
 
 /** Season of an imported tournament: explicit (national competitions follow
@@ -6076,7 +6102,7 @@ export default function TournamentManager() {
   /** The organiser's original spreadsheet, as it was (read-only). Cells that
    * contain the highlighted player's surname are marked. */
   function renderSourceSheets(doc) {
-    const sheets = doc.sourceSheets || [];
+    const sheets = sourceSheetsOf(doc);
     if (sheets.length === 0) return null;
     const si = Math.min(importView?.sheet || 0, sheets.length - 1);
     const sh = sheets[si];
@@ -6178,7 +6204,8 @@ export default function TournamentManager() {
         showToast("Το τουρνουά δεν διαβάστηκε — δοκίμασε ξανά.");
         return;
       }
-      const next = { ...cur, sourceSheets: src.sourceSheets, ...(src.sourceFile ? { sourceFile: src.sourceFile } : {}) };
+      const { sourceSheets: _old, ...rest } = cur;
+      const next = { ...rest, sourceSheetsJson: JSON.stringify(src.sourceSheets), ...(src.sourceFile ? { sourceFile: src.sourceFile } : {}) };
       if (await saveTournamentData(importView.id, next)) {
         setImportView({ ...importView, doc: next });
         refreshImports();
@@ -6257,7 +6284,7 @@ export default function TournamentManager() {
                   ))}
                 </div>
               )}
-              {(brackets.length > 1 || (doc.sourceSheets || []).length > 0) && (
+              {(brackets.length > 1 || sourceSheetsOf(doc).length > 0) && (
                 <div className="layout-toggle" role="group" aria-label="Εμφάνιση" style={{ marginBottom: 10 }}>
                   <button className={importView.view !== "tree" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "list" })}>
                     <List size={14} /> Λίστα
@@ -6267,14 +6294,14 @@ export default function TournamentManager() {
                       <LayoutGrid size={14} /> Δέντρο
                     </button>
                   )}
-                  {(doc.sourceSheets || []).length > 0 && (
+                  {sourceSheetsOf(doc).length > 0 && (
                     <button className={importView.view === "excel" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "excel" })}>
                       <FileSpreadsheet size={14} /> Excel
                     </button>
                   )}
                 </div>
               )}
-              {importView.view === "excel" && (doc.sourceSheets || []).length > 0 ? (
+              {importView.view === "excel" && sourceSheetsOf(doc).length > 0 ? (
                 <>
                   <p className="cal-note" style={{ margin: "0 0 8px 0" }}>
                     Το αρχικό αρχείο της διοργάνωσης, όπως ήταν. {importView.highlight ? `Σημειώνονται τα κελιά με «${sourceSurname(importView.highlight)}».` : "Διάλεξε έναν παίκτη στο Δέντρο για να σημειωθούν τα κελιά του."}
@@ -6346,7 +6373,7 @@ export default function TournamentManager() {
               {adminMode && (
                 <div style={{ marginTop: 12 }}>
                   <button className="btn-secondary" onClick={() => sourceFileRef.current?.click()}>
-                    <FileSpreadsheet size={14} /> {(doc.sourceSheets || []).length ? "Αντικατάσταση αρχικού αρχείου" : "Προσθήκη αρχικού αρχείου (.json)"}
+                    <FileSpreadsheet size={14} /> {sourceSheetsOf(doc).length ? "Αντικατάσταση αρχικού αρχείου" : "Προσθήκη αρχικού αρχείου (.json)"}
                   </button>
                   <input type="file" accept="application/json,.json" ref={sourceFileRef} onChange={onSourceFile} style={{ display: "none" }} />
                 </div>
