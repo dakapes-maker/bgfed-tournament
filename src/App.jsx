@@ -179,7 +179,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.09";
+const APP_BUILD_VERSION = "2026-10-09.10";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -205,6 +205,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.10",
+    date: "2026-10-09",
+    items: [
+      "Εισαγόμενα τουρνουά: σύνδεσμος στο αρχικό αρχείο (π.χ. Google Drive) — κουμπί «Άνοιγμα σε νέα καρτέλα» στην προβολή Excel και στα Στοιχεία.",
+    ],
+  },
   {
     version: "2026-10-09.09",
     date: "2026-10-09",
@@ -2822,6 +2829,7 @@ export default function TournamentManager() {
   const [importConfirmDelete, setImportConfirmDelete] = useState(false);
   const importFileRef = useRef(null);
   const sourceFileRef = useRef(null);
+  const [sourceLinkDraft, setSourceLinkDraft] = useState(null); // admin: link to the original file (e.g. Google Drive)
   const [importDocs, setImportDocs] = useState({}); // id -> imported tournament (public view, history, statistics)
   const [importReturn, setImportReturn] = useState(null); // where the public imported view goes back to
   const [historyCompetition, setHistoryCompetition] = useState(""); // player card history filter
@@ -5938,6 +5946,7 @@ export default function TournamentManager() {
       setImportPreview(null);
       setImportDateDraft(null);
       setImportConfirmDelete(false);
+      setSourceLinkDraft(null);
       const b0 = doc.brackets && doc.brackets.length ? doc.brackets[0].id : "main";
       setImportView({ id, doc, tab: "standings", bracket: b0, round: Math.min(...(doc.matches || []).filter((m) => (m.bracket || "main") === b0).map((m) => m.round)) });
     } catch {
@@ -6145,6 +6154,11 @@ export default function TournamentManager() {
               <button key={x.name} className={`tab ${i === si ? "active" : ""}`} onClick={() => setImportView({ ...importView, sheet: i })}>{x.name}</button>
             ))}
           </div>
+          {doc.sourceLink && (
+            <a className="btn-secondary" href={doc.sourceLink} target="_blank" rel="noreferrer" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <LinkIcon size={14} /> Άνοιγμα σε νέα καρτέλα
+            </a>
+          )}
           {doc.sourceFile && (
             <button className="btn-secondary" onClick={download}><Download size={14} /> Λήψη αρχικού αρχείου</button>
           )}
@@ -6176,6 +6190,35 @@ export default function TournamentManager() {
         </div>
       </>
     );
+  }
+
+  /** Admin: saves the public link of the original file (e.g. Google Drive). */
+  async function saveSourceLink() {
+    if (!importView || sourceLinkDraft === null) return;
+    const link = sourceLinkDraft.trim();
+    if (link && !/^https:\/\//i.test(link)) {
+      showToast("Ο σύνδεσμος πρέπει να ξεκινά με https://");
+      return;
+    }
+    let cur;
+    try {
+      cur = await fetchTournamentDataStrict(importView.id);
+    } catch {
+      cur = null;
+    }
+    if (!cur) {
+      showToast("Το τουρνουά δεν διαβάστηκε — δοκίμασε ξανά.");
+      return;
+    }
+    const next = { ...cur, sourceLink: link };
+    if (await saveTournamentData(importView.id, next)) {
+      setImportView({ ...importView, doc: next });
+      setSourceLinkDraft(null);
+      refreshImports();
+      showToast(link ? "Ο σύνδεσμος αποθηκεύτηκε." : "Ο σύνδεσμος αφαιρέθηκε.");
+    } else {
+      reportSaveFailure("Εισαγωγές — ο σύνδεσμος του αρχικού αρχείου δεν αποθηκεύτηκε");
+    }
   }
 
   /** Admin: attaches the organiser's original spreadsheet (a prepared
@@ -6351,7 +6394,8 @@ export default function TournamentManager() {
                 <dt>Σύστημα</dt><dd>{doc.system || "—"}</dd>
                 <dt>Μήκος αγώνα</dt><dd>{doc.matchLength ? `${doc.matchLength} πόντοι` : "—"}</dd>
                 <dt>Παίκτες / αγώνες</dt><dd>{(doc.players || []).length} / {(doc.matches || []).filter((m) => m.method !== "bye").length}</dd>
-                <dt>Πηγή</dt><dd>{doc.sourceUrl ? <a href={doc.sourceUrl} target="_blank" rel="noreferrer">{doc.sourceName || doc.sourceUrl}</a> : "—"}</dd>
+                <dt>Πηγή</dt><dd>{doc.sourceUrl ? <a href={doc.sourceUrl} target="_blank" rel="noreferrer">{doc.sourceName || doc.sourceUrl}</a> : doc.sourceName || "—"}</dd>
+                {doc.sourceLink && (<><dt>Αρχικό αρχείο</dt><dd><a href={doc.sourceLink} target="_blank" rel="noreferrer">Άνοιγμα σε νέα καρτέλα</a></dd></>)}
                 <dt>Εισαγωγή</dt><dd>{doc.importedAt ? formatDate(doc.importedAt) : "—"}</dd>
               </dl>
               {adminMode && (importDateDraft ? (
@@ -6370,6 +6414,17 @@ export default function TournamentManager() {
                   <Pencil size={14} /> Αλλαγή ημερομηνιών και σεζόν
                 </button>
               ))}
+              {adminMode && (
+                <div className="row" style={{ marginTop: 12, alignItems: "flex-end" }}>
+                  <div className="field">
+                    <label>Σύνδεσμος αρχικού αρχείου (π.χ. Google Drive)</label>
+                    <input type="text" value={sourceLinkDraft ?? (doc.sourceLink || "")} onChange={(e) => setSourceLinkDraft(e.target.value)} placeholder="https://drive.google.com/…" />
+                  </div>
+                  <button className="btn-secondary" onClick={saveSourceLink} disabled={sourceLinkDraft === null || sourceLinkDraft.trim() === (doc.sourceLink || "")}>
+                    <Save size={14} /> Αποθήκευση
+                  </button>
+                </div>
+              )}
               {adminMode && (
                 <div style={{ marginTop: 12 }}>
                   <button className="btn-secondary" onClick={() => sourceFileRef.current?.click()}>
