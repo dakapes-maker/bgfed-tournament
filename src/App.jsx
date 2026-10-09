@@ -178,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.19";
+const APP_BUILD_VERSION = "2026-10-08.20";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -204,6 +204,17 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-08.20",
+    date: "2026-10-08",
+    items: [
+      "Διοργανώσεις: διαχειρίσιμες στη Διαχείριση (νέα, μετονομασία, διαγραφή όσων δεν έχουν τουρνουά). Κάθε διοργάνωση ανήκει σε έναν σύλλογο, και κάθε σύλλογος είναι μία κατάταξη ELO· η σημερινή ELO είναι αυτή του συλλόγου σου, με τα ίδια νούμερα.",
+      "Νέος φορέας «Πανελλήνιες Διοργανώσεις» με την Τελική Φάση Κυπέλλου και την Τελική Φάση Πρωταθλήματος. Οι φορείς δεν εμφανίζονται στις επιλογές παικτών.",
+      "Νέο τουρνουά: διαλέγεις διοργάνωση και ο σύλλογός της φαίνεται αυτόματα· το πεδίο «διοργανωτής» αφαιρέθηκε.",
+      "Μητρώο: φίλτρο συλλόγου, και σήμανση «Φιλοξενούμενος» για παίκτες εκτός ελληνικού μητρώου (χωρίς Αριθμό Μητρώου, κρυφοί εξ ορισμού).",
+      "Εισαγωγές: αντιστοίχιση των ονομάτων των εισαγόμενων τουρνουά με πρόσωπα του μητρώου (αυτόματες προτάσεις ή αρχείο αποφάσεων), με αναίρεση. Τα εισαγόμενα παραμένουν εκτός δημόσιας προβολής.",
+    ],
+  },
   {
     version: "2026-10-08.19",
     date: "2026-10-08",
@@ -1330,7 +1341,22 @@ const ELO_POOLS = {
   national: { label: "Πανελλήνια κατάταξη (Τελική φάση, Κύπελλο)", active: false },
 };
 
+/* Competitions belong to a club (Build 4A). Each owner club is one ELO
+ * ranking; the existing ELO is the ranking of the home club (Ομοσπονδία
+ * Backgammon). The component keeps these two in step with the settings on
+ * every render, so module-level helpers can use them. */
+let RUNTIME_COMPETITIONS = null;
+let RUNTIME_HOME_CLUB = null;
+
+function competitionById(id) {
+  const list = RUNTIME_COMPETITIONS || DEFAULT_COMPETITIONS;
+  return list.find((c) => c.id === (id || DEFAULT_COMPETITION_ID)) || DEFAULT_COMPETITIONS.find((c) => c.id === (id || DEFAULT_COMPETITION_ID)) || null;
+}
+
 function eloPoolOf(competitionId) {
+  const comp = competitionById(competitionId);
+  if (comp && comp.countsElo === false) return "none";
+  if (comp && comp.ownerClubId) return comp.ownerClubId === RUNTIME_HOME_CLUB ? "club" : "national";
   const c = DEFAULT_COMPETITIONS.find((x) => x.id === (competitionId || DEFAULT_COMPETITION_ID));
   return c ? c.pool : "club";
 }
@@ -1345,6 +1371,12 @@ function competitionsFrom(sys) {
  * no competition yet (before the Build 2 migration) is Premier League. */
 function countsTowardRatings(t) {
   return !!t && !!t.isOfficial && eloPoolOf(t.competitionId) === "club" && ELO_POOLS.club.active;
+}
+
+/** "Premier League (Ομοσπονδία Backgammon)" — the owner club, once set. */
+function competitionLabel(sys, c) {
+  const owner = c.ownerClubId ? clubDisplay(sys, c.ownerClubId, "") : "";
+  return owner ? `${c.name} (${owner})` : c.name;
 }
 
 function competitionName(competitions, id) {
@@ -1496,6 +1528,51 @@ function formatYMD(ymd) {
   if (!ymd) return "—";
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("el-GR", { weekday: "long", day: "numeric", month: "numeric", year: "numeric" });
+}
+
+/* ---- Name skeletons for matching imported names (Build 4A) -------------
+ * Greek and greeklish spellings of a surname reduced to one simplified
+ * form, so ZOIDIS, ΖΩΙΔΗΣ and «Ζωίδης» compare equal. A Latin spelling
+ * yields several variants (e.g. "OI" may be «οι» or «ο-ι»; H/P may be the
+ * Greek Η/Ρ typed with Latin letters). Used only to SUGGEST matches. */
+const SKEL_GREEK = [["ΜΠ","B"],["ΝΤ","D"],["ΓΚ","G"],["ΓΓ","G"],["ΟΥ","U"],["ΕΙ","I"],["ΟΙ","I"],["ΑΙ","E"],["ΑΥ","AV"],["ΕΥ","EV"],
+  ["Α","A"],["Β","V"],["Γ","G"],["Δ","D"],["Ε","E"],["Ζ","Z"],["Η","I"],["Θ","TH"],["Ι","I"],["Κ","K"],["Λ","L"],["Μ","M"],["Ν","N"],["Ξ","KS"],["Ο","O"],["Π","P"],["Ρ","R"],["Σ","S"],["Τ","T"],["Υ","I"],["Φ","F"],["Χ","H"],["Ψ","PS"],["Ω","O"]];
+function skelFinish(x) {
+  return x.replace(/[^A-Z]/g, "").replace(/(.)\1+/g, "$1");
+}
+function nameSkeletons(word) {
+  const s = stripAccents(String(word || "").toUpperCase()).replace(/Σ/g, "Σ");
+  if (/[Α-Ω]/.test(s)) {
+    let t = s;
+    SKEL_GREEK.forEach(([a, b]) => { t = t.split(a).join(b); });
+    return new Set([skelFinish(t)]);
+  }
+  const out = new Set();
+  for (const keepOI of [false, true]) {
+    for (const visual of [0, 1, 2]) {
+      let t = s;
+      if (visual >= 1) t = t.replace(/H/g, "I");
+      if (visual === 2) t = t.replace(/P/g, "R");
+      const reps = [["MP","B"],["NT","D"],["GK","G"],["OU","U"],["OY","U"],["EI","I"],["AI","E"],["CH","H"],["PH","F"],["X","H"],["Y","I"],["W","O"],["C","K"],["J","I"]];
+      if (!keepOI) reps.splice(6, 0, ["OI","I"]);
+      reps.forEach(([a, b]) => { t = t.split(a).join(b); });
+      out.add(skelFinish(t));
+    }
+  }
+  return out;
+}
+function skeletonsMinDistance(A, B) {
+  let best = 99;
+  A.forEach((a) => B.forEach((b) => { best = Math.min(best, editDistance(a, b)); }));
+  return best;
+}
+/** Surname part of a source name: "DIMAKIS S." -> "DIMAKIS"; "ΚΑΛΛΕΡΓΗ ΔΩΡΟΘΕΑ" -> "ΚΑΛΛΕΡΓΗ". */
+function sourceSurname(n) {
+  return String(n || "").trim().split(/\s+/)[0];
+}
+/** "ΜΗΛΙΩΝΗΣ" -> "Μηλιωνης", "PAPANDREOY" -> "Papandreoy" (accents unknown; editable). */
+function titleCaseName(n) {
+  return String(n || "").toLowerCase().replace(/(^|\s)(\S)/g, (m, sp, ch) => sp + ch.toUpperCase()).replace(/σ(\s|$)/g, "ς$1");
 }
 
 /* ---- Imported tournaments (isolated preview) ----------------------------
@@ -2626,7 +2703,10 @@ export default function TournamentManager() {
   const [importBusy, setImportBusy] = useState(false);
   const [importDateDraft, setImportDateDraft] = useState(null); // { date, dateEnd, dateAssumed }
   const [importConfirmDelete, setImportConfirmDelete] = useState(false);
-  const importFileRef = useRef(null); // ELO page: player whose rating breakdown is open // final standings exported in this session
+  const importFileRef = useRef(null);
+  const [matchPlan, setMatchPlan] = useState(null); // { rows, imports } — player matching of the imports
+  const [matchBusy, setMatchBusy] = useState(false);
+  const matchFileRef = useRef(null); // ELO page: player whose rating breakdown is open // final standings exported in this session
   const [statsScope, setStatsScope] = useState("all"); // Build 3C: Statistics period — "all" or a season year
   const [archiveSeason, setArchiveSeason] = useState(""); // Build 3C: tournaments list filters
   const [archiveCompetition, setArchiveCompetition] = useState("");
@@ -2643,7 +2723,10 @@ export default function TournamentManager() {
   const [clubNames, setClubNames] = useState({}); // key -> name of the new club
   const [clubBusy, setClubBusy] = useState(false);
   const [clubDraft, setClubDraft] = useState(null); // { id?, name } add / rename
-  const [regNoPlan, setRegNoPlan] = useState(null); // dry-run of the registry numbers
+  const [regNoPlan, setRegNoPlan] = useState(null);
+  const [compDraft, setCompDraft] = useState(null); // { id?, name, ownerClubId, countsElo } add / rename a competition
+  const [registryClubFilter, setRegistryClubFilter] = useState(""); // "" = all, "none" = without club, or a club id
+  const [showGuests, setShowGuests] = useState(false); // dry-run of the registry numbers
   const [rulesDraft, setRulesDraft] = useState(null); // { year, bestOf, cutoffR32, cutoffR48 } while editing season rules
   const [players, setPlayers] = useState([]);
   const [round, setRound] = useState(1);
@@ -2728,6 +2811,8 @@ export default function TournamentManager() {
   setPersonLookup(registry);
   const [trash, setTrash] = useState([]); // tournaments moved to the trash (restorable)
   const [sysState, setSysState] = useState({}); // lastExportAt, purgedIds
+  RUNTIME_COMPETITIONS = competitionsFrom(sysState);
+  RUNTIME_HOME_CLUB = sysState.homeClubId || null;
   const [health, setHealth] = useState(null); // result of buildConsistencyReport (admin only)
   const [consistencyReport, setConsistencyReport] = useState(null);
   const [consistencyLoading, setConsistencyLoading] = useState(false);
@@ -2952,7 +3037,7 @@ export default function TournamentManager() {
       return;
     }
     const p = registry.players[expandedRegistryPlayer];
-    setContactDraft({ name: p.name, club: p.club, clubId: p.clubId || null, email: p.email, phone: p.phone, hasDiscount: !!p.hasDiscount, discountAmount: p.discountAmount ?? 32 });
+    setContactDraft({ name: p.name, club: p.club, clubId: p.clubId || null, guest: !!p.guest, email: p.email, phone: p.phone, hasDiscount: !!p.hasDiscount, discountAmount: p.discountAmount ?? 32 });
   }, [expandedRegistryPlayer]);
 
   useEffect(() => {
@@ -4399,6 +4484,8 @@ export default function TournamentManager() {
       }
       const aliases = [...new Set([...personSpellings(player), baseName(newName)])];
       const updated = { ...player, ...contactDraft, name: newName, aliases, needsInfo: stillNeedsInfo };
+      // A guest who joins the Greek registry gets a registry number then.
+      if (!updated.guest && !updated.regNo && registry.regNoVersion === 1) updated.regNo = nextRegNo(registry);
       persistRegistry({ players: { ...registry.players, [key]: updated } });
       showToast(`${newName} saved.`);
       return;
@@ -5364,6 +5451,9 @@ export default function TournamentManager() {
       </div>
     ) : null;
   const builtFrom = eloData?.builtFrom;
+  // keep module-level helpers (ELO counting) in step with the settings
+  RUNTIME_COMPETITIONS = competitionsFrom(sysState);
+  RUNTIME_HOME_CLUB = sysState.homeClubId || null;
   // On the Season and ELO pages only the warning stays; the tools live in
   // the admin page ("Διαχείριση").
   const staleNotice = staleBlock ? (
@@ -5731,11 +5821,19 @@ export default function TournamentManager() {
           {tab === "standings" && (
             <div style={{ overflowX: "auto" }}>
               <table className="cal-table">
-                <thead><tr><th>Θέση</th><th>Παίκτης</th><th>Νίκες</th><th>Ήττες</th><th>Αγώνες</th></tr></thead>
+                <thead><tr><th>Θέση</th><th>Παίκτης</th>{doc.personMap && <th>Πρόσωπο μητρώου</th>}<th>Νίκες</th><th>Ήττες</th><th>Αγώνες</th></tr></thead>
                 <tbody>
-                  {(doc.placements || []).map((p) => (
-                    <tr key={p.name}><td>{p.position}</td><td>{p.name}</td><td>{p.wins}</td><td>{p.losses}</td><td>{p.matches}</td></tr>
-                  ))}
+                  {(doc.placements || []).map((p) => {
+                    const person = doc.personMap ? registry.players[doc.personMap[p.name]] : null;
+                    return (
+                      <tr key={p.name}>
+                        <td>{p.position}</td>
+                        <td>{p.name}</td>
+                        {doc.personMap && <td>{person ? `${person.name}${person.guest ? " (φιλοξ.)" : ""}` : "—"}</td>}
+                        <td>{p.wins}</td><td>{p.losses}</td><td>{p.matches}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
               <p className="cal-note" style={{ marginTop: 6 }}>Οι νίκες περιλαμβάνουν τα bye, όπως στην πηγή. Η σειρά είναι αυτή της πηγής.</p>
@@ -5837,6 +5935,7 @@ export default function TournamentManager() {
           </button>
         )}
         <input type="file" accept="application/json,.json" ref={importFileRef} onChange={onImportFile} style={{ display: "none" }} />
+        {importsList && importsList.length > 0 && !importPreview && renderMatchingCard()}
         {importPreview && (
           <div className="control-sub-card">
             <strong>Προεπισκόπηση: {importPreview.doc?.name || importPreview.fileName}</strong>
@@ -5862,6 +5961,407 @@ export default function TournamentManager() {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  /* ---- Build 4A: matching imported names to persons ---- */
+
+  /** Builds the matching table for every imported tournament not matched yet.
+   * `decisions` (optional) is a prepared file: rows of { names, action,
+   * person | name, club, guest }. Changes nothing. */
+  async function buildMatchPlan(decisions) {
+    setMatchBusy(true);
+    try {
+      const list = importsList || [];
+      const imports = [];
+      for (const t of list) {
+        let d;
+        try {
+          d = await fetchTournamentDataStrict(t.id);
+        } catch {
+          showToast("Κάποιο εισαγόμενο τουρνουά δεν διαβάστηκε — δοκίμασε ξανά.");
+          return;
+        }
+        if (d && !d.personMap) imports.push({ id: t.id, name: d.name, doc: d });
+      }
+      if (imports.length === 0) {
+        showToast("Όλα τα εισαγόμενα τουρνουά έχουν ήδη αντιστοιχιστεί.");
+        return;
+      }
+      // every source name with where it appears
+      const occ = {};
+      imports.forEach((imp) => {
+        const pos = Object.fromEntries((imp.doc.placements || []).map((p) => [p.name, p.position]));
+        (imp.doc.players || []).forEach((n) => {
+          occ[n] = occ[n] || [];
+          occ[n].push({ importId: imp.id, importName: imp.name, position: pos[n] });
+        });
+      });
+      const persons = Object.entries(registry.players);
+      const byName = (nm) => persons.find(([, p]) => p.name.trim().toLowerCase() === String(nm || "").trim().toLowerCase());
+      const clubByName = (nm) => {
+        if (!nm) return null;
+        const k = normClubKey(nm);
+        return clubsFrom(sysState).find((c) => !c.organiserOnly && (normClubKey(c.name) === k || (c.aliases || []).some((a) => normClubKey(a) === k))) || null;
+      };
+      const rows = [];
+      const taken = new Set();
+      // 1. groups from the prepared decisions
+      (decisions?.rows || []).forEach((r) => {
+        const names = (r.names || []).filter((n) => occ[n] && !taken.has(n));
+        if (names.length === 0) return;
+        names.forEach((n) => taken.add(n));
+        let choice = null;
+        let note = "";
+        if (r.action === "existing") {
+          const hit = byName(r.person);
+          if (hit) choice = { type: "existing", key: hit[0] };
+          else note = `Το πρόσωπο «${r.person}» δεν βρέθηκε στο μητρώο — διάλεξε.`;
+        } else if (r.action === "new") {
+          const club = clubByName(r.club);
+          choice = { type: "new", name: r.name || titleCaseName(names[0]), clubId: club ? club.id : null, guest: !!r.guest };
+          if (r.club && !club && !r.guest) note = `Ο σύλλογος «${r.club}» δεν υπάρχει στη λίστα.`;
+        }
+        rows.push({ names, level: "Από το αρχείο αποφάσεων", choice, note });
+      });
+      // 2. the rest, grouped by skeleton across imports
+      Object.keys(occ).filter((n) => !taken.has(n)).forEach((n) => {
+        const sk = nameSkeletons(sourceSurname(n));
+        const g = rows.find((r) => r.auto && r.names.every((m) => !occ[m].some((o) => occ[n].some((p) => p.importId === o.importId))) && [...nameSkeletons(sourceSurname(r.names[0]))].some((x) => sk.has(x)));
+        if (g) g.names.push(n);
+        else rows.push({ names: [n], auto: true });
+        taken.add(n);
+      });
+      rows.filter((r) => r.auto).forEach((r) => {
+        const known = persons.filter(([, p]) => (p.extNames || []).some((x) => r.names.includes(x)));
+        if (known.length === 1) {
+          r.level = "Γνωστή γραφή";
+          r.choice = { type: "existing", key: known[0][0] };
+          return;
+        }
+        const sks = new Set(r.names.flatMap((n) => [...nameSkeletons(sourceSurname(n))]));
+        const exact = persons.filter(([, p]) => [...nameSkeletons(sourceSurname(p.name))].some((x) => sks.has(x)));
+        if (exact.length === 1) {
+          r.level = "Βέβαιο";
+          r.choice = { type: "existing", key: exact[0][0] };
+        } else if (exact.length > 1) {
+          r.level = "Αμφίσημο";
+          r.candidates = exact.map(([k]) => k);
+        } else {
+          const close = persons.filter(([, p]) => skeletonsMinDistance(sks, nameSkeletons(sourceSurname(p.name))) <= 1 && sourceSurname(r.names[0]).length >= 5);
+          if (close.length) {
+            r.level = "Πιθανό";
+            r.candidates = close.map(([k]) => k);
+          } else {
+            r.level = "Νέο πρόσωπο";
+            r.choice = { type: "new", name: titleCaseName(r.names[0]), clubId: null, guest: false };
+          }
+        }
+      });
+      rows.forEach((r) => { r.occ = r.names.flatMap((n) => occ[n].map((o) => ({ ...o, name: n }))); });
+      const order = { "Αμφίσημο": 0, "Πιθανό": 1, "Από το αρχείο αποφάσεων": 2, "Γνωστή γραφή": 3, "Βέβαιο": 4, "Νέο πρόσωπο": 5 };
+      rows.sort((a, b) => (order[a.level] ?? 9) - (order[b.level] ?? 9) || a.names[0].localeCompare(b.names[0]));
+      setMatchPlan({ rows, imports: imports.map((i) => ({ id: i.id, name: i.name })) });
+    } finally {
+      setMatchBusy(false);
+    }
+  }
+
+  function onMatchFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const doc = JSON.parse(String(reader.result));
+        if (doc.format !== "bgfed-matching/1") throw new Error("format");
+        buildMatchPlan(doc);
+      } catch {
+        showToast("Το αρχείο αποφάσεων δεν διαβάζεται (bgfed-matching/1).");
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  function setMatchChoice(i, choice) {
+    setMatchPlan((mp) => ({ ...mp, rows: mp.rows.map((r, j) => (j === i ? { ...r, choice } : r)) }));
+  }
+
+  /** Problems that block applying the plan. */
+  function matchPlanProblems(mp) {
+    const out = [];
+    mp.rows.forEach((r) => {
+      if (!r.choice) out.push(`«${r.names.join(" / ")}»: δεν έχει γίνει επιλογή.`);
+      else if (r.choice.type === "new" && !String(r.choice.name || "").trim()) out.push(`«${r.names.join(" / ")}»: το νέο πρόσωπο χρειάζεται όνομα.`);
+    });
+    // the same person twice in one tournament is impossible
+    const seen = {};
+    mp.rows.forEach((r) => {
+      if (r.choice?.type !== "existing") return;
+      r.occ.forEach((o) => {
+        const k = `${o.importId}|${r.choice.key}`;
+        if (seen[k] && seen[k] !== r) out.push(`${registry.players[r.choice.key]?.name}: αντιστοιχίζεται σε δύο διαφορετικά ονόματα του «${o.importName}».`);
+        seen[k] = r;
+      });
+    });
+    // a new person's name must not belong to someone else already
+    const spellings = new Map();
+    Object.entries(registry.players).forEach(([k, p]) => personSpellings(p).forEach((sp) => spellings.set(sp, k)));
+    const newNames = new Set();
+    mp.rows.forEach((r) => {
+      if (r.choice?.type !== "new") return;
+      const b = baseName(r.choice.name || "");
+      if (spellings.has(b)) out.push(`Το όνομα «${r.choice.name}» υπάρχει ήδη στο μητρώο (${registry.players[spellings.get(b)]?.name}) — διάλεξε «Ίδιο με» ή άλλαξε το όνομα.`);
+      if (newNames.has(b)) out.push(`Δύο νέα πρόσωπα με το ίδιο όνομα «${r.choice.name}».`);
+      newNames.add(b);
+    });
+    return [...new Set(out)];
+  }
+
+  async function applyMatchPlan() {
+    if (!matchPlan || matchBusy) return;
+    const problems = matchPlanProblems(matchPlan);
+    if (problems.length) {
+      showToast("Υπάρχουν εκκρεμότητες στην αντιστοίχιση.");
+      return;
+    }
+    const last = sysState.lastExportAt ? new Date(sysState.lastExportAt).getTime() : 0;
+    if (Date.now() - last > 24 * 3600 * 1000) {
+      showToast("Κάνε πρώτα Export All Data (των τελευταίων 24 ωρών).");
+      return;
+    }
+    setMatchBusy(true);
+    try {
+      const players = { ...registry.players };
+      let topNo = nextRegNo(registry) - 1;
+      const created = [];
+      const linked = {}; // key -> names added to extNames
+      const keyOfName = {};
+      matchPlan.rows.forEach((r) => {
+        let key;
+        if (r.choice.type === "existing") {
+          key = r.choice.key;
+          const p = players[key];
+          players[key] = { ...p, extNames: [...new Set([...(p.extNames || []), ...r.names])] };
+          linked[key] = [...new Set([...(linked[key] || []), ...r.names])];
+        } else {
+          key = registry.identityVersion === 2 ? newPersonId(players) : normalizeName(r.choice.name);
+          const name = r.choice.name.trim();
+          const club = r.choice.clubId ? clubsFrom(sysState).find((c) => c.id === r.choice.clubId) : null;
+          players[key] = {
+            name,
+            ...(registry.identityVersion === 2 ? { aliases: [baseName(name)] } : {}),
+            club: club ? club.name : "",
+            clubId: club ? club.id : null,
+            email: "", phone: "", membership: [], needsInfo: false, hasDiscount: false, discountAmount: 32,
+            guest: !!r.choice.guest,
+            ...(registry.regNoVersion === 1 && !r.choice.guest ? { regNo: ++topNo } : {}),
+            extNames: [...r.names],
+            createdByImport: true,
+          };
+          created.push(key);
+        }
+        r.names.forEach((n) => { keyOfName[n] = key; });
+      });
+      const nextRegistry = { ...registry, players, ...(registry.regNoVersion === 1 ? { regNoMax: Math.max(registry.regNoMax || 0, topNo) } : {}) };
+      if (!(await saveRegistryChecked(nextRegistry))) return;
+      setPersonLookup(nextRegistry);
+      setRegistry(nextRegistry);
+      for (const imp of matchPlan.imports) {
+        let d;
+        try {
+          d = await fetchTournamentDataStrict(imp.id);
+        } catch {
+          d = null;
+        }
+        if (!d) {
+          reportSaveFailure(`Αντιστοίχιση — το «${imp.name}» δεν διαβάστηκε· τα πρόσωπα δημιουργήθηκαν, ξανάνοιξε την αντιστοίχιση για να συνδεθεί`);
+          return;
+        }
+        const personMap = Object.fromEntries((d.players || []).map((n) => [n, keyOfName[n]]).filter(([, k]) => k));
+        if (!(await saveTournamentData(imp.id, { ...d, personMap }))) {
+          reportSaveFailure(`Αντιστοίχιση — το «${imp.name}» δεν αποθηκεύτηκε`);
+          return;
+        }
+      }
+      const record = { at: new Date().toISOString(), created, linked, imports: matchPlan.imports.map((i) => i.id) };
+      const patch = { importMatching: [...(sysState.importMatching || []), record] };
+      if (await saveSysState(patch)) setSysState((st) => ({ ...st, ...patch }));
+      else reportSaveFailure("Αντιστοίχιση — ολοκληρώθηκε, αλλά δεν καταγράφηκε (η αναίρεση δεν θα είναι διαθέσιμη)");
+      setMatchPlan(null);
+      showToast(`Αντιστοίχιση: ${created.length} νέα πρόσωπα, ${Object.keys(linked).length} υπάρχοντα.`);
+    } finally {
+      setMatchBusy(false);
+    }
+  }
+
+  /** Undo of the last matching: removes the persons it created (unless they
+   * have played in one of our tournaments since) and unlinks the imports. */
+  async function undoLastMatching() {
+    const all = sysState.importMatching || [];
+    const rec = all[all.length - 1];
+    if (!rec || matchBusy) return;
+    setMatchBusy(true);
+    try {
+      const players = { ...registry.players };
+      const kept = [];
+      rec.created.forEach((k) => {
+        if (eloData.players?.[k]) kept.push(players[k]?.name || k);
+        else delete players[k];
+      });
+      Object.entries(rec.linked || {}).forEach(([k, names]) => {
+        if (players[k]) players[k] = { ...players[k], extNames: (players[k].extNames || []).filter((n) => !names.includes(n)) };
+      });
+      const nextRegistry = { ...registry, players };
+      if (!(await saveRegistryChecked(nextRegistry))) return;
+      setPersonLookup(nextRegistry);
+      setRegistry(nextRegistry);
+      for (const id of rec.imports) {
+        let d;
+        try {
+          d = await fetchTournamentDataStrict(id);
+        } catch {
+          d = null;
+        }
+        if (d && d.personMap) {
+          const { personMap: _drop, ...rest } = d;
+          await saveTournamentData(id, rest);
+        }
+      }
+      const patch = { importMatching: all.slice(0, -1) };
+      if (await saveSysState(patch)) setSysState((st) => ({ ...st, ...patch }));
+      showToast(kept.length ? `Αναιρέθηκε. Κρατήθηκαν (έχουν παίξει από τότε): ${kept.join(", ")}` : "Η αντιστοίχιση αναιρέθηκε.");
+    } finally {
+      setMatchBusy(false);
+    }
+  }
+
+  function renderMatchingCard() {
+    const recs = sysState.importMatching || [];
+    const last = recs[recs.length - 1];
+    const playersSorted = Object.entries(registry.players).sort((a, b) => a[1].name.localeCompare(b[1].name, "el"));
+    const playerClubs = [...clubsFrom(sysState)].filter((c) => !c.organiserOnly).sort((a, b) => a.name.localeCompare(b.name, "el"));
+    const sel = { fontSize: 14, padding: "5px 8px", border: "1px solid var(--border)", borderRadius: 6, background: "#fff", maxWidth: 260 };
+    return (
+      <div className="control-sub-card">
+        <strong>Αντιστοίχιση παικτών με το μητρώο</strong>
+        {last && !matchPlan && (
+          <p style={{ fontSize: 13, margin: "6px 0" }}>
+            ✓ Τελευταία αντιστοίχιση: {formatDate(last.at)} — {last.created.length} νέα πρόσωπα, {Object.keys(last.linked || {}).length} υπάρχοντα.{" "}
+            <button className="btn-ghost" onClick={undoLastMatching} disabled={matchBusy}>Αναίρεση</button>
+          </p>
+        )}
+        {!matchPlan ? (
+          <>
+            <p className="control-sub" style={{ marginTop: 6 }}>
+              Κάθε όνομα των εισαγόμενων τουρνουά γίνεται πρόσωπο του μητρώου — υπάρχον ή νέο. Πρώτα βλέπεις τον πίνακα· τίποτα δεν αλλάζει μέχρι την «Εφαρμογή».
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button className="btn-secondary" onClick={() => buildMatchPlan(null)} disabled={matchBusy || !importsList || importsList.length === 0}>
+                {matchBusy ? "Υπολογισμός…" : "Αντιστοίχιση (με αυτόματες προτάσεις)"}
+              </button>
+              <button className="btn-secondary" onClick={() => matchFileRef.current?.click()} disabled={matchBusy || !importsList || importsList.length === 0}>
+                <Upload size={14} /> Με αρχείο αποφάσεων (.json)
+              </button>
+            </div>
+          </>
+        ) : (
+          (() => {
+            const problems = matchPlanProblems(matchPlan);
+            const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
+            const nNew = matchPlan.rows.filter((r) => r.choice?.type === "new").length;
+            const nGuests = matchPlan.rows.filter((r) => r.choice?.type === "new" && r.choice.guest).length;
+            const nExisting = matchPlan.rows.filter((r) => r.choice?.type === "existing").length;
+            return (
+              <>
+                <p style={{ fontSize: 13, margin: "6px 0" }}>
+                  {matchPlan.rows.length} πρόσωπα από {matchPlan.imports.map((i) => i.name).join(", ")} · {nExisting} υπάρχοντα · {nNew} νέα ({nGuests} φιλοξενούμενοι)
+                </p>
+                <div style={{ overflowX: "auto", maxHeight: 560, overflowY: "auto" }}>
+                  <table className="cal-table">
+                    <thead><tr><th>Όνομα στην πηγή</th><th>Επίπεδο</th><th>Πρόσωπο</th><th>Στοιχεία νέου προσώπου</th></tr></thead>
+                    <tbody>
+                      {matchPlan.rows.map((r, i) => {
+                        const c = r.choice;
+                        const value = !c ? "" : c.type === "new" ? "__new" : c.key;
+                        const cand = new Set(r.candidates || []);
+                        return (
+                          <tr key={i}>
+                            <td>
+                              {r.occ.map((o, j) => (
+                                <div key={j}>{o.name} <span className="cal-note">· {o.importName}{o.position ? `, ${o.position}ος` : ""}</span></div>
+                              ))}
+                              {r.note && <div className="field-warning" style={{ margin: 0 }}>{r.note}</div>}
+                            </td>
+                            <td>{r.level}</td>
+                            <td>
+                              <select
+                                value={value}
+                                style={sel}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (!v) setMatchChoice(i, null);
+                                  else if (v === "__new") setMatchChoice(i, { type: "new", name: titleCaseName(r.names[0]), clubId: null, guest: false });
+                                  else setMatchChoice(i, { type: "existing", key: v });
+                                }}
+                              >
+                                <option value="">— επίλεξε —</option>
+                                <option value="__new">Νέο πρόσωπο</option>
+                                {cand.size > 0 && (
+                                  <optgroup label="Προτάσεις">
+                                    {[...cand].map((k) => <option key={k} value={k}>{registry.players[k]?.name}</option>)}
+                                  </optgroup>
+                                )}
+                                <optgroup label="Όλο το μητρώο">
+                                  {playersSorted.filter(([k]) => !cand.has(k)).map(([k, p]) => <option key={k} value={k}>{p.name}{p.guest ? " (φιλοξ.)" : ""}</option>)}
+                                </optgroup>
+                              </select>
+                            </td>
+                            <td>
+                              {c?.type === "new" && (
+                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                  <input type="text" value={c.name} onChange={(e) => setMatchChoice(i, { ...c, name: e.target.value })} style={{ width: 170, padding: "5px 8px", fontSize: 14 }} />
+                                  <select value={c.clubId || ""} style={sel} disabled={c.guest} onChange={(e) => setMatchChoice(i, { ...c, clubId: e.target.value || null })}>
+                                    <option value="">χωρίς σύλλογο</option>
+                                    {playerClubs.map((cl) => <option key={cl.id} value={cl.id}>{cl.name}</option>)}
+                                  </select>
+                                  <label style={{ fontSize: 13, display: "flex", gap: 4, alignItems: "center" }}>
+                                    <input type="checkbox" checked={!!c.guest} onChange={(e) => setMatchChoice(i, { ...c, guest: e.target.checked, clubId: e.target.checked ? null : c.clubId })} /> φιλοξ.
+                                  </label>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {problems.length > 0 && (
+                  <div className="field-warning">
+                    ⚠ Πριν την εφαρμογή:
+                    <ul style={{ margin: "4px 0 0 0", paddingLeft: 18 }}>{problems.slice(0, 10).map((p, k) => <li key={k}>{p}</li>)}</ul>
+                  </div>
+                )}
+                {!exportFresh && (
+                  <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                    <span>Για την εφαρμογή χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
+                    <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button className="btn-secondary" onClick={() => setMatchPlan(null)} disabled={matchBusy}>Άκυρο</button>
+                  <button className="btn-primary" onClick={applyMatchPlan} disabled={matchBusy || problems.length > 0 || !exportFresh}>
+                    {matchBusy ? "Εφαρμογή… (περίμενε)" : "Εφαρμογή αντιστοίχισης"}
+                  </button>
+                </div>
+              </>
+            );
+          })()
+        )}
+        <input type="file" accept="application/json,.json" ref={matchFileRef} onChange={onMatchFile} style={{ display: "none" }} />
       </div>
     );
   }
@@ -5971,6 +6471,167 @@ export default function TournamentManager() {
           </li>
         </ol>
         {renderLockPrompt("lock", year, `Μετά το κλείσιμο, οι κανόνες, το ημερολόγιο και τα αποτελέσματα της σεζόν ${year} προστατεύονται από αλλαγές.`)}
+      </div>
+    );
+  }
+
+  /* ---- Competitions owned by clubs (Build 4A) ---- */
+
+  /** One-off upgrade: every competition gets the club it belongs to. The
+   * finals go to a new organiser-only club «Πανελλήνιες Διοργανώσεις» and are
+   * renamed. Numbers do not change: the home club's ranking is today's ELO. */
+  async function upgradeCompetitions() {
+    if (!clubsActive(sysState) || !sysState.homeClubId) {
+      showToast("Χρειάζεται πρώτα η λίστα συλλόγων με επιλεγμένο «ο σύλλογός μου».");
+      return;
+    }
+    const clubs = [...clubsFrom(sysState)];
+    let national = clubs.find((c) => c.organiserOnly && normClubKey(c.name) === normClubKey("Πανελλήνιες Διοργανώσεις"));
+    if (!national) {
+      national = { id: newClubId(), name: "Πανελλήνιες Διοργανώσεις", aliases: [], organiserOnly: true };
+      clubs.push(national);
+    }
+    const competitions = competitionsFrom(sysState).map((c) => {
+      if (c.id === DEFAULT_COMPETITION_ID) return { ...c, ownerClubId: sysState.homeClubId, countsElo: true };
+      if (c.id === "final-phase") return { ...c, name: "Τελική Φάση Πρωταθλήματος", ownerClubId: national.id, countsElo: true };
+      if (c.id === "cup") return { ...c, name: "Τελική Φάση Κυπέλλου", ownerClubId: national.id, countsElo: true };
+      return c.ownerClubId ? c : { ...c, ownerClubId: national.id, countsElo: c.countsElo !== false };
+    });
+    const patch = { clubs, competitions, competitionsVersion: 2 };
+    if (await saveSysState(patch)) {
+      setSysState((st) => ({ ...st, ...patch }));
+      showToast("Οι διοργανώσεις συνδέθηκαν με συλλόγους.");
+    } else {
+      reportSaveFailure("Διοργανώσεις — η αναβάθμιση δεν αποθηκεύτηκε");
+    }
+  }
+
+  async function saveCompDraft() {
+    const name = (compDraft?.name || "").trim();
+    if (!name) return;
+    const comps = competitionsFrom(sysState);
+    if (comps.some((c) => c.id !== compDraft.id && c.name.trim().toLowerCase() === name.toLowerCase())) {
+      showToast("Υπάρχει ήδη διοργάνωση με αυτό το όνομα.");
+      return;
+    }
+    let next;
+    if (compDraft.id) {
+      next = comps.map((c) => (c.id === compDraft.id ? { ...c, name } : c));
+    } else {
+      if (!compDraft.ownerClubId) {
+        showToast("Διάλεξε σε ποιον σύλλογο ανήκει η διοργάνωση.");
+        return;
+      }
+      const id = `comp_${Date.now().toString(36)}`;
+      next = [...comps, { id, name, ownerClubId: compDraft.ownerClubId, countsElo: compDraft.countsElo !== false, level: "club", pool: "club" }];
+    }
+    if (await saveSysState({ competitions: next })) {
+      setSysState((st) => ({ ...st, competitions: next }));
+      setCompDraft(null);
+      showToast("Η διοργάνωση αποθηκεύτηκε.");
+    } else {
+      reportSaveFailure("Διοργανώσεις — η αλλαγή δεν αποθηκεύτηκε");
+    }
+  }
+
+  async function deleteCompetition(id) {
+    if (id === DEFAULT_COMPETITION_ID) return;
+    const used = [...archive, ...trash].some((t) => (t.competitionId || DEFAULT_COMPETITION_ID) === id);
+    if (used) {
+      showToast("Η διοργάνωση έχει τουρνουά — μπορεί μόνο να μετονομαστεί.");
+      return;
+    }
+    const next = competitionsFrom(sysState).filter((c) => c.id !== id);
+    if (await saveSysState({ competitions: next })) {
+      setSysState((st) => ({ ...st, competitions: next }));
+      showToast("Η διοργάνωση διαγράφηκε.");
+    }
+  }
+
+  async function toggleClubOrganiserOnly(club) {
+    if (!club.organiserOnly && Object.values(registry.players).some((p) => p.clubId === club.id)) {
+      showToast("Ο σύλλογος έχει παίκτες — δεν μπορεί να γίνει φορέας.");
+      return;
+    }
+    const next = clubsFrom(sysState).map((c) => (c.id === club.id ? { ...c, organiserOnly: !c.organiserOnly } : c));
+    if (await saveSysState({ clubs: next })) setSysState((st) => ({ ...st, clubs: next }));
+  }
+
+  function renderCompetitionsCard() {
+    const comps = competitionsFrom(sysState);
+    if (sysState.competitionsVersion !== 2) {
+      return (
+        <div className="control-sub-card">
+          <strong>Διοργανώσεις — σύνδεση με συλλόγους</strong>
+          <p className="control-sub" style={{ marginTop: 6 }}>
+            Κάθε διοργάνωση θα ανήκει σε έναν σύλλογο, και κάθε σύλλογος έχει τη δική του κατάταξη ELO. Η αναβάθμιση: Premier League → {clubDisplay(sysState, sysState.homeClubId, "ο σύλλογός σου")}·
+            «Κύπελλο» → «Τελική Φάση Κυπέλλου» και «Τελική φάση» → «Τελική Φάση Πρωταθλήματος», και οι δύο στον νέο φορέα «Πανελλήνιες Διοργανώσεις». Η ELO και η Βαθμολογία δεν αλλάζουν.
+          </p>
+          <button className="btn-primary" onClick={upgradeCompetitions} disabled={!clubsActive(sysState) || !sysState.homeClubId}>
+            Σύνδεση διοργανώσεων με συλλόγους
+          </button>
+          {(!clubsActive(sysState) || !sysState.homeClubId) && <p className="field-warning">Χρειάζεται πρώτα η λίστα συλλόγων, με επιλεγμένο «ο σύλλογός μου».</p>}
+        </div>
+      );
+    }
+    const clubsSorted = [...clubsFrom(sysState)].sort((a, b) => a.name.localeCompare(b.name, "el"));
+    return (
+      <div className="control-sub-card">
+        <strong>Διοργανώσεις</strong>
+        <p className="control-sub" style={{ marginTop: 6 }}>
+          Κάθε διοργάνωση ανήκει σε έναν σύλλογο· ο σύλλογος ορίζει την κατάταξη ELO όπου μετράει. Σήμερα ενεργή είναι η ELO του συλλόγου σου ({clubDisplay(sysState, sysState.homeClubId, "—")}). Ο σύλλογος μιας διοργάνωσης κλειδώνει μετά τη δημιουργία.
+        </p>
+        <table className="cal-table">
+          <thead><tr><th>Διοργάνωση</th><th>Σύλλογος</th><th>ELO</th><th>Τουρνουά</th><th></th></tr></thead>
+          <tbody>
+            {comps.map((c) => {
+              const count = archive.filter((t) => (t.competitionId || DEFAULT_COMPETITION_ID) === c.id).length;
+              const editing = compDraft && compDraft.id === c.id;
+              return (
+                <tr key={c.id}>
+                  <td>{editing ? <input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} /> : c.name}</td>
+                  <td>{clubDisplay(sysState, c.ownerClubId, "—")}</td>
+                  <td>{c.countsElo === false ? "δεν μετράει" : c.ownerClubId === sysState.homeClubId ? "ενεργή" : "ανενεργή ακόμα"}</td>
+                  <td>{count}</td>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    {editing ? (
+                      <>
+                        <button className="btn-ghost" onClick={() => setCompDraft(null)}>Άκυρο</button>
+                        <button className="btn-secondary" onClick={saveCompDraft}>Αποθήκευση</button>
+                      </>
+                    ) : (
+                      <>
+                        <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Μετονομασία" onClick={() => setCompDraft({ id: c.id, name: c.name })}><Pencil size={13} /></button>
+                        {c.id !== DEFAULT_COMPETITION_ID && count === 0 && (
+                          <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Διαγραφή" onClick={() => deleteCompetition(c.id)}><Trash2 size={13} /></button>
+                        )}
+                      </>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {compDraft && !compDraft.id ? (
+          <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
+            <div className="field"><label>Νέα διοργάνωση</label><input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} /></div>
+            <div style={{ width: 220 }}>
+              <label>Ανήκει στον σύλλογο</label>
+              <select value={compDraft.ownerClubId || ""} onChange={(e) => setCompDraft({ ...compDraft, ownerClubId: e.target.value })} style={{ width: "100%", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
+                <option value="">—</option>
+                {clubsSorted.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", paddingBottom: 10 }}>
+              <input type="checkbox" checked={compDraft.countsElo !== false} onChange={(e) => setCompDraft({ ...compDraft, countsElo: e.target.checked })} /> μετράει σε ELO
+            </label>
+            <button className="btn-secondary" onClick={() => setCompDraft(null)}>Άκυρο</button>
+            <button className="btn-primary" onClick={saveCompDraft} disabled={!compDraft.name.trim() || !compDraft.ownerClubId}>Δημιουργία</button>
+          </div>
+        ) : (
+          <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setCompDraft({ name: "", ownerClubId: "", countsElo: true })}><Plus size={14} /> Νέα διοργάνωση</button>
+        )}
       </div>
     );
   }
@@ -6148,6 +6809,11 @@ export default function TournamentManager() {
   }
 
   async function setHomeClubId(id) {
+    if (sysState.competitionsVersion === 2 && sysState.homeClubId && id !== sysState.homeClubId) {
+      // The home club decides which ELO is the app's ranking — not a casual switch.
+      showToast("Ο σύλλογός σου ορίζει την κατάταξη ELO της εφαρμογής και δεν αλλάζει από εδώ.");
+      return;
+    }
     const patch = { homeClubId: id, homeClub: clubDisplay(sysState, id, "") };
     if (await saveSysState(patch)) {
       setSysState((st) => ({ ...st, ...patch }));
@@ -6570,7 +7236,7 @@ export default function TournamentManager() {
       ["Ημερομηνία", createdAt ? formatDate(createdAt) : "—"],
       ["Σεζόν", `${seasonYear} (${seasonRangeLabel(seasonYear)})`],
       ["Διοργάνωση", comp ? `${comp.name} — ${COMPETITION_LEVEL_LABEL[comp.level] || comp.level}` : competitionName(comps, competitionId)],
-      ["Σύλλογος / διοργανωτής", clubDisplay(sysState, organisationClubId, organisation) || "—"],
+      ["Σύλλογος της διοργάνωσης", (() => { const c = competitionById(competitionId); return c && c.ownerClubId ? clubDisplay(sysState, c.ownerClubId, "—") : "—"; })()],
       ["Κατάσταση", phase === "finished" ? "Ολοκληρώθηκε" : `Σε εξέλιξη — γύρος ${round} από ${totalRounds}`],
       ["Γύροι", totalRounds],
       ["Μήκος αγώνα", `${matchLength} πόντοι`],
@@ -6652,26 +7318,18 @@ export default function TournamentManager() {
                   style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
                 >
                   {comps.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>{competitionLabel(sysState, c)}</option>
                   ))}
                 </select>
               </div>
               <div className="field">
-                <label>Σύλλογος / διοργανωτής</label>
-                {clubsActive(sysState) ? (
-                  <select
-                    value={metaEdit.organisationClubId || ""}
-                    onChange={(e) => setMetaEdit({ ...metaEdit, organisationClubId: e.target.value || null, organisation: clubDisplay(sysState, e.target.value, "") })}
-                    style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
-                  >
-                    <option value="">—</option>
-                    {[...clubsFrom(sysState)].sort((a, b) => a.name.localeCompare(b.name, "el")).map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input type="text" value={metaEdit.organisation} onChange={(e) => setMetaEdit({ ...metaEdit, organisation: e.target.value })} placeholder={sysState.homeClub || "Όνομα συλλόγου"} />
-                )}
+                <label>Σύλλογος της διοργάνωσης</label>
+                <div style={{ padding: "9px 0", fontSize: 15, color: "var(--muted)" }}>
+                  {(() => {
+                    const c = competitionById(metaEdit.competitionId);
+                    return c && c.ownerClubId ? clubDisplay(sysState, c.ownerClubId, "—") : "—";
+                  })()}
+                </div>
               </div>
             </div>
             {(() => {
@@ -7855,7 +8513,7 @@ export default function TournamentManager() {
       {phase === "elo" && (
         <>
           <div className="header">
-            <p className="eyebrow">{L.eloEyebrow} · {ELO_POOLS.club.label}</p>
+            <p className="eyebrow">{L.eloEyebrow} · {sysState.competitionsVersion === 2 ? clubDisplay(sysState, sysState.homeClubId, ELO_POOLS.club.label) : ELO_POOLS.club.label}</p>
             <h1>{L.eloTitle}</h1>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
@@ -8004,10 +8662,31 @@ export default function TournamentManager() {
                   <option value="greeklish">Greeklish</option>
                 </select>
               </div>
+              {clubsActive(sysState) && (
+                <div style={{ width: 200 }}>
+                  <label>Σύλλογος</label>
+                  <select
+                    value={registryClubFilter}
+                    onChange={(e) => setRegistryClubFilter(e.target.value)}
+                    style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+                  >
+                    <option value="">Όλοι</option>
+                    {[...clubsFrom(sysState)].filter((c) => !c.organiserOnly).sort((a, b) => a.name.localeCompare(b.name, "el")).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                    <option value="none">Χωρίς σύλλογο</option>
+                  </select>
+                </div>
+              )}
+              <label style={{ display: "flex", gap: 6, alignItems: "center", alignSelf: "flex-end", paddingBottom: 10, fontSize: 14 }}>
+                <input type="checkbox" checked={showGuests} onChange={(e) => setShowGuests(e.target.checked)} /> Εμφάνιση φιλοξενούμενων
+              </label>
             </div>
 
             {(() => {
               const allPlayers = Object.entries(registry.players || {})
+                .filter(([, p]) => showGuests || !p.guest)
+                .filter(([, p]) => !registryClubFilter || (registryClubFilter === "none" ? !p.clubId : p.clubId === registryClubFilter))
                 .filter(([, p]) => {
                       if (!registrySearch) return true;
                       const num = registrySearch.trim().replace(/^#/, "");
@@ -8046,6 +8725,7 @@ export default function TournamentManager() {
                             <td style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{formatRegNo(p.regNo) || "—"}</td>
                             <td>
                               {formatNameForDisplay(p.name, nameDisplayMode)}
+                              {p.guest && <span className="cal-note"> · φιλοξενούμενος</span>}
                               {p.needsInfo && <span className="needs-info-badge"> ⚠ Needs info</span>}
                             </td>
                             <td>{clubDisplay(sysState, p.clubId, p.club) || "—"}</td>
@@ -8132,7 +8812,7 @@ export default function TournamentManager() {
                         style={{ width: "100%", marginBottom: 10, fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
                       >
                         <option value="">—</option>
-                        {[...clubsFrom(sysState)].sort((a, b) => a.name.localeCompare(b.name, "el")).map((c) => (
+                        {[...clubsFrom(sysState)].filter((c) => !c.organiserOnly).sort((a, b) => a.name.localeCompare(b.name, "el")).map((c) => (
                           <option key={c.id} value={c.id}>{c.name}</option>
                         ))}
                       </select>
@@ -8158,6 +8838,10 @@ export default function TournamentManager() {
                       onChange={(e) => setContactDraft({ ...contactDraft, phone: e.target.value })}
                       style={{ marginBottom: 10 }}
                     />
+                    <label className="live-toggle" style={{ marginBottom: 8 }} title="Παίκτης εκτός ελληνικού μητρώου (π.χ. ξένος σε ανοιχτό τουρνουά): χωρίς Αριθμό Μητρώου, κρυφός από τη λίστα εξ ορισμού">
+                      <input type="checkbox" checked={!!contactDraft.guest} onChange={(e) => setContactDraft({ ...contactDraft, guest: e.target.checked })} />
+                      Φιλοξενούμενος (εκτός ελληνικού μητρώου)
+                    </label>
                     <label className="live-toggle" style={{ marginBottom: 8 }}>
                       <input
                         type="checkbox"
@@ -8605,6 +9289,7 @@ export default function TournamentManager() {
               <>
             <div className="card control-section">
               <h2 className="control-h">Διοργανώσεις & σύλλογοι</h2>
+              {renderCompetitionsCard()}
               {isAdmin && (() => {
                 const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
                 const comps = competitionsFrom(sysState);
@@ -8795,7 +9480,7 @@ export default function TournamentManager() {
                     </p>
                     <table className="cal-table">
                       <thead>
-                        <tr><th>Σύλλογος</th><th>Παίκτες</th><th>Ο σύλλογός μου</th><th></th></tr>
+                        <tr><th>Σύλλογος</th><th>Παίκτες</th><th>Ο σύλλογός μου</th><th title="Φορέας διοργανώσεων — δεν εμφανίζεται στους παίκτες">Φορέας</th><th></th></tr>
                       </thead>
                       <tbody>
                         {[...clubsFrom(sysState)]
@@ -8811,7 +9496,10 @@ export default function TournamentManager() {
                               </td>
                               <td>{Object.values(registry.players).filter((p) => p.clubId === c.id).length}</td>
                               <td>
-                                <input type="radio" name="home-club" checked={sysState.homeClubId === c.id} onChange={() => setHomeClubId(c.id)} />
+                                {!c.organiserOnly && <input type="radio" name="home-club" checked={sysState.homeClubId === c.id} onChange={() => setHomeClubId(c.id)} />}
+                              </td>
+                              <td>
+                                <input type="checkbox" checked={!!c.organiserOnly} onChange={() => toggleClubOrganiserOnly(c)} disabled={sysState.homeClubId === c.id} />
                               </td>
                               <td style={{ whiteSpace: "nowrap" }}>
                                 {clubDraft && clubDraft.id === c.id ? (
@@ -9296,34 +9984,23 @@ export default function TournamentManager() {
                     style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
                   >
                     {competitionsFrom(sysState).map((c) => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
+                      <option key={c.id} value={c.id}>{competitionLabel(sysState, c)}</option>
                     ))}
                   </select>
                 </div>
                 <div className="field">
-                  <label>Σύλλογος / διοργανωτής</label>
-                  {clubsActive(sysState) ? (
-                    <select
-                      value={organisationClubId || ""}
-                      onChange={(e) => {
-                        setOrganisationClubId(e.target.value || null);
-                        setOrganisation(clubDisplay(sysState, e.target.value, ""));
-                      }}
-                      style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
-                    >
-                      <option value="">—</option>
-                      {[...clubsFrom(sysState)].sort((a, b) => a.name.localeCompare(b.name, "el")).map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input type="text" value={organisation} onChange={(e) => setOrganisation(e.target.value)} placeholder={sysState.homeClub || "Όνομα συλλόγου"} />
-                  )}
+                  <label>Σύλλογος της διοργάνωσης</label>
+                  <div style={{ padding: "9px 0", fontSize: 15, color: "var(--muted)" }}>
+                    {(() => {
+                      const c = competitionById(competitionId);
+                      return c && c.ownerClubId ? clubDisplay(sysState, c.ownerClubId, "—") : "—";
+                    })()}
+                  </div>
                 </div>
               </div>
-              {competitionId !== DEFAULT_COMPETITION_ID && (
+              {!countsTowardRatings({ isOfficial: true, competitionId }) && (
                 <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
-                  Μέχρι να μπουν οι χωριστές κατατάξεις ELO (Build 3), τουρνουά εκτός Premier League καταγράφονται κανονικά αλλά δεν μετράνε σε ELO και Βαθμολογία στο Recompute.
+                  Αυτή η διοργάνωση δεν μετράει στην ELO και στη Βαθμολογία της {clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}· το τουρνουά καταγράφεται κανονικά.
                 </p>
               )}
 
