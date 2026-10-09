@@ -178,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-08.20";
+const APP_BUILD_VERSION = "2026-10-09.01";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -204,6 +204,16 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.01",
+    date: "2026-10-09",
+    items: [
+      "Τα εισαγόμενα τουρνουά (Τελικές Φάσεις Κυπέλλου 2025 και 2026) εμφανίζονται στη λίστα τουρνουά, σε όλους, με σήμα «Εισαγόμενο»· ανοίγουν σε προβολή μόνο για ανάγνωση με κατάταξη, γύρους και στοιχεία, και τα ονόματα οδηγούν στις καρτέλες των παικτών.",
+      "Καρτέλα παίκτη: το ιστορικό τουρνουά περιλαμβάνει και τα εισαγόμενα με την τελική θέση, με φίλτρο διοργάνωσης.",
+      "Στατιστικά: νέο φίλτρο «Διοργάνωση» δίπλα στην «Περίοδο»· τα Στατιστικά Παίκτη και οι Κατακτήσεις περιλαμβάνουν και τα εισαγόμενα τουρνουά.",
+      "Η ELO και η Βαθμολογία της Ομοσπονδίας δεν επηρεάζονται.",
+    ],
+  },
   {
     version: "2026-10-08.20",
     date: "2026-10-08",
@@ -1583,6 +1593,21 @@ function titleCaseName(n) {
  * statistics, registry or consistency check ever sees them. */
 const SYS_IMPORTS_ID = "sys-imports";
 
+/** Competition of an imported tournament (older files only name it). */
+function importCompetitionId(doc) {
+  if (doc && doc.competitionId) return doc.competitionId;
+  const c = String(doc?.competition || "").toLowerCase();
+  if (c.includes("πρωταθλ")) return "final-phase";
+  return "cup";
+}
+
+/** "2026-10-02" -> ISO at local noon (for sorting with our tournaments). */
+function importDateIso(ymd) {
+  const [y, m, d] = String(ymd || "").split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d, 12).toISOString();
+}
+
 function validateImport(doc) {
   const problems = [];
   if (!doc || doc.format !== "bgfed-import/1") return { problems: ["Το αρχείο δεν είναι αρχείο εισαγωγής της εφαρμογής (bgfed-import/1)."], summary: null };
@@ -2704,6 +2729,10 @@ export default function TournamentManager() {
   const [importDateDraft, setImportDateDraft] = useState(null); // { date, dateEnd, dateAssumed }
   const [importConfirmDelete, setImportConfirmDelete] = useState(false);
   const importFileRef = useRef(null);
+  const [importDocs, setImportDocs] = useState({}); // id -> imported tournament (public view, history, statistics)
+  const [importReturn, setImportReturn] = useState(null); // where the public imported view goes back to
+  const [historyCompetition, setHistoryCompetition] = useState(""); // player card history filter
+  const [statsCompetition, setStatsCompetition] = useState("all"); // Statistics competition filter
   const [matchPlan, setMatchPlan] = useState(null); // { rows, imports } — player matching of the imports
   const [matchBusy, setMatchBusy] = useState(false);
   const matchFileRef = useRef(null); // ELO page: player whose rating breakdown is open // final standings exported in this session
@@ -3049,6 +3078,16 @@ export default function TournamentManager() {
     });
     loadSeason(seasonBrowseYear).then(setSeasonData);
   }, [phase, seasonBrowseYear]);
+
+  // Imported tournaments are public (read-only): load them once for everyone.
+  useEffect(() => {
+    refreshImports();
+  }, []);
+
+  // A new set of imported tournaments changes every player's history.
+  useEffect(() => {
+    setPlayerHistoryCache({});
+  }, [importDocs]);
 
   // A calendar link that no longer fits the chosen season is dropped.
   useEffect(() => {
@@ -4556,6 +4595,19 @@ export default function TournamentManager() {
         });
       }
     }
+    rows.forEach((r) => {
+      const t = archive.find((x) => x.id === r.tournamentId);
+      r.competitionId = t ? t.competitionId || DEFAULT_COMPETITION_ID : DEFAULT_COMPETITION_ID;
+    });
+    // imported tournaments the person played in (Build 4B)
+    Object.entries(importDocs).forEach(([id, doc]) => {
+      if (!doc.personMap) return;
+      const names = Object.entries(doc.personMap).filter(([, k]) => k === key).map(([n]) => n);
+      if (names.length === 0) return;
+      const pl = (doc.placements || []).find((p) => names.includes(p.name));
+      const date = importDateIso(doc.date) || doc.importedAt;
+      rows.push({ year: seasonForDate(date), tournamentId: id, tournamentName: doc.name, date, points: null, position: pl ? pl.position : null, competitionId: importCompetitionId(doc), imported: true });
+    });
     rows.sort((a, b) => new Date(b.date) - new Date(a.date));
     setPlayerHistoryCache((prev) => ({ ...prev, [key]: rows }));
   }
@@ -4990,7 +5042,7 @@ export default function TournamentManager() {
    * aggregation elsewhere in the app). Returns one row per opponent with
    * the full meeting list, so the UI can show a compact table with an
    * expandable per-opponent detail instead of one pair at a time. */
-  async function computeOpponentBreakdown(playerName, scope = statsScope) {
+  async function computeOpponentBreakdown(playerName, scope = statsScope, competition = statsCompetition) {
     setH2hLoading(true);
     setH2hResult(null);
     try {
@@ -4998,7 +5050,7 @@ export default function TournamentManager() {
       const opponentsMap = {};
 
       const others = archive
-        .filter((t) => t.isOfficial && tournamentInScope(t, scope))
+        .filter((t) => t.isOfficial && tournamentInScope(t, scope) && (competition === "all" || (t.competitionId || DEFAULT_COMPETITION_ID) === competition))
         .sort((a, b) => new Date(a.date) - new Date(b.date));
       for (const t of others) {
         const data = await fetchTournamentData(t.id);
@@ -5026,6 +5078,18 @@ export default function TournamentManager() {
           });
         });
       }
+
+      // matches of the imported tournaments (Build 4B)
+      importedMatches(scope, competition).forEach((m) => {
+        if (m.p1Key !== key && m.p2Key !== key) return;
+        const oppKey = m.p1Key === key ? m.p2Key : m.p1Key;
+        const opp = oppKey ? registry.players[oppKey] : null;
+        if (!opp) return;
+        const winner = registry.players[m.winnerKey];
+        const loser = registry.players[m.winnerKey === m.p1Key ? m.p2Key : m.p1Key];
+        if (!opponentsMap[oppKey]) opponentsMap[oppKey] = { name: opp.name, meetings: [] };
+        opponentsMap[oppKey].meetings.push({ date: m.date, tournamentName: shortTournamentLabel(m.tournamentName), winner: winner?.name, loser: loser?.name, method: m.method });
+      });
 
       const rows = Object.values(opponentsMap).map((o) => {
         const meetings = [...o.meetings].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -5193,7 +5257,7 @@ export default function TournamentManager() {
     }
   }
 
-  async function computeStatistics(scope = statsScope) {
+  async function computeStatistics(scope = statsScope, competition = statsCompetition) {
     setStatsLoading(true);
     setStatsResult(null);
     try {
@@ -5221,7 +5285,7 @@ export default function TournamentManager() {
         // tournaments inside the chosen period add to streaks, titles and
         // leadership days.
         const feedsElo = countsTowardRatings(t);
-        if (!tournamentInScope(t, scope)) {
+        if (!tournamentInScope(t, scope) || (competition !== "all" && (t.competitionId || DEFAULT_COMPETITION_ID) !== competition)) {
           if (feedsElo && data.history) {
             data.history.forEach((entry) => applyEloRoundBatch(eloRunning, buildEloRoundMatches(entry.pairs, byId), data.matchLength || 7));
           }
@@ -5322,6 +5386,19 @@ export default function TournamentManager() {
         .map((a) => ({ name: a.name, length: a.max, startDate: a.maxStart, endDate: a.maxEnd }))
         .sort((a, b) => b.length - a.length);
 
+      // titles won in imported tournaments (Build 4B)
+      Object.values(importDocs).forEach((doc) => {
+        if (!doc.personMap || !doc.placements || !doc.placements[0]) return;
+        const date = importDateIso(doc.date) || doc.importedAt;
+        if (!tournamentInScope({ date, seasonYear: seasonForDate(date) }, scope)) return;
+        if (competition !== "all" && importCompetitionId(doc) !== competition) return;
+        const wKey = doc.personMap[doc.placements[0].name];
+        const w = wKey ? registry.players[wKey] : null;
+        if (!w) return;
+        if (!titleCounts[wKey]) titleCounts[wKey] = { name: w.name, count: 0, tournaments: [] };
+        titleCounts[wKey].count += 1;
+        titleCounts[wKey].tournaments.push({ name: doc.name, date });
+      });
       const titles = Object.values(titleCounts).sort((a, b) => b.count - a.count);
       const eloLeaders = Object.entries(eloLeaderDays)
         .map(([key, days]) => ({ name: eloRunning.players[key]?.name || key, days }))
@@ -5533,7 +5610,7 @@ export default function TournamentManager() {
 
   const roundData = getRoundData(selectedRound);
 
-  const filteredArchive = archive
+  const filteredArchive = [...archive, ...importedCatalogue()]
     .filter((t) => (searchName ? t.name.toLowerCase().includes(searchName.toLowerCase()) : true))
     .filter((t) => (dateFrom ? new Date(t.date) >= new Date(dateFrom) : true))
     .filter((t) => (dateTo ? new Date(t.date) <= new Date(dateTo + "T23:59:59") : true))
@@ -5541,7 +5618,7 @@ export default function TournamentManager() {
     .filter((t) => (archiveCompetition ? (t.competitionId || DEFAULT_COMPETITION_ID) === archiveCompetition : true))
     .sort((a, b) => new Date(b.date) - new Date(a.date));
   const archiveHasFilter = searchName || dateFrom || dateTo || archiveSeason || archiveCompetition;
-  const archiveSeasonOptions = [...new Set(archive.map((t) => Number(t.seasonYear) || seasonForDate(t.date)).filter(Boolean))].sort((a, b) => b - a);
+  const archiveSeasonOptions = [...new Set([...archive, ...importedCatalogue()].map((t) => Number(t.seasonYear) || seasonForDate(t.date)).filter(Boolean))].sort((a, b) => b - a);
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
 
   /** "How this rating was reached" for one player: summary line and the
@@ -5746,6 +5823,7 @@ export default function TournamentManager() {
       if (await saveImportList(list)) {
         setImportPreview(null);
         showToast(replaceId ? "Το τουρνουά αντικαταστάθηκε." : "Το τουρνουά εισήχθη.");
+      refreshImports();
       }
     } finally {
       setImportBusy(false);
@@ -5780,6 +5858,7 @@ export default function TournamentManager() {
       setImportView({ ...importView, doc });
       setImportDateDraft(null);
       showToast("Οι ημερομηνίες αποθηκεύτηκαν.");
+      refreshImports();
     }
   }
 
@@ -5791,6 +5870,7 @@ export default function TournamentManager() {
     setImportView(null);
     setImportConfirmDelete(false);
     showToast("Το εισαγόμενο τουρνουά διαγράφηκε.");
+      refreshImports();
   }
 
   function importDateLabel(t) {
@@ -5799,20 +5879,26 @@ export default function TournamentManager() {
     return `${f(t.date)}${t.dateEnd && t.dateEnd !== t.date ? ` – ${f(t.dateEnd)}` : ""}${t.dateAssumed ? " (εκτίμηση)" : ""}`;
   }
 
-  function renderImportsTab() {
-    if (importView) {
-      const { doc, tab, round } = importView;
-      const rounds = [...new Set((doc.matches || []).map((m) => m.round))].sort((a, b) => a - b);
-      const roundMatches = (doc.matches || []).filter((m) => m.round === round);
-      return (
-        <div className="card control-section">
-          <button className="btn-ghost" onClick={() => setImportView(null)} style={{ marginBottom: 8 }}>
-            <ArrowLeft size={14} /> Πίσω στις εισαγωγές
-          </button>
-          <h2 className="control-h">{doc.name}</h2>
-          <p className="control-sub">
-            {importDateLabel(doc)} · {doc.competition} · {doc.organiser} · Εισαγόμενο από {doc.sourceName || "εξωτερική πηγή"} — δεν μετράει πουθενά.
-          </p>
+  /** Name in an imported tournament: the registry person when matched
+   * (linked to their card, except guests), otherwise the source spelling. */
+  function renderImportedName(doc, sourceName) {
+    const key = doc.personMap ? doc.personMap[sourceName] : null;
+    const person = key ? registry.players[key] : null;
+    if (!person) return sourceName;
+    if (person.guest) return <span>{person.name}<span className="cal-note"> · φιλοξ.</span></span>;
+    return (
+      <button className="history-link" onClick={() => openPlayerDetail(key)} title="Καρτέλα παίκτη">{formatNameForDisplay(person.name, nameDisplayMode)}</button>
+    );
+  }
+
+  /** The body of an imported tournament (tabs: standings, rounds, details). */
+  function renderImportBody(adminMode) {
+    if (!importView) return null;
+    const { doc, tab, round } = importView;
+    const rounds = [...new Set((doc.matches || []).map((m) => m.round))].sort((a, b) => a - b);
+    const roundMatches = (doc.matches || []).filter((m) => m.round === round);
+    return (
+      <>
           <div className="tabs" style={{ marginBottom: 12 }}>
             {[["standings", "Κατάταξη"], ["rounds", "Γύροι"], ["info", "Στοιχεία"]].map(([k, v]) => (
               <button key={k} className={`tab ${tab === k ? "active" : ""}`} onClick={() => setImportView({ ...importView, tab: k })}>{v}</button>
@@ -5821,15 +5907,14 @@ export default function TournamentManager() {
           {tab === "standings" && (
             <div style={{ overflowX: "auto" }}>
               <table className="cal-table">
-                <thead><tr><th>Θέση</th><th>Παίκτης</th>{doc.personMap && <th>Πρόσωπο μητρώου</th>}<th>Νίκες</th><th>Ήττες</th><th>Αγώνες</th></tr></thead>
+                <thead><tr><th>Θέση</th><th>Παίκτης</th>{adminMode && doc.personMap && <th>Στην πηγή</th>}<th>Νίκες</th><th>Ήττες</th><th>Αγώνες</th></tr></thead>
                 <tbody>
                   {(doc.placements || []).map((p) => {
-                    const person = doc.personMap ? registry.players[doc.personMap[p.name]] : null;
                     return (
                       <tr key={p.name}>
                         <td>{p.position}</td>
-                        <td>{p.name}</td>
-                        {doc.personMap && <td>{person ? `${person.name}${person.guest ? " (φιλοξ.)" : ""}` : "—"}</td>}
+                        <td>{renderImportedName(doc, p.name)}</td>
+                        {adminMode && doc.personMap && <td className="cal-note">{p.name}</td>}
                         <td>{p.wins}</td><td>{p.losses}</td><td>{p.matches}</td>
                       </tr>
                     );
@@ -5851,9 +5936,9 @@ export default function TournamentManager() {
                   {roundMatches.map((m) => (
                     <tr key={m.match}>
                       <td className="cal-note">{m.match}</td>
-                      <td style={{ fontWeight: m.winner === m.p1 ? 700 : 400 }}>{m.p1}</td>
+                      <td style={{ fontWeight: m.winner === m.p1 ? 700 : 400 }}>{renderImportedName(doc, m.p1)}</td>
                       <td style={{ whiteSpace: "nowrap", textAlign: "center" }}>{m.method === "bye" ? "bye" : `${m.score1} – ${m.score2}`}</td>
-                      <td style={{ fontWeight: m.winner === m.p2 ? 700 : 400 }}>{m.p2 || ""}</td>
+                      <td style={{ fontWeight: m.winner === m.p2 ? 700 : 400 }}>{m.p2 ? renderImportedName(doc, m.p2) : ""}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -5872,7 +5957,7 @@ export default function TournamentManager() {
                 <dt>Πηγή</dt><dd>{doc.sourceUrl ? <a href={doc.sourceUrl} target="_blank" rel="noreferrer">{doc.sourceName || doc.sourceUrl}</a> : "—"}</dd>
                 <dt>Εισαγωγή</dt><dd>{doc.importedAt ? formatDate(doc.importedAt) : "—"}</dd>
               </dl>
-              {importDateDraft ? (
+              {adminMode && (importDateDraft ? (
                 <div className="row" style={{ marginTop: 12, alignItems: "flex-end" }}>
                   <div style={{ width: 160 }}><label>Από</label><input type="date" value={importDateDraft.date} onChange={(e) => setImportDateDraft({ ...importDateDraft, date: e.target.value })} /></div>
                   <div style={{ width: 160 }}><label>Έως</label><input type="date" value={importDateDraft.dateEnd} onChange={(e) => setImportDateDraft({ ...importDateDraft, dateEnd: e.target.value })} /></div>
@@ -5886,8 +5971,8 @@ export default function TournamentManager() {
                 <button className="btn-secondary" style={{ marginTop: 12 }} onClick={() => setImportDateDraft({ date: doc.date || "", dateEnd: doc.dateEnd || "", dateAssumed: !!doc.dateAssumed })}>
                   <Pencil size={14} /> Αλλαγή ημερομηνιών
                 </button>
-              )}
-              <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+              ))}
+              {adminMode && <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
                 {!importConfirmDelete ? (
                   <button className="btn-ghost" onClick={() => setImportConfirmDelete(true)}><Trash2 size={14} /> Διαγραφή εισαγωγής</button>
                 ) : (
@@ -5897,12 +5982,30 @@ export default function TournamentManager() {
                     <button className="btn-secondary" onClick={deleteImport}>Ναι, διαγραφή</button>
                   </span>
                 )}
-              </div>
+              </div>}
             </>
           )}
+      </>
+    );
+  }
+
+  function renderImportsTab() {
+    if (importView) {
+      const { doc } = importView;
+      return (
+        <div className="card control-section">
+          <button className="btn-ghost" onClick={() => setImportView(null)} style={{ marginBottom: 8 }}>
+            <ArrowLeft size={14} /> Πίσω στις εισαγωγές
+          </button>
+          <h2 className="control-h">{doc.name}</h2>
+          <p className="control-sub">
+            {importDateLabel(doc)} · {competitionName(competitionsFrom(sysState), importCompetitionId(doc))} · Εισαγόμενο από {doc.sourceName || "εξωτερική πηγή"}
+          </p>
+          {renderImportBody(true)}
         </div>
       );
     }
+
     return (
       <div className="card control-section">
         <h2 className="control-h">Εισαγωγές (δοκιμαστικά)</h2>
@@ -5963,6 +6066,70 @@ export default function TournamentManager() {
         )}
       </div>
     );
+  }
+
+  /* ---- Build 4B: imported tournaments in public view ---- */
+
+  /** Loads the imported tournaments for everyone (read-only use). */
+  async function refreshImports() {
+    const d = await fetchTournamentData(SYS_IMPORTS_ID);
+    const list = d && Array.isArray(d.list) ? d.list : [];
+    const docs = {};
+    for (const t of list) {
+      const doc = await fetchTournamentData(t.id);
+      if (doc) docs[t.id] = doc;
+    }
+    setImportDocs(docs);
+    if (isAdmin) setImportsList(list);
+  }
+
+  /** Imported tournaments as rows of the tournaments list. */
+  function importedCatalogue() {
+    return Object.entries(importDocs).map(([id, doc]) => {
+      const date = importDateIso(doc.date) || doc.importedAt;
+      return {
+        id, name: doc.name, date, status: "Completed", isOfficial: true, imported: true,
+        competitionId: importCompetitionId(doc), seasonYear: seasonForDate(date),
+      };
+    });
+  }
+
+  function openImportPublic(id, back) {
+    const doc = importDocs[id];
+    if (!doc) return;
+    setImportReturn(back || { kind: "archive" });
+    setImportView({ id, doc, tab: "standings", round: Math.max(1, ...(doc.matches || []).map((m) => m.round)) });
+    setPhase("imported");
+  }
+
+  function backFromImport() {
+    const r = importReturn;
+    setImportView(null);
+    if (r && r.kind === "player" && registry.players[r.key]) {
+      setExpandedRegistryPlayer(r.key);
+      setPlayerDetailTab("stats");
+      setPhase("playerDetail");
+    } else {
+      setPhase("archive");
+    }
+  }
+
+  /** Matches of the imported tournaments in the chosen period/competition,
+   * as { date, tournamentName, p1Key, p2Key, winnerKey, method }. */
+  function importedMatches(scope, competition) {
+    const out = [];
+    Object.values(importDocs).forEach((doc) => {
+      if (!doc.personMap) return;
+      const date = importDateIso(doc.date) || doc.importedAt;
+      const t = { date, seasonYear: seasonForDate(date) };
+      if (!tournamentInScope(t, scope)) return;
+      if (competition !== "all" && importCompetitionId(doc) !== competition) return;
+      (doc.matches || []).forEach((m) => {
+        if (m.method === "bye" || !m.p2) return;
+        out.push({ date, tournamentName: doc.name, p1Key: doc.personMap[m.p1], p2Key: doc.personMap[m.p2], winnerKey: doc.personMap[m.winner], method: m.method });
+      });
+    });
+    return out;
   }
 
   /* ---- Build 4A: matching imported names to persons ---- */
@@ -6192,6 +6359,7 @@ export default function TournamentManager() {
       else reportSaveFailure("Αντιστοίχιση — ολοκληρώθηκε, αλλά δεν καταγράφηκε (η αναίρεση δεν θα είναι διαθέσιμη)");
       setMatchPlan(null);
       showToast(`Αντιστοίχιση: ${created.length} νέα πρόσωπα, ${Object.keys(linked).length} υπάρχοντα.`);
+      refreshImports();
     } finally {
       setMatchBusy(false);
     }
@@ -6233,6 +6401,7 @@ export default function TournamentManager() {
       const patch = { importMatching: all.slice(0, -1) };
       if (await saveSysState(patch)) setSysState((st) => ({ ...st, ...patch }));
       showToast(kept.length ? `Αναιρέθηκε. Κρατήθηκαν (έχουν παίξει από τότε): ${kept.join(", ")}` : "Η αντιστοίχιση αναιρέθηκε.");
+      refreshImports();
     } finally {
       setMatchBusy(false);
     }
@@ -7632,6 +7801,7 @@ export default function TournamentManager() {
         .close-steps li.done { color: var(--win); }
         .ledger-table td.pos { color: var(--win); }
         .ledger-btn { padding: 4px 6px; }
+        .status-chip.imported { background: #eef3fb; color: #2f5a8a; border: 1px solid #c9d8ec; }
         .layout-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; margin: 0 0 14px 0; }
         .layout-toggle button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: none; background: var(--surface, #fff); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
         .layout-toggle button + button { border-left: 1px solid var(--border); }
@@ -7968,6 +8138,24 @@ export default function TournamentManager() {
           </div>
           <div className="content" style={{ maxWidth: 780 }}>
             <div className="scope-bar">
+              <span>Διοργάνωση:</span>
+              {["all", ...competitionsFrom(sysState).map((c) => c.id)].map((c) => (
+                <button
+                  key={c}
+                  className={`round-pill ${statsCompetition === c ? "active" : ""}`}
+                  onClick={() => {
+                    if (statsCompetition === c) return;
+                    setStatsCompetition(c);
+                    setStatsResult(null);
+                    if (h2hResult && h2hSelectedPlayer) computeOpponentBreakdown(h2hSelectedPlayer, statsScope, c);
+                    else setH2hResult(null);
+                  }}
+                >
+                  {c === "all" ? "Όλες" : competitionName(competitionsFrom(sysState), c)}
+                </button>
+              ))}
+            </div>
+            <div className="scope-bar">
               <span>Περίοδος:</span>
               {["all", ...seasonYearsAvailable].map((y) => (
                 <button
@@ -7978,7 +8166,7 @@ export default function TournamentManager() {
                     setStatsScope(y);
                     setStatsResult(null);
                     setSeasonStatsResult(null);
-                    if (h2hResult && h2hSelectedPlayer) computeOpponentBreakdown(h2hSelectedPlayer, y);
+                    if (h2hResult && h2hSelectedPlayer) computeOpponentBreakdown(h2hSelectedPlayer, y, statsCompetition);
                     else setH2hResult(null);
                   }}
                 >
@@ -9011,12 +9199,25 @@ export default function TournamentManager() {
                   {playerHistoryCache[key] && playerHistoryCache[key].length === 0 && (
                     <p style={{ fontSize: 13, color: "var(--muted)" }}>No tournaments recorded yet.</p>
                   )}
+                  {playerHistoryCache[key] && new Set(playerHistoryCache[key].map((h) => h.competitionId)).size > 1 && (
+                    <div className="round-pills" style={{ margin: "6px 0 8px 0" }}>
+                      {["", ...new Set(playerHistoryCache[key].map((h) => h.competitionId))].map((c) => (
+                        <button key={c || "all"} className={`round-pill ${historyCompetition === c ? "active" : ""}`} onClick={() => setHistoryCompetition(c)}>
+                          {c ? competitionName(competitionsFrom(sysState), c) : "Όλες"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {playerHistoryCache[key] && playerHistoryCache[key].length > 0 && (
                     <div className="history-table">
-                      {playerHistoryCache[key].map((h, i) => (
+                      {playerHistoryCache[key].filter((h) => !historyCompetition || h.competitionId === historyCompetition).map((h, i) => (
                         <div key={i} className="history-row">
                           <span>
-                            {h.tournamentId && archive.some((t) => t.id === h.tournamentId) ? (
+                            {h.imported ? (
+                              <button className="history-link" onClick={() => openImportPublic(h.tournamentId, { kind: "player", key })} title="Άνοιγμα του τουρνουά">
+                                {h.tournamentName}
+                              </button>
+                            ) : h.tournamentId && archive.some((t) => t.id === h.tournamentId) ? (
                               <button className="history-link" onClick={() => openTournamentFromPlayer(h.tournamentId, key)} title="Άνοιγμα του τουρνουά">
                                 {h.tournamentName}
                               </button>
@@ -9025,7 +9226,7 @@ export default function TournamentManager() {
                             )}{" "}
                             <span style={{ color: "var(--muted)" }}>({formatDate(h.date)})</span>
                           </span>
-                          <strong>{h.points} pts</strong>
+                          <strong>{h.imported ? (h.position ? `${h.position}η θέση` : "—") : `${h.points} pts`}</strong>
                         </div>
                       ))}
                     </div>
@@ -9809,10 +10010,11 @@ export default function TournamentManager() {
             )}
 
             {visibleArchive.map((t) => (
-              <div className="archive-row" key={t.id} onClick={() => openArchived(t.id)}>
+              <div className="archive-row" key={t.id} onClick={() => (t.imported ? openImportPublic(t.id, { kind: "archive" }) : openArchived(t.id))}>
                 <span className="archive-name">
                   {t.name}
                   {!t.isOfficial && <span className="status-chip test" style={{ marginLeft: 8 }}>Test</span>}
+                  {t.imported && <span className="status-chip imported" style={{ marginLeft: 8 }}>Εισαγόμενο</span>}
                 </span>
                 <span className="archive-meta">
                   <span className="cal-note">
@@ -9829,6 +10031,30 @@ export default function TournamentManager() {
                 Show all ({filteredArchive.length})
               </button>
             )}
+          </div>
+        </>
+      )}
+
+      {/* IMPORTED TOURNAMENT (public, read-only) */}
+      {phase === "imported" && importView && (
+        <>
+          <div className="header">
+            <p className="eyebrow">{competitionName(competitionsFrom(sysState), importCompetitionId(importView.doc))} · {importDateLabel(importView.doc)}</p>
+            <h1>{importView.doc.name}</h1>
+            <div className="points-strip">
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
+              ))}
+            </div>
+          </div>
+          <div className="content">
+            <button className="btn-secondary" onClick={backFromImport} style={{ marginBottom: 12 }}>
+              <ArrowLeft size={15} /> {importReturn?.kind === "player" ? `Πίσω στον παίκτη (${registry.players[importReturn.key]?.name || ""})` : "Πίσω στα τουρνουά"}
+            </button>
+            <p className="cal-note" style={{ marginBottom: 12 }}>
+              Τουρνουά που διεξήχθη εκτός εφαρμογής ({importView.doc.sourceName || "εξωτερική πηγή"}) — δεν μετράει στην ELO και στη Βαθμολογία της {clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}.
+            </p>
+            {renderImportBody(false)}
           </div>
         </>
       )}
