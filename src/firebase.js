@@ -83,11 +83,12 @@ async function listDocIds(collectionName) {
 /* Admin password                                                         */
 /* ---------------------------------------------------------------------- */
 
-const DEFAULT_ADMIN_PASSWORD = "OEB2026"; // placeholder — change it via "Change password" once live
-
-export async function loadAdminPassword() {
-  const data = await getDocData("meta", "adminPassword");
-  return data ? data.password : DEFAULT_ADMIN_PASSWORD;
+/** Strict: returns the stored password, or null when none has been set;
+ * THROWS when the read failed. There is no built-in default password —
+ * a failed or missing read must never let anyone in. */
+export async function loadAdminPasswordStrict() {
+  const data = await getDocDataStrict("meta", "adminPassword");
+  return data && typeof data.password === "string" && data.password ? data.password : null;
 }
 
 export async function saveAdminPassword(password) {
@@ -142,6 +143,12 @@ export async function saveElo(data) {
 
 export async function loadFeedItems() {
   const data = await getDocData("meta", "rssFeed");
+  return data?.items || [];
+}
+
+/** Same as loadFeedItems, but throws if the read failed (see getDocDataStrict). */
+export async function loadFeedItemsStrict() {
+  const data = await getDocDataStrict("meta", "rssFeed");
   return data?.items || [];
 }
 
