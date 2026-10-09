@@ -178,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.05";
+const APP_BUILD_VERSION = "2026-10-09.06";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -204,6 +204,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.06",
+    date: "2026-10-09",
+    items: [
+      "Καρτέλα παίκτη: το γράφημα ELO ξεκινά από την αφετηρία (1500), ώστε να εμφανίζεται και για παίκτες με ένα μόνο τουρνουά· το ποσοστό νικών με ένα τουρνουά φαίνεται ως αριθμός (π.χ. 75% — 6 νίκες σε 8 αγώνες).",
+    ],
+  },
   {
     version: "2026-10-09.05",
     date: "2026-10-09",
@@ -9394,7 +9401,7 @@ export default function TournamentManager() {
                         g += 1;
                         if (r.result === "win") w += 1;
                         const next = all[i + 1];
-                        if (!next || next.tournamentId !== r.tournamentId) winRows.push({ date: r.date, winRate: (w / g) * 100 });
+                        if (!next || next.tournamentId !== r.tournamentId) winRows.push({ date: r.date, winRate: (w / g) * 100, wins: w, games: g });
                       });
                     }
                     return (
@@ -11367,19 +11374,27 @@ function AxisLineChart({ points, color, suffix = "" }) {
  * and, next to it, the win rate over every match in every competition. */
 function PlayerTrendCharts({ eloRows, winRows, eloSwitch }) {
   const msg = (t) => <p style={{ fontSize: 13, color: "var(--muted)", margin: "12px 0" }}>{t}</p>;
+  // Everyone starts at the initial rating, so the line begins there — a
+  // player with a single tournament still gets a two-point chart.
+  const eloPoints = (eloRows || []).map((r) => ({ y: r.rating, label: formatMonthLabel(r.date), full: formatDate(r.date) }));
+  if (eloPoints.length > 0) eloPoints.unshift({ y: ELO_INITIAL, label: "Αφετηρία", full: `Αφετηρία (${ELO_INITIAL})` });
   const eloBody = !eloRows
     ? msg("Loading…")
     : eloRows.length === 0
     ? msg("Δεν υπάρχουν ακόμα αγώνες σε αυτή την κατάταξη.")
-    : eloRows.length < 2
-    ? msg("Χρειάζονται τουλάχιστον δύο τουρνουά για γράφημα.")
-    : <AxisLineChart points={eloRows.map((r) => ({ y: r.rating, label: formatMonthLabel(r.date), full: formatDate(r.date) }))} color="var(--accent)" />;
+    : <AxisLineChart points={eloPoints} color="var(--accent)" />;
+  const last = winRows && winRows.length ? winRows[winRows.length - 1] : null;
   const winBody = !winRows
     ? msg("Loading…")
     : winRows.length === 0
     ? msg("Δεν υπάρχουν ακόμα αγώνες.")
     : winRows.length < 2
-    ? msg("Χρειάζονται τουλάχιστον δύο τουρνουά για γράφημα.")
+    ? (
+      <div style={{ margin: "14px 0" }}>
+        <div style={{ fontSize: 30, fontWeight: 700, color: "var(--win)" }}>{Math.round(last.winRate * 10) / 10}%</div>
+        <div className="cal-note">{last.wins} νίκες σε {last.games} αγώνες (ένα τουρνουά — το γράφημα εμφανίζεται από το δεύτερο)</div>
+      </div>
+    )
     : <AxisLineChart points={winRows.map((r) => ({ y: r.winRate, label: formatMonthLabel(r.date), full: formatDate(r.date) }))} color="var(--win)" suffix="%" />;
   return (
     <div className="trend-charts-grid">
