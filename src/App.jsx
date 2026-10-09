@@ -178,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.06";
+const APP_BUILD_VERSION = "2026-10-09.07";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -204,6 +204,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.07",
+    date: "2026-10-09",
+    items: [
+      "Τελική Φάση (και κάθε εισαγόμενο νοκ-άουτ): στους Γύρους, επιλογή «Λίστα / Δέντρο». Το δέντρο δείχνει κάθε πίνακα (Αήττητοι, Ηττημένοι, Τελική σειρά) με τις διασταυρώσεις, τις θέσεις πίνακα και τις εισόδους από τον άλλο πίνακα· πατώντας ένα όνομα φωτίζεται η πορεία του.",
+    ],
+  },
   {
     version: "2026-10-09.06",
     date: "2026-10-09",
@@ -5948,6 +5955,115 @@ export default function TournamentManager() {
     );
   }
 
+  /* ---- Bracket tree (knock-out imports) ---- */
+
+  /** Draws one bracket of a knock-out import as a tree. Where each player
+   * comes from is derived from the matches themselves: their previous match
+   * (won in this bracket = a line from that match; lost elsewhere = an entry
+   * label such as «χαμένος 85»; none = their seat, e.g. «Ο1»). */
+  function renderBracketTree(doc, bracketId) {
+    const all = [...(doc.matches || [])].sort((a, b) => (a.slot ?? a.round) - (b.slot ?? b.round));
+    const idx = new Map(all.map((m, i) => [m, i]));
+    const prevOf = (m, name) => {
+      for (let i = idx.get(m) - 1; i >= 0; i--) {
+        const x = all[i];
+        if (x.p1 === name || x.p2 === name) return x;
+      }
+      return null;
+    };
+    const inB = all.filter((m) => (m.bracket || "main") === bracketId);
+    if (inB.length === 0) return null;
+    const rounds = [...new Set(inB.map((m) => m.round))].sort((a, b) => a - b);
+    const finalMatch = inB.filter((m) => m.round === rounds[rounds.length - 1]).slice(-1)[0];
+    const short = (n) => {
+      const key = doc.personMap ? doc.personMap[n] : null;
+      const p = key ? registry.players[key] : null;
+      return p ? p.name : n;
+    };
+    const COLW = 250;
+    const BOXW = 205;
+    const BOXH = 50;
+    const ROWH = 62;
+    const nodes = [];
+    let leaf = 0;
+    const visit = (m) => {
+      const sides = [m.p1, m.p2].map((name) => {
+        const pm = name ? prevOf(m, name) : null;
+        if (pm && (pm.bracket || "main") === bracketId && pm.winner === name) return { name, child: pm };
+        let tag = "";
+        let title = "";
+        if (pm) {
+          tag = pm.winner === name ? `Ν${pm.match}` : `↓${pm.match}`;
+          title = pm.winner === name ? `Νικητής αγώνα ${pm.match}` : `Χαμένος αγώνα ${pm.match}`;
+        } else if (doc.seats && doc.seats[name]) {
+          tag = doc.seats[name];
+          title = `Θέση πίνακα ${doc.seats[name]}`;
+        }
+        return { name, tag, title };
+      });
+      const kids = sides.filter((sd) => sd.child).map((sd) => visit(sd.child));
+      const y = kids.length === 0 ? leaf++ * ROWH : kids.reduce((a, k) => a + k.y, 0) / kids.length;
+      const node = { m, sides, y, x: rounds.indexOf(m.round) * COLW, kids };
+      nodes.push(node);
+      return node;
+    };
+    visit(finalMatch);
+    const height = Math.max(leaf, 1) * ROWH + 30;
+    const width = rounds.length * COLW;
+    const hl = importView?.highlight || null;
+    const isHl = (n) => hl && n === hl;
+    const scoreOf = (m, n) => {
+      if (m.method === "retirement") return m.winner === n ? "" : "α.α.";
+      const s = n === m.p1 ? m.score1 : m.score2;
+      return s == null ? "" : `${s}${m.scoreRecorded === false ? "*" : ""}`;
+    };
+    return (
+      <div className="bt-wrap">
+        <div className="bt-canvas" style={{ width, height: height + 26 }}>
+          {rounds.map((r, i) => (
+            <div key={r} className="bt-col-head" style={{ left: i * COLW, width: BOXW }}>
+              {(inB.find((m) => m.round === r && m.roundLabel) || {}).roundLabel || `Γύρος ${r}`}
+            </div>
+          ))}
+          <svg className="bt-lines" width={width} height={height + 26}>
+            {nodes.flatMap((nd) =>
+              nd.kids.map((k, j) => {
+                const x1 = k.x + BOXW;
+                const y1 = k.y + 26 + BOXH / 2;
+                const x2 = nd.x;
+                const y2 = nd.y + 26 + BOXH / 2;
+                const mx = (x1 + x2) / 2;
+                const on = hl && (k.m.p1 === hl || k.m.p2 === hl) && (nd.m.p1 === hl || nd.m.p2 === hl);
+                return <path key={`${nd.m.match}-${j}`} d={`M${x1},${y1} H${mx} V${y2} H${x2}`} className={on ? "on" : ""} />;
+              })
+            )}
+          </svg>
+          {nodes.map((nd) => (
+            <div
+              key={nd.m.match}
+              className={`bt-box ${hl && (nd.m.p1 === hl || nd.m.p2 === hl) ? "hl" : ""}`}
+              style={{ left: nd.x, top: nd.y + 26, width: BOXW, height: BOXH }}
+              title={`Αγώνας ${nd.m.match}`}
+            >
+              {nd.sides.map((sd) => (
+                <div
+                  key={sd.name}
+                  className={`bt-line ${nd.m.winner === sd.name ? "win" : ""} ${isHl(sd.name) ? "me" : ""}`}
+                  onClick={() => setImportView({ ...importView, highlight: hl === sd.name ? null : sd.name })}
+                >
+                  {sd.tag && <span className="bt-tag" title={sd.title}>{sd.tag}</span>}
+                  <span className="bt-name">{short(sd.name)}</span>
+                  <span className="bt-score">{scoreOf(nd.m, sd.name)}</span>
+                </div>
+              ))}
+              <span className="bt-no">{nd.m.match}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   /** The body of an imported tournament (tabs: standings, rounds, details). */
   function renderImportBody(adminMode) {
     if (!importView) return null;
@@ -6015,6 +6131,25 @@ export default function TournamentManager() {
                   ))}
                 </div>
               )}
+              {brackets.length > 1 && (
+                <div className="layout-toggle" role="group" aria-label="Εμφάνιση" style={{ marginBottom: 10 }}>
+                  <button className={importView.view !== "tree" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "list" })}>
+                    <List size={14} /> Λίστα
+                  </button>
+                  <button className={importView.view === "tree" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "tree" })}>
+                    <LayoutGrid size={14} /> Δέντρο
+                  </button>
+                </div>
+              )}
+              {importView.view === "tree" && brackets.length > 1 ? (
+                <>
+                  <p className="cal-note" style={{ margin: "0 0 8px 0" }}>
+                    Πάτα ένα όνομα για να φωτιστεί η πορεία του. Ετικέτες: <strong>Ο1, Κ6…</strong> θέση πίνακα · <strong>↓85</strong> ήρθε ως χαμένος του αγώνα 85 · <strong>Ν123</strong> ήρθε ως νικητής του αγώνα 123.
+                  </p>
+                  {renderBracketTree(doc, bracket)}
+                </>
+              ) : (
+              <>
               <div className="round-pills" style={{ marginBottom: 10 }}>
                 {rounds.map((r) => (
                   <button key={r} className={`round-pill ${round === r ? "active" : ""}`} onClick={() => setImportView({ ...importView, round: r })}>{roundLabelOf(r)}</button>
@@ -6032,6 +6167,8 @@ export default function TournamentManager() {
                   ))}
                 </tbody>
               </table>
+              </>
+              )}
               {inBracket.some((m) => m.scoreRecorded === false && m.method !== "retirement") && (
                 <p className="cal-note" style={{ marginTop: 6 }}>* Το σκορ δεν είχε καταγραφεί· είναι γνωστός μόνο ο νικητής.</p>
               )}
@@ -7994,6 +8131,21 @@ export default function TournamentManager() {
         .layout-toggle button + button { border-left: 1px solid var(--border); }
         .layout-toggle button.active { background: var(--accent); color: #fff; font-weight: 600; }
         .layout-toggle.mini { margin: 0; }
+        .bt-wrap { overflow: auto; max-height: 78vh; border: 1px solid var(--border); border-radius: 10px; background: var(--surface, #fff); padding: 10px; }
+        .bt-canvas { position: relative; }
+        .bt-col-head { position: absolute; top: 0; font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bt-lines { position: absolute; left: 0; top: 0; pointer-events: none; }
+        .bt-lines path { fill: none; stroke: var(--border); stroke-width: 1.5; }
+        .bt-lines path.on { stroke: var(--accent); stroke-width: 3; }
+        .bt-box { position: absolute; border: 1px solid var(--border); border-radius: 7px; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: center; padding: 0 6px; }
+        .bt-box.hl { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+        .bt-line { display: flex; align-items: center; gap: 5px; font-size: 12.5px; line-height: 21px; cursor: pointer; color: var(--muted); }
+        .bt-line.win { color: var(--ink); font-weight: 700; }
+        .bt-line.me .bt-name { background: var(--accent-soft); border-radius: 4px; padding: 0 3px; }
+        .bt-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bt-tag { font-size: 10px; font-weight: 600; color: #2f5a8a; background: #eef3fb; border-radius: 4px; padding: 0 4px; line-height: 16px; }
+        .bt-score { font-variant-numeric: tabular-nums; min-width: 26px; text-align: right; }
+        .bt-no { position: absolute; top: -9px; right: 6px; font-size: 10px; color: var(--muted); background: #fff; padding: 0 3px; }
         .layout-toggle.mini button { padding: 3px 9px; font-size: 12px; }
         .pairings-list td { padding: 7px 8px; font-size: 15px; }
         .pairings-list .pl-name { width: 40%; }
