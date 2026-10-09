@@ -32,12 +32,11 @@ import {
 } from "lucide-react";
 
 import {
-  loadAdminPassword,
+  loadAdminPasswordStrict,
   saveAdminPassword,
   saveRegistry,
   loadElo,
   saveElo,
-  loadIndex,
   saveIndex,
   saveTournamentData,
   fetchTournamentData,
@@ -45,7 +44,7 @@ import {
   loadSeason,
   saveSeason,
   listSeasonYears,
-  loadFeedItems,
+  loadFeedItemsStrict,
   saveFeedItems,
   loadRegistryStrict,
   loadEloStrict,
@@ -179,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.10";
+const APP_BUILD_VERSION = "2026-10-09.11";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -205,6 +204,15 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.11",
+    date: "2026-10-09",
+    items: [
+      "Ασφάλεια: η σύνδεση διαχειριστή δεν δέχεται πλέον προεπιλεγμένο κωδικό. Αν η βάση δεν διαβάζεται ή δεν έχει οριστεί κωδικός, η σύνδεση απορρίπτεται με σαφές μήνυμα.",
+      "Περισσότεροι έλεγχοι στις αποθηκεύσεις (τουρνουά, κάδος, σεζόν, εισαγωγές): κάθε αποτυχία εμφανίζεται στο κόκκινο πλαίσιο. Το RSS feed δεν κινδυνεύει πια να αδειάσει αν η βάση δεν διαβαστεί.",
+      "Ο έλεγχος συνέπειας δεν δείχνει ψευδείς διαφορές όταν η βάση δεν διαβάζεται· εμφανίζει «Ο έλεγχος δεν ολοκληρώθηκε».",
+    ],
+  },
   {
     version: "2026-10-09.10",
     date: "2026-10-09",
@@ -2733,8 +2741,26 @@ export default function TournamentManager() {
   const [changePwNew, setChangePwNew] = useState("");
   const [changePwError, setChangePwError] = useState("");
 
+  /** Reads the admin password strictly. A failed read or a missing password
+   * never lets anyone in — there is no built-in default any more. */
+  async function readAdminPassword() {
+    try {
+      return { stored: await loadAdminPasswordStrict() };
+    } catch {
+      return { error: "Η βάση δεν διαβάστηκε — δοκίμασε ξανά." };
+    }
+  }
+
   async function submitAdminPassword() {
-    const stored = await loadAdminPassword();
+    const { stored, error } = await readAdminPassword();
+    if (error) {
+      setAdminPasswordError(error);
+      return;
+    }
+    if (!stored) {
+      setAdminPasswordError("Δεν έχει οριστεί κωδικός διαχειριστή.");
+      return;
+    }
     if (adminPasswordInput === stored) {
       setRole("admin");
       setAdminPasswordPrompt(false);
@@ -2762,7 +2788,15 @@ export default function TournamentManager() {
   }
 
   async function submitChangePassword() {
-    const stored = await loadAdminPassword();
+    const { stored, error } = await readAdminPassword();
+    if (error) {
+      setChangePwError(error);
+      return;
+    }
+    if (!stored) {
+      setChangePwError("Δεν έχει οριστεί κωδικός διαχειριστή.");
+      return;
+    }
     if (changePwCurrent !== stored) {
       setChangePwError("Current password is wrong.");
       return;
@@ -2948,6 +2982,7 @@ export default function TournamentManager() {
   const [health, setHealth] = useState(null); // result of buildConsistencyReport (admin only)
   const [consistencyReport, setConsistencyReport] = useState(null);
   const [consistencyLoading, setConsistencyLoading] = useState(false);
+  const [consistencyError, setConsistencyError] = useState("");
   const [trashBusy, setTrashBusy] = useState(false);
   const [identityPlan, setIdentityPlan] = useState(null); // dry-run report of the migration to permanent ids
   const [identityDecisions, setIdentityDecisions] = useState({});
@@ -3240,7 +3275,7 @@ export default function TournamentManager() {
       history: nextHistory,
       createdAt,
     };
-    await saveTournamentData(tournamentId, snapshot);
+    if (!(await saveTournamentData(tournamentId, snapshot))) reportSaveFailure(`Τουρνουά «${tournamentName || tournamentId}»`);
     setArchive((prev) => {
       const next = prev.filter((t) => t.id !== tournamentId);
       next.push({
@@ -4186,11 +4221,11 @@ export default function TournamentManager() {
       // The built-in historical days would otherwise be re-created on the next load.
       if (id.startsWith("hist-day")) {
         const purgedIds = [...new Set([...(sysState.purgedIds || []), id])];
-        await saveSysState({ purgedIds });
+        if (!(await saveSysState({ purgedIds }))) reportSaveFailure("Ρυθμίσεις — η λίστα οριστικά διαγραμμένων");
         setSysState((s) => ({ ...s, purgedIds }));
       }
       const nextTrash = trash.filter((t) => t.id !== id);
-      await saveSysTrash(nextTrash);
+      if (!(await saveSysTrash(nextTrash))) reportSaveFailure("Κάδος");
       setTrash(nextTrash);
       setTrashAction(null);
       showToast("Το τουρνουά διαγράφηκε οριστικά.");
@@ -4209,9 +4244,12 @@ export default function TournamentManager() {
         showToast("Το έγγραφο του τουρνουά δεν βρέθηκε.");
         return;
       }
-      await saveTournamentData(id, { ...doc, isOfficial: false });
+      if (!(await saveTournamentData(id, { ...doc, isOfficial: false }))) {
+        reportSaveFailure(`Τουρνουά «${entry.name || id}» — η σήμανση ως ανεπίσημο δεν αποθηκεύτηκε`);
+        return;
+      }
       const nextTrash = trash.map((t) => (t.id === id ? { ...t, isOfficial: false } : t));
-      await saveSysTrash(nextTrash);
+      if (!(await saveSysTrash(nextTrash))) reportSaveFailure("Κάδος");
       setTrash(nextTrash);
       setTrashAction(null);
       showToast("Σημειώθηκε ως ανεπίσημο — τώρα μπορεί να διαγραφεί οριστικά.");
@@ -4322,7 +4360,12 @@ export default function TournamentManager() {
     setConfirmingOfficial(false);
     setIsOfficial(next);
     if (!tournamentId) return;
-    await saveTournamentData(tournamentId, { ...currentSnapshot(), isOfficial: next });
+    if (!(await saveTournamentData(tournamentId, { ...currentSnapshot(), isOfficial: next }))) {
+      // Keep the screen and the catalogue in line with what is stored.
+      setIsOfficial(!next);
+      reportSaveFailure(`Τουρνουά «${tournamentName || tournamentId}» — η αλλαγή επίσημο/ανεπίσημο δεν αποθηκεύτηκε`);
+      return;
+    }
     const updated = archive.map((t) => (t.id === tournamentId ? { ...t, isOfficial: next } : t));
     setArchive(updated);
     const indexSaved = await saveIndexChecked(updated);
@@ -4533,11 +4576,13 @@ export default function TournamentManager() {
 
   /* ---- data health: does the stored ELO / season match the catalogue? ---- */
 
+  /** Strict reads: a failed read throws instead of looking like "nothing
+   * stored", which would show differences that are not really there. */
   async function loadHealthInputs(indexOverride) {
-    const [elo, years] = await Promise.all([loadElo(), listSeasonYears()]);
+    const [elo, years] = await Promise.all([loadEloStrict(), listSeasonYearsStrict()]);
     const seasons = {};
-    for (const y of years) seasons[y] = await loadSeason(y);
-    const index = Array.isArray(indexOverride) ? indexOverride : await loadIndex();
+    for (const y of years) seasons[y] = await loadSeasonStrict(y);
+    const index = Array.isArray(indexOverride) ? indexOverride : await loadIndexStrict();
     return { elo, seasons, index, display: new Map(PERSON_DISPLAY) };
   }
 
@@ -4545,16 +4590,20 @@ export default function TournamentManager() {
     try {
       setHealth(buildConsistencyReport(await loadHealthInputs(indexOverride)));
     } catch {
-      /* the banner is best-effort */
+      /* the banner is best-effort: on a failed read it keeps its last state */
     }
   }
 
   async function runConsistencyCheck() {
     setConsistencyLoading(true);
+    setConsistencyError("");
     try {
       const report = buildConsistencyReport(await loadHealthInputs());
       setConsistencyReport(report);
       setHealth(report);
+    } catch {
+      setConsistencyReport(null);
+      setConsistencyError("Ο έλεγχος δεν ολοκληρώθηκε — η βάση δεν διαβάστηκε. Δοκίμασε ξανά.");
     } finally {
       setConsistencyLoading(false);
     }
@@ -5052,7 +5101,15 @@ export default function TournamentManager() {
     if (!recapText) return;
     setAddingToFeed(true);
     try {
-      const items = await loadFeedItems();
+      // Read strictly: a failed read must not look like an empty feed, or the
+      // write below would replace every published item with this one.
+      let items;
+      try {
+        items = await loadFeedItemsStrict();
+      } catch {
+        reportSaveFailure("RSS feed — δεν επιχειρήθηκε, γιατί το feed δεν διαβάστηκε");
+        return;
+      }
 
       // Group the plain-text lines into visual sections (title, winner,
       // standings, ELO, links) and render each as its own styled box —
@@ -5604,7 +5661,7 @@ export default function TournamentManager() {
         };
       });
     });
-    await saveSeason(2026, season);
+    if (!(await saveSeason(2026, season))) reportSaveFailure("Σεζόν 2026 — ιστορική εισαγωγή");
     if (seasonBrowseYear === 2026) setSeasonData(season);
     setNotice(`Imported ${HISTORICAL_IMPORT_2026.length} players across 11 days into the 2026 season.`);
   }
@@ -5675,6 +5732,7 @@ export default function TournamentManager() {
           </button>
         </div>
       </div>
+      {consistencyError && <p className="field-warning">{consistencyError}</p>}
       {consistencyReport && <ConsistencyReportView report={consistencyReport} onClose={() => setConsistencyReport(null)} />}
       </>
     ) : (
@@ -6946,7 +7004,7 @@ export default function TournamentManager() {
         }
         if (d && d.personMap) {
           const { personMap: _drop, ...rest } = d;
-          await saveTournamentData(id, rest);
+          if (!(await saveTournamentData(id, rest))) reportSaveFailure(`Εισαγωγή «${d.name || id}» — καθάρισμα αντιστοίχισης`);
         }
       }
       const patch = { importMatching: all.slice(0, -1) };
