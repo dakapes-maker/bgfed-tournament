@@ -178,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.01";
+const APP_BUILD_VERSION = "2026-10-09.03";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -204,6 +204,22 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.03",
+    date: "2026-10-09",
+    items: [
+      "Εισαγόμενα τουρνουά με πολλούς πίνακες (π.χ. Τελική Φάση Πρωταθλήματος: Αήττητοι, Ηττημένοι, Τελική σειρά): επιλογή πίνακα, ονόματα φάσεων, θέσεις όπως τις απένειμε η διοργάνωση (π.χ. 5–6) και η θέση πίνακα (Ο1, Κ6…) κάθε παίκτη. Σκορ που δεν καταγράφηκαν φαίνονται με *.",
+      "Τα εισαγόμενα έχουν δική τους σεζόν (π.χ. η Τελική Φάση 2025 που έγινε τον Ιανουάριο 2026 → σεζόν 2025· το Κύπελλο 2025 → 2025)· αλλάζει από τα Στοιχεία του τουρνουά.",
+      "Αντιστοίχιση παικτών: το αρχείο αποφάσεων μπορεί να συμπληρώσει το όνομα υπάρχοντος προσώπου (π.χ. μικρό όνομα), με αναίρεση.",
+    ],
+  },
+  {
+    version: "2026-10-09.02",
+    date: "2026-10-09",
+    items: [
+      "Διόρθωση: στην καρτέλα παίκτη χωρίς αγώνες Premier League (π.χ. παίκτες που ήρθαν από τα Κύπελλα), το «Performance Trend» έμενε σε «Loading…»· τώρα εξηγεί ότι δεν υπάρχουν ακόμα αγώνες που μετράνε στην ELO.",
+    ],
+  },
   {
     version: "2026-10-09.01",
     date: "2026-10-09",
@@ -1601,6 +1617,15 @@ function importCompetitionId(doc) {
   return "cup";
 }
 
+/** Season of an imported tournament: explicit (national competitions follow
+ * their own year, e.g. the 2025 final played in January 2026), otherwise
+ * the calendar year of its date. */
+function importSeason(doc) {
+  if (doc && Number(doc.seasonYear)) return Number(doc.seasonYear);
+  const y = Number(String(doc?.date || "").slice(0, 4));
+  return y || null;
+}
+
 /** "2026-10-02" -> ISO at local noon (for sorting with our tournaments). */
 function importDateIso(ymd) {
   const [y, m, d] = String(ymd || "").split("-").map(Number);
@@ -1634,6 +1659,7 @@ function validateImport(doc) {
     if ((wins[p.name] || 0) !== p.wins) problems.push(`Νίκες «${p.name}»: ${wins[p.name] || 0} από τους αγώνες, ${p.wins} στην κατάταξη της πηγής.`);
   });
   const real = (doc.matches || []).filter((m) => m.method !== "bye");
+  if (doc.seasonYear != null && !Number(doc.seasonYear)) problems.push("Μη έγκυρη σεζόν.");
   return {
     problems,
     summary: {
@@ -4606,7 +4632,7 @@ export default function TournamentManager() {
       if (names.length === 0) return;
       const pl = (doc.placements || []).find((p) => names.includes(p.name));
       const date = importDateIso(doc.date) || doc.importedAt;
-      rows.push({ year: seasonForDate(date), tournamentId: id, tournamentName: doc.name, date, points: null, position: pl ? pl.position : null, competitionId: importCompetitionId(doc), imported: true });
+      rows.push({ year: importSeason(doc), tournamentId: id, tournamentName: doc.name, date, points: null, position: pl ? pl.position : null, positionLabel: pl ? pl.positionLabel || null : null, competitionId: importCompetitionId(doc), imported: true });
     });
     rows.sort((a, b) => new Date(b.date) - new Date(a.date));
     setPlayerHistoryCache((prev) => ({ ...prev, [key]: rows }));
@@ -5390,7 +5416,7 @@ export default function TournamentManager() {
       Object.values(importDocs).forEach((doc) => {
         if (!doc.personMap || !doc.placements || !doc.placements[0]) return;
         const date = importDateIso(doc.date) || doc.importedAt;
-        if (!tournamentInScope({ date, seasonYear: seasonForDate(date) }, scope)) return;
+        if (!tournamentInScope({ date, seasonYear: importSeason(doc) }, scope)) return;
         if (competition !== "all" && importCompetitionId(doc) !== competition) return;
         const wKey = doc.personMap[doc.placements[0].name];
         const w = wKey ? registry.players[wKey] : null;
@@ -5840,7 +5866,8 @@ export default function TournamentManager() {
       setImportPreview(null);
       setImportDateDraft(null);
       setImportConfirmDelete(false);
-      setImportView({ id, doc, tab: "standings", round: Math.max(1, ...(doc.matches || []).map((m) => m.round)) });
+      const b0 = doc.brackets && doc.brackets.length ? doc.brackets[0].id : "main";
+      setImportView({ id, doc, tab: "standings", bracket: b0, round: Math.min(...(doc.matches || []).filter((m) => (m.bracket || "main") === b0).map((m) => m.round)) });
     } catch {
       showToast("Το τουρνουά δεν διαβάστηκε — δοκίμασε ξανά.");
     }
@@ -5848,7 +5875,7 @@ export default function TournamentManager() {
 
   async function saveImportDates() {
     if (!importView || !importDateDraft || !importsList) return;
-    const doc = { ...importView.doc, date: importDateDraft.date, dateEnd: importDateDraft.dateEnd, dateAssumed: !!importDateDraft.dateAssumed };
+    const doc = { ...importView.doc, date: importDateDraft.date, dateEnd: importDateDraft.dateEnd, dateAssumed: !!importDateDraft.dateAssumed, seasonYear: Number(importDateDraft.seasonYear) || importSeason({ date: importDateDraft.date }) };
     if (!(await saveTournamentData(importView.id, doc))) {
       reportSaveFailure("Εισαγωγές — οι ημερομηνίες δεν αποθηκεύτηκαν");
       return;
@@ -5895,8 +5922,19 @@ export default function TournamentManager() {
   function renderImportBody(adminMode) {
     if (!importView) return null;
     const { doc, tab, round } = importView;
-    const rounds = [...new Set((doc.matches || []).map((m) => m.round))].sort((a, b) => a - b);
-    const roundMatches = (doc.matches || []).filter((m) => m.round === round);
+    const brackets = doc.brackets && doc.brackets.length ? doc.brackets : [{ id: "main", name: "" }];
+    const bracket = importView.bracket || brackets[0].id;
+    const inBracket = (doc.matches || []).filter((m) => (m.bracket || "main") === bracket);
+    const rounds = [...new Set(inBracket.map((m) => m.round))].sort((a, b) => a - b);
+    const roundLabelOf = (r) => (inBracket.find((m) => m.round === r && m.roundLabel) || {}).roundLabel || `Γύρος ${r}`;
+    const roundMatches = inBracket.filter((m) => m.round === round);
+    const scoreText = (m) => {
+      if (m.method === "bye") return "bye";
+      if (m.method === "retirement") return "α.α.";
+      if (m.score1 == null || m.score2 == null) return "—";
+      return `${m.score1} – ${m.score2}${m.scoreRecorded === false ? "*" : ""}`;
+    };
+    const hasSeats = !!doc.seats;
     return (
       <>
           <div className="tabs" style={{ marginBottom: 12 }}>
@@ -5907,13 +5945,14 @@ export default function TournamentManager() {
           {tab === "standings" && (
             <div style={{ overflowX: "auto" }}>
               <table className="cal-table">
-                <thead><tr><th>Θέση</th><th>Παίκτης</th>{adminMode && doc.personMap && <th>Στην πηγή</th>}<th>Νίκες</th><th>Ήττες</th><th>Αγώνες</th></tr></thead>
+                <thead><tr><th>Θέση</th><th>Παίκτης</th>{hasSeats && <th title="Η θέση του πίνακα που κάλυψε ο παίκτης">Θέση πίνακα</th>}{adminMode && doc.personMap && <th>Στην πηγή</th>}<th>Νίκες</th><th>Ήττες</th><th>Αγώνες</th></tr></thead>
                 <tbody>
                   {(doc.placements || []).map((p) => {
                     return (
                       <tr key={p.name}>
-                        <td>{p.position}</td>
+                        <td>{p.positionLabel || p.position}</td>
                         <td>{renderImportedName(doc, p.name)}</td>
+                        {hasSeats && <td className="cal-note">{doc.seats[p.name] || ""}</td>}
                         {adminMode && doc.personMap && <td className="cal-note">{p.name}</td>}
                         <td>{p.wins}</td><td>{p.losses}</td><td>{p.matches}</td>
                       </tr>
@@ -5921,14 +5960,34 @@ export default function TournamentManager() {
                   })}
                 </tbody>
               </table>
-              <p className="cal-note" style={{ marginTop: 6 }}>Οι νίκες περιλαμβάνουν τα bye, όπως στην πηγή. Η σειρά είναι αυτή της πηγής.</p>
+              <p className="cal-note" style={{ marginTop: 6 }}>
+                {doc.brackets && doc.brackets.length > 1
+                  ? "Οι θέσεις είναι αυτές της διοργάνωσης· μετά την 4η, ανά γύρο αποκλεισμού. Η «Θέση πίνακα» (π.χ. Κ6) είναι η θέση του πίνακα που κάλυψε ο παίκτης — όχι απαραίτητα ο σύλλογός του."
+                  : "Οι νίκες περιλαμβάνουν τα bye, όπως στην πηγή. Η σειρά είναι αυτή της πηγής."}
+              </p>
             </div>
           )}
           {tab === "rounds" && (
             <>
+              {brackets.length > 1 && (
+                <div className="tabs" style={{ marginBottom: 8 }}>
+                  {brackets.map((b) => (
+                    <button
+                      key={b.id}
+                      className={`tab ${bracket === b.id ? "active" : ""}`}
+                      onClick={() => {
+                        const rs = [...new Set((doc.matches || []).filter((m) => (m.bracket || "main") === b.id).map((m) => m.round))];
+                        setImportView({ ...importView, bracket: b.id, round: Math.min(...rs) });
+                      }}
+                    >
+                      {b.name}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="round-pills" style={{ marginBottom: 10 }}>
                 {rounds.map((r) => (
-                  <button key={r} className={`round-pill ${round === r ? "active" : ""}`} onClick={() => setImportView({ ...importView, round: r })}>Γύρος {r}</button>
+                  <button key={r} className={`round-pill ${round === r ? "active" : ""}`} onClick={() => setImportView({ ...importView, round: r })}>{roundLabelOf(r)}</button>
                 ))}
               </div>
               <table className="cal-table">
@@ -5937,18 +5996,22 @@ export default function TournamentManager() {
                     <tr key={m.match}>
                       <td className="cal-note">{m.match}</td>
                       <td style={{ fontWeight: m.winner === m.p1 ? 700 : 400 }}>{renderImportedName(doc, m.p1)}</td>
-                      <td style={{ whiteSpace: "nowrap", textAlign: "center" }}>{m.method === "bye" ? "bye" : `${m.score1} – ${m.score2}`}</td>
+                      <td style={{ whiteSpace: "nowrap", textAlign: "center" }}>{scoreText(m)}</td>
                       <td style={{ fontWeight: m.winner === m.p2 ? 700 : 400 }}>{m.p2 ? renderImportedName(doc, m.p2) : ""}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {inBracket.some((m) => m.scoreRecorded === false && m.method !== "retirement") && (
+                <p className="cal-note" style={{ marginTop: 6 }}>* Το σκορ δεν είχε καταγραφεί· είναι γνωστός μόνο ο νικητής.</p>
+              )}
             </>
           )}
           {tab === "info" && (
             <>
               <dl className="details-list">
-                <dt>Ημερομηνίες</dt><dd>{importDateLabel(doc)}</dd>
+                <dt>Ημερομηνίες</dt><dd>{importDateLabel(doc)}{doc.venue ? ` · ${doc.venue}` : ""}</dd>
+                <dt>Σεζόν</dt><dd>{importSeason(doc) || "—"}</dd>
                 <dt>Διοργάνωση</dt><dd>{doc.competition || "—"}</dd>
                 <dt>Διοργανωτής</dt><dd>{doc.organiser || "—"}</dd>
                 <dt>Σύστημα</dt><dd>{doc.system || "—"}</dd>
@@ -5964,12 +6027,13 @@ export default function TournamentManager() {
                   <label style={{ display: "flex", gap: 6, alignItems: "center", paddingBottom: 10 }}>
                     <input type="checkbox" checked={!!importDateDraft.dateAssumed} onChange={(e) => setImportDateDraft({ ...importDateDraft, dateAssumed: e.target.checked })} /> εκτίμηση
                   </label>
+                  <div style={{ width: 100 }}><label>Σεζόν</label><input type="number" value={importDateDraft.seasonYear} onChange={(e) => setImportDateDraft({ ...importDateDraft, seasonYear: e.target.value })} /></div>
                   <button className="btn-secondary" onClick={() => setImportDateDraft(null)}>Άκυρο</button>
                   <button className="btn-primary" onClick={saveImportDates} disabled={!importDateDraft.date}>Αποθήκευση</button>
                 </div>
               ) : (
-                <button className="btn-secondary" style={{ marginTop: 12 }} onClick={() => setImportDateDraft({ date: doc.date || "", dateEnd: doc.dateEnd || "", dateAssumed: !!doc.dateAssumed })}>
-                  <Pencil size={14} /> Αλλαγή ημερομηνιών
+                <button className="btn-secondary" style={{ marginTop: 12 }} onClick={() => setImportDateDraft({ date: doc.date || "", dateEnd: doc.dateEnd || "", dateAssumed: !!doc.dateAssumed, seasonYear: importSeason(doc) || "" })}>
+                  <Pencil size={14} /> Αλλαγή ημερομηνιών και σεζόν
                 </button>
               ))}
               {adminMode && <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
@@ -6089,7 +6153,7 @@ export default function TournamentManager() {
       const date = importDateIso(doc.date) || doc.importedAt;
       return {
         id, name: doc.name, date, status: "Completed", isOfficial: true, imported: true,
-        competitionId: importCompetitionId(doc), seasonYear: seasonForDate(date),
+        competitionId: importCompetitionId(doc), seasonYear: importSeason(doc),
       };
     });
   }
@@ -6098,7 +6162,8 @@ export default function TournamentManager() {
     const doc = importDocs[id];
     if (!doc) return;
     setImportReturn(back || { kind: "archive" });
-    setImportView({ id, doc, tab: "standings", round: Math.max(1, ...(doc.matches || []).map((m) => m.round)) });
+    const b0 = doc.brackets && doc.brackets.length ? doc.brackets[0].id : "main";
+    setImportView({ id, doc, tab: "standings", bracket: b0, round: Math.min(...(doc.matches || []).filter((m) => (m.bracket || "main") === b0).map((m) => m.round)) });
     setPhase("imported");
   }
 
@@ -6121,7 +6186,7 @@ export default function TournamentManager() {
     Object.values(importDocs).forEach((doc) => {
       if (!doc.personMap) return;
       const date = importDateIso(doc.date) || doc.importedAt;
-      const t = { date, seasonYear: seasonForDate(date) };
+      const t = { date, seasonYear: importSeason(doc) };
       if (!tournamentInScope(t, scope)) return;
       if (competition !== "all" && importCompetitionId(doc) !== competition) return;
       (doc.matches || []).forEach((m) => {
@@ -6183,7 +6248,7 @@ export default function TournamentManager() {
         let note = "";
         if (r.action === "existing") {
           const hit = byName(r.person);
-          if (hit) choice = { type: "existing", key: hit[0] };
+          if (hit) choice = { type: "existing", key: hit[0], ...(r.rename ? { rename: r.rename } : {}) };
           else note = `Το πρόσωπο «${r.person}» δεν βρέθηκε στο μητρώο — διάλεξε.`;
         } else if (r.action === "new") {
           const club = clubByName(r.club);
@@ -6280,6 +6345,7 @@ export default function TournamentManager() {
     mp.rows.forEach((r) => {
       if (r.choice?.type !== "new") return;
       const b = baseName(r.choice.name || "");
+      if (mp.rows.some((o) => o.choice?.type === "existing" && o.choice.rename && baseName(o.choice.rename) === b)) out.push(`Το όνομα «${r.choice.name}» δίνεται και ως νέο όνομα σε υπάρχον πρόσωπο.`);
       if (spellings.has(b)) out.push(`Το όνομα «${r.choice.name}» υπάρχει ήδη στο μητρώο (${registry.players[spellings.get(b)]?.name}) — διάλεξε «Ίδιο με» ή άλλαξε το όνομα.`);
       if (newNames.has(b)) out.push(`Δύο νέα πρόσωπα με το ίδιο όνομα «${r.choice.name}».`);
       newNames.add(b);
@@ -6304,6 +6370,7 @@ export default function TournamentManager() {
       const players = { ...registry.players };
       let topNo = nextRegNo(registry) - 1;
       const created = [];
+      const renamed = {}; // key -> previous name
       const linked = {}; // key -> names added to extNames
       const keyOfName = {};
       matchPlan.rows.forEach((r) => {
@@ -6312,6 +6379,12 @@ export default function TournamentManager() {
           key = r.choice.key;
           const p = players[key];
           players[key] = { ...p, extNames: [...new Set([...(p.extNames || []), ...r.names])] };
+          if (r.choice.rename && r.choice.rename.trim() && r.choice.rename.trim() !== p.name) {
+            // enrich the name (e.g. a first name learned from this tournament); the old spelling stays as an alias
+            const nn = r.choice.rename.trim();
+            players[key] = { ...players[key], name: nn, aliases: [...new Set([...personSpellings(p), baseName(nn)])] };
+            renamed[key] = p.name;
+          }
           linked[key] = [...new Set([...(linked[key] || []), ...r.names])];
         } else {
           key = registry.identityVersion === 2 ? newPersonId(players) : normalizeName(r.choice.name);
@@ -6353,7 +6426,7 @@ export default function TournamentManager() {
           return;
         }
       }
-      const record = { at: new Date().toISOString(), created, linked, imports: matchPlan.imports.map((i) => i.id) };
+      const record = { at: new Date().toISOString(), created, linked, renamed, imports: matchPlan.imports.map((i) => i.id) };
       const patch = { importMatching: [...(sysState.importMatching || []), record] };
       if (await saveSysState(patch)) setSysState((st) => ({ ...st, ...patch }));
       else reportSaveFailure("Αντιστοίχιση — ολοκληρώθηκε, αλλά δεν καταγράφηκε (η αναίρεση δεν θα είναι διαθέσιμη)");
@@ -6381,6 +6454,9 @@ export default function TournamentManager() {
       });
       Object.entries(rec.linked || {}).forEach(([k, names]) => {
         if (players[k]) players[k] = { ...players[k], extNames: (players[k].extNames || []).filter((n) => !names.includes(n)) };
+      });
+      Object.entries(rec.renamed || {}).forEach(([k, oldName]) => {
+        if (players[k]) players[k] = { ...players[k], name: oldName };
       });
       const nextRegistry = { ...registry, players };
       if (!(await saveRegistryChecked(nextRegistry))) return;
@@ -6464,7 +6540,10 @@ export default function TournamentManager() {
                               ))}
                               {r.note && <div className="field-warning" style={{ margin: 0 }}>{r.note}</div>}
                             </td>
-                            <td>{r.level}</td>
+                            <td>
+                              {r.level}
+                              {c?.type === "existing" && c.rename && <div className="cal-note">νέο όνομα: {c.rename}</div>}
+                            </td>
                             <td>
                               <select
                                 value={value}
@@ -8157,7 +8236,7 @@ export default function TournamentManager() {
             </div>
             <div className="scope-bar">
               <span>Περίοδος:</span>
-              {["all", ...seasonYearsAvailable].map((y) => (
+              {["all", ...[...new Set([...seasonYearsAvailable, ...Object.values(importDocs).map(importSeason).filter(Boolean)])].sort((a, b) => b - a)].map((y) => (
                 <button
                   key={y}
                   className={`round-pill ${statsScope === y ? "active" : ""}`}
@@ -9183,9 +9262,9 @@ export default function TournamentManager() {
                   )}
 
                   <p className="trend-chart-title" style={{ marginTop: 4 }}>Performance trend</p>
-                  <PlayerTrendCharts rows={eloTimeline ? eloTimeline[key] : null} />
+                  <PlayerTrendCharts rows={eloTimeline ? eloTimeline[key] || [] : null} />
 
-                  {eloTimeline && eloTimeline.__ledger && (
+                  {eloTimeline && eloTimeline.__ledger && (eloTimeline.__ledger[key] || []).length > 0 && (
                     <details className="ledger" style={{ marginTop: 14 }}>
                       <summary style={{ cursor: "pointer", fontWeight: 600 }}>
                         Πώς προέκυψε η ELO ({(eloTimeline.__ledger[key] || []).filter((r) => !r.ret).length} αγώνες)
@@ -9226,7 +9305,7 @@ export default function TournamentManager() {
                             )}{" "}
                             <span style={{ color: "var(--muted)" }}>({formatDate(h.date)})</span>
                           </span>
-                          <strong>{h.imported ? (h.position ? `${h.position}η θέση` : "—") : `${h.points} pts`}</strong>
+                          <strong>{h.imported ? (h.positionLabel && h.positionLabel.includes("–") ? `θέσεις ${h.positionLabel}` : h.position ? `${h.position}η θέση` : "—") : `${h.points} pts`}</strong>
                         </div>
                       ))}
                     </div>
@@ -11122,6 +11201,7 @@ function AxisLineChart({ points, color, suffix = "" }) {
 
 function PlayerTrendCharts({ rows }) {
   if (!rows) return <p style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</p>;
+  if (rows.length === 0) return <p style={{ fontSize: 13, color: "var(--muted)" }}>Δεν υπάρχουν ακόμα αγώνες που να μετράνε στην ELO (μετράνε μόνο τα τουρνουά της Premier League).</p>;
   if (rows.length < 2) return <p style={{ fontSize: 13, color: "var(--muted)" }}>Not enough history yet for a trend.</p>;
   const eloPoints = rows.map((r) => ({ y: r.rating, label: formatMonthLabel(r.date), full: formatDate(r.date) }));
   const winRatePoints = rows.map((r) => ({ y: r.winRate, label: formatMonthLabel(r.date), full: formatDate(r.date) }));
