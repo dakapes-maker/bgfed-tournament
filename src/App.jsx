@@ -178,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.04";
+const APP_BUILD_VERSION = "2026-10-09.05";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -204,6 +204,14 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.05",
+    date: "2026-10-09",
+    items: [
+      "«Βαθμολογία ELO» → «Κατάταξη ELO». Η «Πανελλήνια Κατάταξη ELO» έχει πλέον δική της θέση στο μενού και στο Dashboard (και link #elo-national).",
+      "Καρτέλα παίκτη: το γράφημα ELO έχει επιλογή Ομοσπονδίας / Πανελλήνια· δίπλα, το ποσοστό νικών υπολογίζεται από όλους τους αγώνες σε όλες τις διοργανώσεις.",
+    ],
+  },
   {
     version: "2026-10-09.04",
     date: "2026-10-09",
@@ -820,24 +828,24 @@ const LANG_STORAGE_KEY = "bgfed_lang";
 const TRANSLATIONS = {
   el: {
     navAbout: "Σχετικά", navTournaments: "Τουρνουά", navSeason: "Βαθμολογία",
-    navElo: "Βαθμολογία ELO", navStats: "Στατιστικά", navPlayers: "Παίκτες", navControl: "Διαχείριση",
+    navElo: "Κατάταξη ELO", navEloNational: "Πανελλήνια Κατάταξη ELO", navStats: "Στατιστικά", navPlayers: "Παίκτες", navControl: "Διαχείριση",
     controlEyebrow: "Μόνο για διαχειριστή", controlTitle: "Διαχείριση εφαρμογής",
     dashboardEyebrow: "Διαχείριση Τουρνουά", dashboardTitle: "Πίνακας Ελέγχου",
     archiveEyebrow: "Τουρνουά Backgammon · Σύστημα Swiss", archiveTitle: "Αρχείο Τουρνουά",
     seasonEyebrow: "Ετήσια Κατάταξη", seasonTitle: "Βαθμολογία Σεζόν",
-    eloEyebrow: "Διαχρονική Αξιολόγηση", eloTitle: "Βαθμολογία ELO",
+    eloEyebrow: "Διαχρονική Αξιολόγηση", eloTitle: "Κατάταξη ELO", eloNationalTitle: "Πανελλήνια Κατάταξη ELO",
     playersEyebrow: "Μητρώο Παικτών", playersTitle: "Παίκτες",
     statsEyebrow: "Ιστορικό", statsTitle: "Στατιστικά",
     aboutEyebrow: "Πληροφορίες", aboutTitle: "Σχετικά με την εφαρμογή",
   },
   en: {
     navAbout: "About", navTournaments: "Tournaments", navSeason: "Season Standings",
-    navElo: "ELO Ratings", navStats: "Statistics", navPlayers: "Players", navControl: "Admin",
+    navElo: "ELO Ranking", navEloNational: "National ELO Ranking", navStats: "Statistics", navPlayers: "Players", navControl: "Admin",
     controlEyebrow: "Admin only", controlTitle: "App administration",
     dashboardEyebrow: "Tournament Manager", dashboardTitle: "Dashboard",
     archiveEyebrow: "Backgammon Tournament · Swiss System", archiveTitle: "Tournament Archive",
     seasonEyebrow: "Annual Ranking", seasonTitle: "Season Standings",
-    eloEyebrow: "Lifetime Skill Rating", eloTitle: "ELO Ratings",
+    eloEyebrow: "Lifetime Skill Rating", eloTitle: "ELO Ranking", eloNationalTitle: "National ELO Ranking",
     playersEyebrow: "Player Registry", playersTitle: "Players",
     statsEyebrow: "History", statsTitle: "Statistics",
     aboutEyebrow: "Information", aboutTitle: "About this app",
@@ -2902,6 +2910,7 @@ export default function TournamentManager() {
     const hash = window.location.hash.replace("#", "");
     if (hash === "season") setPhase("season");
     else if (hash === "elo") setPhase("elo");
+    else if (hash === "elo-national") { setEloPool("national"); setPhase("elo"); }
     else if (hash === "about") setPhase("about");
     else if (hash.startsWith("tournament=")) openArchived(hash.slice("tournament=".length));
   }, []);
@@ -7977,6 +7986,8 @@ export default function TournamentManager() {
         .layout-toggle button { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border: none; background: var(--surface, #fff); color: var(--ink); font: inherit; font-size: 14px; cursor: pointer; }
         .layout-toggle button + button { border-left: 1px solid var(--border); }
         .layout-toggle button.active { background: var(--accent); color: #fff; font-weight: 600; }
+        .layout-toggle.mini { margin: 0; }
+        .layout-toggle.mini button { padding: 3px 9px; font-size: 12px; }
         .pairings-list td { padding: 7px 8px; font-size: 15px; }
         .pairings-list .pl-name { width: 40%; }
         .pairings-list .pl-win { font-weight: 700; }
@@ -8170,8 +8181,11 @@ export default function TournamentManager() {
           <button className="btn-ghost" onClick={() => setPhase("season")}>
             <TrendingUp size={14} /> {L.navSeason}
           </button>
-          <button className="btn-ghost" onClick={() => setPhase("elo")}>
+          <button className="btn-ghost" onClick={() => { setEloPool("club"); setEloLedgerOpen(null); setPhase("elo"); }}>
             <Award size={14} /> {L.navElo}
+          </button>
+          <button className="btn-ghost" onClick={() => { setEloPool("national"); setEloLedgerOpen(null); setPhase("elo"); }}>
+            <Award size={14} /> {L.navEloNational}
           </button>
           <button className="btn-ghost" onClick={() => setPhase("h2h")}>
             <Users size={14} /> {L.navStats}
@@ -8872,8 +8886,8 @@ export default function TournamentManager() {
       {phase === "elo" && (
         <>
           <div className="header">
-            <p className="eyebrow">{L.eloEyebrow} · {sysState.competitionsVersion === 2 ? clubDisplay(sysState, sysState.homeClubId, ELO_POOLS.club.label) : ELO_POOLS.club.label}</p>
-            <h1>{L.eloTitle}</h1>
+            <p className="eyebrow">{L.eloEyebrow} · {eloPool === "national" ? "Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος" : sysState.competitionsVersion === 2 ? clubDisplay(sysState, sysState.homeClubId, ELO_POOLS.club.label) : ELO_POOLS.club.label}</p>
+            <h1>{eloPool === "national" ? L.eloNationalTitle : L.eloTitle}</h1>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
                 <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
@@ -8899,14 +8913,6 @@ export default function TournamentManager() {
               </div>
             </div>
 
-            <div className="layout-toggle" role="group" aria-label="Κατάταξη ELO" style={{ marginBottom: 14 }}>
-              <button className={eloPool === "club" ? "active" : ""} onClick={() => { setEloPool("club"); setEloLedgerOpen(null); }}>
-                ELO {clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}
-              </button>
-              <button className={eloPool === "national" ? "active" : ""} onClick={() => { setEloPool("national"); setEloLedgerOpen(null); }}>
-                Πανελλήνια ELO
-              </button>
-            </div>
             {eloPool === "national" && (
               <p className="cal-note" style={{ marginBottom: 12 }}>
                 Από {nationalElo.tournaments} {nationalElo.tournaments === 1 ? "τουρνουά" : "τουρνουά"} πανελλήνιων διοργανώσεων. Όλοι ξεκινούν από 1500· οι φιλοξενούμενοι παίζουν πάντα με 1500 και δεν εμφανίζονται στην κατάταξη· οι αποχωρήσεις δεν μετράνε.
@@ -9370,36 +9376,54 @@ export default function TournamentManager() {
 
                   <p className="trend-chart-title" style={{ marginTop: 4 }}>Performance trend</p>
                   {(() => {
-                    const hasClub = !!(eloTimeline && (eloTimeline[key] || []).length) || !!eloData.players?.[key];
-                    const hasNat = (nationalElo.timeline[key] || []).length > 0;
+                    const clubRows = eloTimeline ? eloTimeline[key] || [] : null;
+                    const natRows = nationalElo.timeline[key] || [];
+                    const hasClub = !!(clubRows && clubRows.length) || !!eloData.players?.[key];
+                    const hasNat = natRows.length > 0;
                     const pool = cardEloPool && ((cardEloPool === "club" && hasClub) || (cardEloPool === "national" && hasNat)) ? cardEloPool : hasClub || !hasNat ? "club" : "national";
+                    // win rate over every match the player played (all competitions)
+                    let winRows = null;
+                    if (eloTimeline && eloTimeline.__ledger) {
+                      const all = [...(eloTimeline.__ledger[key] || []), ...(nationalElo.ledger[key] || [])]
+                        .filter((r) => !r.ret)
+                        .sort((x, y) => new Date(x.date) - new Date(y.date));
+                      winRows = [];
+                      let w = 0;
+                      let g = 0;
+                      all.forEach((r, i) => {
+                        g += 1;
+                        if (r.result === "win") w += 1;
+                        const next = all[i + 1];
+                        if (!next || next.tournamentId !== r.tournamentId) winRows.push({ date: r.date, winRate: (w / g) * 100 });
+                      });
+                    }
                     return (
                       <>
-                        {hasClub && hasNat && (
-                          <div className="layout-toggle" role="group" style={{ marginBottom: 10 }}>
-                            <button className={pool === "club" ? "active" : ""} onClick={() => setCardEloPool("club")}>ELO {clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}</button>
-                            <button className={pool === "national" ? "active" : ""} onClick={() => setCardEloPool("national")}>Πανελλήνια ELO</button>
-                          </div>
-                        )}
-                        {pool === "national" ? (
-                          <>
-                            {!hasClub && <p className="cal-note" style={{ margin: "0 0 8px 0" }}>Πανελλήνια ELO</p>}
-                            <PlayerTrendCharts rows={nationalElo.timeline[key] || []} />
-                            {(nationalElo.ledger[key] || []).length > 0 && (
-                              <details className="ledger" style={{ marginTop: 14 }}>
-                                <summary style={{ cursor: "pointer", fontWeight: 600 }}>Πώς προέκυψε η Πανελλήνια ELO ({(nationalElo.ledger[key] || []).filter((r) => !r.ret).length} αγώνες)</summary>
-                                {renderEloLedger(key, "national")}
-                              </details>
-                            )}
-                          </>
-                        ) : (
-                          <PlayerTrendCharts rows={eloTimeline ? eloTimeline[key] || [] : null} />
+                        <PlayerTrendCharts
+                          eloRows={pool === "national" ? natRows : clubRows}
+                          winRows={winRows}
+                          eloSwitch={
+                            hasClub && hasNat ? (
+                              <span className="layout-toggle mini" role="group">
+                                <button className={pool === "club" ? "active" : ""} onClick={() => setCardEloPool("club")}>Ομοσπονδίας</button>
+                                <button className={pool === "national" ? "active" : ""} onClick={() => setCardEloPool("national")}>Πανελλήνια</button>
+                              </span>
+                            ) : (
+                              <span className="cal-note">{pool === "national" ? "Πανελλήνια" : "Ομοσπονδίας"}</span>
+                            )
+                          }
+                        />
+                        {pool === "national" && (nationalElo.ledger[key] || []).length > 0 && (
+                          <details className="ledger" style={{ marginTop: 14 }}>
+                            <summary style={{ cursor: "pointer", fontWeight: 600 }}>Πώς προέκυψε η Πανελλήνια ELO ({(nationalElo.ledger[key] || []).filter((r) => !r.ret).length} αγώνες)</summary>
+                            {renderEloLedger(key, "national")}
+                          </details>
                         )}
                       </>
                     );
                   })()}
 
-                  {eloTimeline && eloTimeline.__ledger && (eloTimeline.__ledger[key] || []).length > 0 && cardEloPool !== "national" && (
+                  {eloTimeline && eloTimeline.__ledger && (eloTimeline.__ledger[key] || []).length > 0 && (cardEloPool !== "national" || (nationalElo.timeline[key] || []).length === 0) && (
                     <details className="ledger" style={{ marginTop: 14 }}>
                       <summary style={{ cursor: "pointer", fontWeight: 600 }}>
                         Πώς προέκυψε η ELO ({(eloTimeline.__ledger[key] || []).filter((r) => !r.ret).length} αγώνες)
@@ -9509,10 +9533,15 @@ export default function TournamentManager() {
                 <span className="dashboard-card-title">{L.navSeason}</span>
                 <span className="dashboard-card-desc">Annual ranking across all tournaments</span>
               </button>
-              <button className="dashboard-card" onClick={() => setPhase("elo")}>
+              <button className="dashboard-card" onClick={() => { setEloPool("club"); setEloLedgerOpen(null); setPhase("elo"); }}>
                 <Award size={26} />
                 <span className="dashboard-card-title">{L.navElo}</span>
                 <span className="dashboard-card-desc">Lifetime skill rating for every player</span>
+              </button>
+              <button className="dashboard-card" onClick={() => { setEloPool("national"); setEloLedgerOpen(null); setPhase("elo"); }}>
+                <Award size={26} />
+                <span className="dashboard-card-title">{L.navEloNational}</span>
+                <span className="dashboard-card-desc">Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος</span>
               </button>
               <button className="dashboard-card" onClick={() => setPhase("h2h")}>
                 <Users size={26} />
@@ -11334,21 +11363,36 @@ function AxisLineChart({ points, color, suffix = "" }) {
   );
 }
 
-function PlayerTrendCharts({ rows }) {
-  if (!rows) return <p style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</p>;
-  if (rows.length === 0) return <p style={{ fontSize: 13, color: "var(--muted)" }}>Δεν υπάρχουν ακόμα αγώνες που να μετράνε στην ELO (μετράνε μόνο τα τουρνουά της Premier League).</p>;
-  if (rows.length < 2) return <p style={{ fontSize: 13, color: "var(--muted)" }}>Not enough history yet for a trend.</p>;
-  const eloPoints = rows.map((r) => ({ y: r.rating, label: formatMonthLabel(r.date), full: formatDate(r.date) }));
-  const winRatePoints = rows.map((r) => ({ y: r.winRate, label: formatMonthLabel(r.date), full: formatDate(r.date) }));
+/** Player card trends: the ELO of the chosen ranking (switch in its title)
+ * and, next to it, the win rate over every match in every competition. */
+function PlayerTrendCharts({ eloRows, winRows, eloSwitch }) {
+  const msg = (t) => <p style={{ fontSize: 13, color: "var(--muted)", margin: "12px 0" }}>{t}</p>;
+  const eloBody = !eloRows
+    ? msg("Loading…")
+    : eloRows.length === 0
+    ? msg("Δεν υπάρχουν ακόμα αγώνες σε αυτή την κατάταξη.")
+    : eloRows.length < 2
+    ? msg("Χρειάζονται τουλάχιστον δύο τουρνουά για γράφημα.")
+    : <AxisLineChart points={eloRows.map((r) => ({ y: r.rating, label: formatMonthLabel(r.date), full: formatDate(r.date) }))} color="var(--accent)" />;
+  const winBody = !winRows
+    ? msg("Loading…")
+    : winRows.length === 0
+    ? msg("Δεν υπάρχουν ακόμα αγώνες.")
+    : winRows.length < 2
+    ? msg("Χρειάζονται τουλάχιστον δύο τουρνουά για γράφημα.")
+    : <AxisLineChart points={winRows.map((r) => ({ y: r.winRate, label: formatMonthLabel(r.date), full: formatDate(r.date) }))} color="var(--win)" suffix="%" />;
   return (
     <div className="trend-charts-grid">
       <div className="trend-chart-card">
-        <p className="trend-chart-title">ELO over time</p>
-        <AxisLineChart points={eloPoints} color="var(--accent)" />
+        <p className="trend-chart-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span>ELO</span>
+          {eloSwitch}
+        </p>
+        {eloBody}
       </div>
       <div className="trend-chart-card">
-        <p className="trend-chart-title">Win rate over time</p>
-        <AxisLineChart points={winRatePoints} color="var(--win)" suffix="%" />
+        <p className="trend-chart-title">Ποσοστό νικών <span className="cal-note">(όλες οι διοργανώσεις)</span></p>
+        {winBody}
       </div>
     </div>
   );
