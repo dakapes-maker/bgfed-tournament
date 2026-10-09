@@ -178,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.03";
+const APP_BUILD_VERSION = "2026-10-09.04";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -204,6 +204,16 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-09.04",
+    date: "2026-10-09",
+    items: [
+      "Πανελλήνια ELO: από τα τουρνουά των πανελλήνιων διοργανώσεων (Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος). Όλοι ξεκινούν από 1500, οι φιλοξενούμενοι παίζουν πάντα με 1500 και δεν μπαίνουν στην κατάταξη, οι αποχωρήσεις δεν μετράνε. Υπολογίζεται αυτόματα κάθε φορά από τα εισαγόμενα — μια νέα εισαγωγή την ενημερώνει χωρίς Recompute.",
+      "Σελίδα ELO: επιλογή «ELO Ομοσπονδίας / Πανελλήνια ELO», με το «Πώς προέκυψε» για κάθε παίκτη και στις δύο.",
+      "Καρτέλα παίκτη: για όποιον έχει και τις δύο, επιλογή κατάταξης στο Performance Trend και στο «Πώς προέκυψε η ELO».",
+      "Η ELO της Ομοσπονδίας δεν αλλάζει.",
+    ],
+  },
   {
     version: "2026-10-09.03",
     date: "2026-10-09",
@@ -1364,7 +1374,7 @@ const DEFAULT_COMPETITIONS = [
  * (Τελική φάση, Κύπελλο) gets its own ranking when the final phase arrives. */
 const ELO_POOLS = {
   club: { label: "Κατάταξη συλλόγων (Premier League)", active: true },
-  national: { label: "Πανελλήνια κατάταξη (Τελική φάση, Κύπελλο)", active: false },
+  national: { label: "Πανελλήνια ELO (Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος)", active: true },
 };
 
 /* Competitions belong to a club (Build 4A). Each owner club is one ELO
@@ -2758,7 +2768,9 @@ export default function TournamentManager() {
   const [importDocs, setImportDocs] = useState({}); // id -> imported tournament (public view, history, statistics)
   const [importReturn, setImportReturn] = useState(null); // where the public imported view goes back to
   const [historyCompetition, setHistoryCompetition] = useState(""); // player card history filter
-  const [statsCompetition, setStatsCompetition] = useState("all"); // Statistics competition filter
+  const [statsCompetition, setStatsCompetition] = useState("all");
+  const [eloPool, setEloPool] = useState("club"); // ELO page: "club" (federation) or "national"
+  const [cardEloPool, setCardEloPool] = useState(null); // player card: chosen ranking (null = automatic) // Statistics competition filter
   const [matchPlan, setMatchPlan] = useState(null); // { rows, imports } — player matching of the imports
   const [matchBusy, setMatchBusy] = useState(false);
   const matchFileRef = useRef(null); // ELO page: player whose rating breakdown is open // final standings exported in this session
@@ -5476,6 +5488,7 @@ export default function TournamentManager() {
   }
 
   function openPlayerDetail(key) {
+    setCardEloPool(null);
     setNotice("");
     setConfirmingDeletePlayer(null);
     setPlayerDetailTab(isAdmin ? "contact" : "stats");
@@ -5554,6 +5567,7 @@ export default function TournamentManager() {
       </div>
     ) : null;
   const builtFrom = eloData?.builtFrom;
+  const nationalElo = computeNationalElo();
   // keep module-level helpers (ELO counting) in step with the settings
   RUNTIME_COMPETITIONS = competitionsFrom(sysState);
   RUNTIME_HOME_CLUB = sysState.homeClubId || null;
@@ -5650,18 +5664,18 @@ export default function TournamentManager() {
   /** "How this rating was reached" for one player: summary line and the
    * per-match table. Used on the player card and on the ELO page. Needs the
    * ELO replay (computeEloTimeline) to have run. */
-  function renderEloLedger(key) {
-    if (!eloTimeline || !eloTimeline.__ledger) {
+  function renderEloLedger(key, pool = "club") {
+    if (pool === "club" && (!eloTimeline || !eloTimeline.__ledger)) {
       return <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0" }}>Υπολογισμός…</p>;
     }
-    const rows = eloTimeline.__ledger[key] || [];
-    const stored = eloData.players?.[key]?.rating;
+    const rows = pool === "national" ? nationalElo.ledger[key] || [] : eloTimeline.__ledger[key] || [];
+    const stored = pool === "national" ? nationalElo.elo.players?.[key]?.rating : eloData.players?.[key]?.rating;
     const final = rows.length ? rows[rows.length - 1].ratingAfter : ELO_INITIAL;
     const agrees = stored === undefined || Math.abs(stored - final) < 0.5;
     return (
       <>
         <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0" }}>
-          Αφετηρία {ELO_INITIAL}. Κάθε αγώνας της Premier League αλλάζει την ELO ανάλογα με τη διαφορά δυναμικότητας και το μήκος του αγώνα· οι αγώνες ενός γύρου υπολογίζονται μαζί. Οι νίκες με Α.Α. δεν μετράνε.
+          Αφετηρία {ELO_INITIAL}. {pool === "national" ? "Κάθε αγώνας των Τελικών Φάσεων (Κυπέλλου και Πρωταθλήματος) αλλάζει την ELO· οι φιλοξενούμενοι παίζουν πάντα με 1500." : "Κάθε αγώνας της Premier League αλλάζει την ELO"} ανάλογα με τη διαφορά δυναμικότητας και το μήκος του αγώνα· οι αγώνες ενός γύρου υπολογίζονται μαζί. Οι νίκες με Α.Α. δεν μετράνε.
           {" "}Τελική: <strong>{Math.round(final)}</strong>
           {agrees ? " ✓ ίδια με την κατάταξη." : ` ⚠ η αποθηκευμένη ELO είναι ${Math.round(stored)} — χρειάζεται Recompute.`}
         </p>
@@ -5674,7 +5688,7 @@ export default function TournamentManager() {
               {[...rows].reverse().map((r, i) => (
                 <tr key={i}>
                   <td>
-                    <button className="history-link" onClick={() => openTournamentFromPlayer(r.tournamentId, key)}>{shortTournamentLabel(r.tournamentName)}</button>
+                    <button className="history-link" onClick={() => (r.imported ? openImportPublic(r.tournamentId, { kind: "player", key }) : openTournamentFromPlayer(r.tournamentId, key))}>{r.imported ? r.tournamentName : shortTournamentLabel(r.tournamentName)}</button>
                     <span className="cal-note"> · {formatDate(r.date)}</span>
                   </td>
                   <td>{r.round}</td>
@@ -6130,6 +6144,84 @@ export default function TournamentManager() {
         )}
       </div>
     );
+  }
+
+  /* ---- Build 4C: national ELO ---- */
+
+  /** The national ELO, computed from the imported tournaments of national
+   * competitions (owner club marked as organiser, e.g. «Πανελλήνιες
+   * Διοργανώσεις»). Everyone starts at 1500; guests play every match at a
+   * fixed 1500 and keep no rating of their own; walkovers do not count.
+   * Same formula as the federation ELO. Recomputed whenever the imports or
+   * the registry change — no stored copy to drift. */
+  function computeNationalElo() {
+    const elo = { players: {} };
+    const timeline = {};
+    const ledger = {};
+    const clubs = clubsFrom(sysState);
+    const isNational = (doc) => {
+      const c = competitionById(importCompetitionId(doc));
+      if (!c || c.countsElo === false) return false;
+      if (c.ownerClubId) {
+        const owner = clubs.find((x) => x.id === c.ownerClubId);
+        return !!(owner && owner.organiserOnly);
+      }
+      return eloPoolOf(c.id) === "national";
+    };
+    const docs = Object.entries(importDocs)
+      .filter(([, d]) => d.personMap && isNational(d))
+      .map(([id, d]) => ({ id, d, date: importDateIso(d.date) || d.importedAt }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+    docs.forEach(({ id, d, date }) => {
+      const participants = new Set();
+      const groups = new Map(); // "slot|length" -> matches, in play order
+      [...(d.matches || [])]
+        .filter((m) => m.method !== "bye" && m.p2)
+        .sort((a, b) => (a.slot ?? a.round) - (b.slot ?? b.round))
+        .forEach((m) => {
+          const g = `${m.slot ?? m.round}|${m.matchLength || d.matchLength || 7}`;
+          if (!groups.has(g)) groups.set(g, []);
+          groups.get(g).push(m);
+        });
+      groups.forEach((ms, g) => {
+        const ml = Number(g.split("|")[1]);
+        const batch = [];
+        const pending = [];
+        ms.forEach((m) => {
+          const wKey = d.personMap[m.winner];
+          const lKey = d.personMap[m.winner === m.p1 ? m.p2 : m.p1];
+          const W = wKey && registry.players[wKey];
+          const Lp = lKey && registry.players[lKey];
+          if (!W || !Lp) return;
+          // guests play every match at a fresh 1500
+          [[wKey, W], [lKey, Lp]].forEach(([k, p]) => { if (p.guest) delete elo.players[k]; });
+          const wR = elo.players[wKey]?.rating ?? ELO_INITIAL;
+          const lR = elo.players[lKey]?.rating ?? ELO_INITIAL;
+          const ret = m.method === "retirement";
+          const delta = ret ? 0 : (1 - eloWinProbability(wR, lR, ml)) * eloPointsAtStake(ml);
+          const base = { date, tournamentId: id, tournamentName: d.name, round: m.roundLabel || m.round, matchLength: ml, ret, imported: true };
+          pending.push([wKey, W, { ...base, opponent: Lp.name + (Lp.guest ? " (φιλοξ.)" : ""), opponentRating: lR, result: "win", delta }]);
+          pending.push([lKey, Lp, { ...base, opponent: W.name + (W.guest ? " (φιλοξ.)" : ""), opponentRating: wR, result: "loss", delta: -delta }]);
+          batch.push({ w: W.name, l: Lp.name, ret });
+        });
+        applyEloRoundBatch(elo, batch, ml);
+        pending.forEach(([k, p, row]) => {
+          if (p.guest) return;
+          participants.add(k);
+          if (!ledger[k]) ledger[k] = [];
+          ledger[k].push({ ...row, ratingAfter: elo.players[k]?.rating ?? ELO_INITIAL });
+        });
+        // guests keep nothing
+        pending.forEach(([k, p]) => { if (p.guest) delete elo.players[k]; });
+      });
+      participants.forEach((k) => {
+        const p = elo.players[k];
+        if (!p) return;
+        if (!timeline[k]) timeline[k] = [];
+        timeline[k].push({ date, rating: p.rating, winRate: p.games > 0 ? ((p.wins || 0) / p.games) * 100 : 0 });
+      });
+    });
+    return { elo, timeline, ledger, tournaments: docs.length };
   }
 
   /* ---- Build 4B: imported tournaments in public view ---- */
@@ -6839,7 +6931,7 @@ export default function TournamentManager() {
                 <tr key={c.id}>
                   <td>{editing ? <input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} /> : c.name}</td>
                   <td>{clubDisplay(sysState, c.ownerClubId, "—")}</td>
-                  <td>{c.countsElo === false ? "δεν μετράει" : c.ownerClubId === sysState.homeClubId ? "ενεργή" : "ανενεργή ακόμα"}</td>
+                  <td>{c.countsElo === false ? "δεν μετράει" : c.ownerClubId === sysState.homeClubId ? "ELO Ομοσπονδίας" : clubsFrom(sysState).find((x) => x.id === c.ownerClubId)?.organiserOnly ? "Πανελλήνια ELO" : "—"}</td>
                   <td>{count}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     {editing ? (
@@ -8807,10 +8899,25 @@ export default function TournamentManager() {
               </div>
             </div>
 
-            {staleNotice}
+            <div className="layout-toggle" role="group" aria-label="Κατάταξη ELO" style={{ marginBottom: 14 }}>
+              <button className={eloPool === "club" ? "active" : ""} onClick={() => { setEloPool("club"); setEloLedgerOpen(null); }}>
+                ELO {clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}
+              </button>
+              <button className={eloPool === "national" ? "active" : ""} onClick={() => { setEloPool("national"); setEloLedgerOpen(null); }}>
+                Πανελλήνια ELO
+              </button>
+            </div>
+            {eloPool === "national" && (
+              <p className="cal-note" style={{ marginBottom: 12 }}>
+                Από {nationalElo.tournaments} {nationalElo.tournaments === 1 ? "τουρνουά" : "τουρνουά"} πανελλήνιων διοργανώσεων. Όλοι ξεκινούν από 1500· οι φιλοξενούμενοι παίζουν πάντα με 1500 και δεν εμφανίζονται στην κατάταξη· οι αποχωρήσεις δεν μετράνε.
+              </p>
+            )}
+
+            {eloPool === "club" && staleNotice}
 
             {(() => {
-              const standings = Object.values(eloData.players || {}).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, "en"));
+              const source = eloPool === "national" ? nationalElo.elo.players : eloData.players;
+              const standings = Object.values(source || {}).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, "en"));
               if (standings.length === 0) {
                 return (
                   <div className="empty-state">
@@ -8856,7 +8963,7 @@ export default function TournamentManager() {
                                   return;
                                 }
                                 setEloLedgerOpen(pk);
-                                if (eloTimeline === null && !eloTimelineLoading) computeEloTimeline();
+                                if (eloPool === "club" && eloTimeline === null && !eloTimelineLoading) computeEloTimeline();
                               }}
                             >
                               <TrendingUp size={15} />
@@ -8867,7 +8974,7 @@ export default function TournamentManager() {
                           <tr className="ledger-row">
                             <td colSpan={7}>
                               <strong>Πώς προέκυψε η ELO — {formatNameForDisplay(p.name, nameDisplayMode)}</strong>
-                              {renderEloLedger(pk)}
+                              {renderEloLedger(pk, eloPool)}
                             </td>
                           </tr>
                         )}
@@ -9262,9 +9369,37 @@ export default function TournamentManager() {
                   )}
 
                   <p className="trend-chart-title" style={{ marginTop: 4 }}>Performance trend</p>
-                  <PlayerTrendCharts rows={eloTimeline ? eloTimeline[key] || [] : null} />
+                  {(() => {
+                    const hasClub = !!(eloTimeline && (eloTimeline[key] || []).length) || !!eloData.players?.[key];
+                    const hasNat = (nationalElo.timeline[key] || []).length > 0;
+                    const pool = cardEloPool && ((cardEloPool === "club" && hasClub) || (cardEloPool === "national" && hasNat)) ? cardEloPool : hasClub || !hasNat ? "club" : "national";
+                    return (
+                      <>
+                        {hasClub && hasNat && (
+                          <div className="layout-toggle" role="group" style={{ marginBottom: 10 }}>
+                            <button className={pool === "club" ? "active" : ""} onClick={() => setCardEloPool("club")}>ELO {clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}</button>
+                            <button className={pool === "national" ? "active" : ""} onClick={() => setCardEloPool("national")}>Πανελλήνια ELO</button>
+                          </div>
+                        )}
+                        {pool === "national" ? (
+                          <>
+                            {!hasClub && <p className="cal-note" style={{ margin: "0 0 8px 0" }}>Πανελλήνια ELO</p>}
+                            <PlayerTrendCharts rows={nationalElo.timeline[key] || []} />
+                            {(nationalElo.ledger[key] || []).length > 0 && (
+                              <details className="ledger" style={{ marginTop: 14 }}>
+                                <summary style={{ cursor: "pointer", fontWeight: 600 }}>Πώς προέκυψε η Πανελλήνια ELO ({(nationalElo.ledger[key] || []).filter((r) => !r.ret).length} αγώνες)</summary>
+                                {renderEloLedger(key, "national")}
+                              </details>
+                            )}
+                          </>
+                        ) : (
+                          <PlayerTrendCharts rows={eloTimeline ? eloTimeline[key] || [] : null} />
+                        )}
+                      </>
+                    );
+                  })()}
 
-                  {eloTimeline && eloTimeline.__ledger && (eloTimeline.__ledger[key] || []).length > 0 && (
+                  {eloTimeline && eloTimeline.__ledger && (eloTimeline.__ledger[key] || []).length > 0 && cardEloPool !== "national" && (
                     <details className="ledger" style={{ marginTop: 14 }}>
                       <summary style={{ cursor: "pointer", fontWeight: 600 }}>
                         Πώς προέκυψε η ELO ({(eloTimeline.__ledger[key] || []).filter((r) => !r.ret).length} αγώνες)
