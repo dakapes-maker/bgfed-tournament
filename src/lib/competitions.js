@@ -77,3 +77,10 @@ export function competitionHasStandings(c) {
   if (typeof c.hasStandings === "boolean") return c.hasStandings;
   return c.id === DEFAULT_COMPETITION_ID;
 }
+
+/** 5B.3: a tournament counts toward the season standings of its season when
+ * it is official and its competition keeps standings — independent of ELO.
+ * For the Premier League this is exactly the old rule. */
+export function countsTowardStandings(t) {
+  return !!t && !!t.isOfficial && competitionHasStandings(competitionById(t.competitionId));
+}

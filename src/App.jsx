@@ -111,6 +111,7 @@ import {
   competitionName,
   setRuntimeCompetitionState,
   competitionHasStandings,
+  countsTowardStandings,
 } from "./lib/competitions.js";
 import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay } from "./lib/clubs.js";
 import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
@@ -380,6 +381,7 @@ export default function TournamentManager() {
 
   const [seasonBrowseYear, setSeasonBrowseYear] = useState(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
   const [seasonYearsAvailable, setSeasonYearsAvailable] = useState([]);
+  const [seasonBrowseComp, setSeasonBrowseComp] = useState(DEFAULT_COMPETITION_ID); // 5B.3: competition on the standings page
   const [seasonData, setSeasonData] = useState({ players: {} });
   const [expandedPlayer, setExpandedPlayer] = useState(null);
 
@@ -1179,7 +1181,9 @@ export default function TournamentManager() {
     // Until Build 3's separate ELO pools, only Premier League tournaments
     // feed the (club) ELO and the season standings.
     const ratingsCount = competitionId === DEFAULT_COMPETITION_ID;
-    const updateSeason = updateSeasonRequested && ratingsCount;
+    // 5B.3: the standings have their own rule — the competition keeps standings.
+    const standingsCount = competitionHasStandings(competitionById(competitionId));
+    const updateSeason = updateSeasonRequested && standingsCount;
     const byId = {};
     players.forEach((p) => (byId[p.id] = { ...p, opponents: [...p.opponents], matchLog: [...p.matchLog] }));
 
@@ -1286,7 +1290,7 @@ export default function TournamentManager() {
             "Warning: couldn't save to Season Standings after two tries. Mark this tournament \"Official League day\" (if it should count) and use \"Recompute ELO & Season Standings from scratch\" on the ELO page to pick it up.",
           ].filter(Boolean).join(" ");
         }
-      } else if (!ratingsCount) {
+      } else if (!ratingsCount && !standingsCount) {
         noticeMsg = [noticeMsg, `Το τουρνουά τελείωσε. Ως «${competitionName(competitionsFrom(sysState), competitionId)}» δεν μετράει σε ELO και Βαθμολογία.`].filter(Boolean).join(" ");
       } else {
         noticeMsg = [
@@ -1302,7 +1306,7 @@ export default function TournamentManager() {
       setRound(nextRound);
       setCurrentPairings(nextPairing);
       await persistCurrent("tournament", nextRound, updatedPlayers, nextPairing, newHistory);
-      if (liveStandingsEnabled && ratingsCount) {
+      if (liveStandingsEnabled && standingsCount) {
         const seasonOk = await pushSeasonUpdateWithRetry();
         noticeMsg = [
           noticeMsg,
@@ -2434,7 +2438,9 @@ export default function TournamentManager() {
     const builtAt = new Date().toISOString();
 
     const catalogue = Array.isArray(indexOverride) ? indexOverride : archive;
-    const officialTournaments = catalogue.filter(countsTowardRatings).sort((a, b) => new Date(a.date) - new Date(b.date));
+    // 5B.3: the ELO takes the tournaments that count toward ratings; the
+    // standings those whose competition keeps standings (own rule).
+    const officialTournaments = catalogue.filter((t) => countsTowardRatings(t) || countsTowardStandings(t)).sort((a, b) => new Date(a.date) - new Date(b.date));
     for (const t of officialTournaments) {
       // Strict read: if any official tournament cannot be read, stop and
       // write nothing — a rebuild without it would silently drop its matches.
@@ -2447,8 +2453,9 @@ export default function TournamentManager() {
         return;
       }
       if (!data || !data.history || !data.players) continue;
-      appliedNow[t.id] = { name: data.tournamentName, mode: "recompute", at: builtAt };
-      data.history.forEach((entry) => {
+      const feedsElo = countsTowardRatings(t);
+      if (feedsElo) appliedNow[t.id] = { name: data.tournamentName, mode: "recompute", at: builtAt };
+      if (feedsElo) data.history.forEach((entry) => {
         const roundMatches = [];
         entry.pairs.forEach((pr) => {
           if (!pr.result) return;
@@ -2460,7 +2467,7 @@ export default function TournamentManager() {
         matchesCounted += roundMatches.length;
         applyEloRoundBatch(elo, roundMatches, data.matchLength || 7);
       });
-      if (data.phase === "finished") {
+      if (data.phase === "finished" && countsTowardStandings(t)) {
         const year = Number(data.seasonYear) || seasonForDate(data.createdAt) || 2026;
         if (!seasonsBuilt[year]) seasonsBuilt[year] = { players: {} };
         seasonTournaments[year] = (seasonTournaments[year] || 0) + 1;
@@ -5669,7 +5676,8 @@ export default function TournamentManager() {
       ["Παίκτες", players.length],
       ["Αγώνες με αποτέλεσμα", matchesPlayed],
       ["Επίσημο", isOfficial ? "Ναι (Official League day)" : "Όχι (δοκιμαστικό)"],
-      ["Μετράει σε ELO και Βαθμολογία", counts ? "Ναι" : isOfficial ? "Όχι — μετράει μόνο η Premier League προς το παρόν" : "Όχι — δεν είναι επίσημο"],
+      ["Μετράει στην ELO", counts ? "Ναι" : isOfficial ? "Όχι — η διοργάνωση δεν μετράει στην ELO της Ομοσπονδίας" : "Όχι — δεν είναι επίσημο"],
+      ["Μετράει στη Βαθμολογία σεζόν", countsTowardStandings({ isOfficial, competitionId }) ? "Ναι" : isOfficial ? "Όχι — η διοργάνωση δεν έχει Βαθμολογία σεζόν" : "Όχι — δεν είναι επίσημο"],
     ];
     return (
       <div className="details-tab">
@@ -6789,15 +6797,28 @@ export default function TournamentManager() {
             <p className="eyebrow">{L.seasonEyebrow}</p>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
               <h1>{L.seasonTitle}</h1>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {competitionsFrom(sysState).filter(competitionHasStandings).length > 1 && (
+                <select
+                  value={seasonBrowseComp}
+                  onChange={(e) => { setSeasonBrowseComp(e.target.value); setSeasonBrowseYear(currentSeasonId(sysState, e.target.value)); }}
+                  style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: "var(--accent)", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 10px", background: "var(--surface)" }}
+                >
+                  {competitionsFrom(sysState).filter(competitionHasStandings).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
               <select
                 value={seasonBrowseYear}
                 onChange={(e) => setSeasonBrowseYear(Number(e.target.value))}
                 style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: "var(--accent)", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 10px", background: "var(--surface)" }}
               >
-                {seasonYearsAvailable.map((y) => (
+                {seasonYearsAvailable.filter((y) => y === seasonBrowseYear || seasonCompetitionId(sysState, y) === seasonBrowseComp).map((y) => (
                   <option key={y} value={y}>{sn(y)}</option>
                 ))}
               </select>
+              </div>
             </div>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
@@ -8563,9 +8584,12 @@ export default function TournamentManager() {
                   </div>
                 </div>
               </div>
-              {!countsTowardRatings({ isOfficial: true, competitionId }) && (
+              {(!countsTowardRatings({ isOfficial: true, competitionId }) || !countsTowardStandings({ isOfficial: true, competitionId })) && (
                 <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
-                  Αυτή η διοργάνωση δεν μετράει στην ELO και στη Βαθμολογία της {clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}· το τουρνουά καταγράφεται κανονικά.
+                  Αυτή η διοργάνωση {[
+                    !countsTowardRatings({ isOfficial: true, competitionId }) && `δεν μετράει στην ELO της ${clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}`,
+                    !countsTowardStandings({ isOfficial: true, competitionId }) && "δεν έχει Βαθμολογία σεζόν",
+                  ].filter(Boolean).join(" και ")}· το τουρνουά καταγράφεται κανονικά.
                 </p>
               )}
 
