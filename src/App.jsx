@@ -131,6 +131,7 @@ import { CalcuttaTab, FinanceTab } from "./components/finance.jsx";
 /* ---------------------------------------------------------------------- */
 
 export default function TournamentManager() {
+  // #region Κατάσταση: βασικά, γλώσσα, «Σχετικά», Στατιστικά
   const idRef = useRef(0);
   const fileInputRef = useRef(null);
   const fullBackupInputRef = useRef(null);
@@ -188,6 +189,8 @@ export default function TournamentManager() {
       // ignore
     }
   }
+  // #endregion Κατάσταση: βασικά, γλώσσα, «Σχετικά», Στατιστικά
+  // #region Διαχειριστής / κωδικός
   const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
   const isAdmin = role === "admin";
   // Red dot on «Σχετικά»: only for changelog lines this user can see that are
@@ -275,7 +278,9 @@ export default function TournamentManager() {
     setChangePwError("");
     showToast("Password changed.");
   }
+  // #endregion Διαχειριστής / κωδικός
 
+  // #region Κατάσταση: τουρνουά, Διαχείριση, εισαγωγές, σεζόν & ημερολόγιο, σύλλογοι
   const [phase, setPhase] = useState("dashboard"); // dashboard | archive | setup | tournament | finished | season | players | elo
   const [tournamentId, setTournamentId] = useState(null);
   const [createdAt, setCreatedAt] = useState(null);
@@ -371,7 +376,9 @@ export default function TournamentManager() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToast(""), 2500);
   }
+  // #endregion Κατάσταση: τουρνουά, Διαχείριση, εισαγωγές, σεζόν & ημερολόγιο, σύλλογοι
 
+  // #region Έλεγχος αποθηκεύσεων (κόκκινο πλαίσιο)
   /* ---- save results (Build 2) ----
    * Registry, ELO, the tournament catalogue and the RSS feed now report
    * whether they were saved. A failure stays on screen (admin banner) until
@@ -407,7 +414,9 @@ export default function TournamentManager() {
     setEloTimeline(null);
     setPlayerMatchStatsCache({});
   }
+  // #endregion Έλεγχος αποθηκεύσεων (κόκκινο πλαίσιο)
 
+  // #region Κατάσταση: αρχείο, Βαθμολογία, μητρώο, ELO, κάδος, μόνιμα ID
   const [archive, setArchive] = useState([]);
   const [searchName, setSearchName] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -453,7 +462,9 @@ export default function TournamentManager() {
   const [confirmingOfficial, setConfirmingOfficial] = useState(false);
   const [officialRecompute, setOfficialRecompute] = useState(true);
   const [trashAction, setTrashAction] = useState(null); // { type: "restore" | "purge" | "unofficial", id }
+  // #endregion Κατάσταση: αρχείο, Βαθμολογία, μητρώο, ELO, κάδος, μόνιμα ID
 
+  // #region Φόρτωση & εκκίνηση
   // Minimal deep-link support: a link ending in #season or #elo opens
   // straight into that tab, instead of always landing on the Dashboard.
   // Read once on load only — normal in-app navigation stays state-based.
@@ -704,9 +715,11 @@ export default function TournamentManager() {
     if (phase !== "h2h") return;
     listSeasonYears().then((years) => setSeasonYearsAvailable([...years].sort((a, b) => b - a)));
   }, [phase]);
+  // #endregion Φόρτωση & εκκίνηση
 
   /* ---- archive persistence ---- */
 
+  // #region Τουρνουά & γύροι
   function currentSnapshot() {
     return { tournamentName, totalRounds, matchLength, seasonYear, competitionId, organisation, organisationClubId, calendarEntryId, liveStandingsEnabled, isOfficial, sideBets, calcuttaEntries, phase, players, round, currentPairings, history, createdAt };
   }
@@ -1264,9 +1277,11 @@ export default function TournamentManager() {
     }
     setNotice(noticeMsg);
   }
+  // #endregion Τουρνουά & γύροι
 
   /* ---- file persistence (local download / upload) ---- */
 
+  // #region Export / Import / Excel
   async function exportAllData() {
     // Every read is strict: a backup with a silently missing part is worse
     // than no backup, because it would also reset the "last export" clock
@@ -1529,9 +1544,11 @@ export default function TournamentManager() {
     reader.readAsText(file);
     e.target.value = "";
   }
+  // #endregion Export / Import / Excel
 
   /* ---- archive navigation ---- */
 
+  // #region Πλοήγηση: άνοιγμα τουρνουά, αρχική, αρχείο
   async function openArchived(id) {
     const data = await fetchTournamentData(id);
     if (!data) {
@@ -1575,7 +1592,9 @@ export default function TournamentManager() {
     setNotice("");
     setConfirmingDelete(false);
   }
+  // #endregion Πλοήγηση: άνοιγμα τουρνουά, αρχική, αρχείο
 
+  // #region Κάδος
   /** Moves the open tournament to the trash. The document itself is NOT
    * deleted — it stays in the database and can be restored. */
   async function confirmDeleteTournament(runRecompute) {
@@ -1715,9 +1734,11 @@ export default function TournamentManager() {
       setTrashBusy(false);
     }
   }
+  // #endregion Κάδος
 
   /* ---- permanent person ids ---- */
 
+  // #region Μητρώο & μόνιμα ID (μετάπτωση, ένωση προσώπων)
   function playerHasHistory(key) {
     const h = eloData?.players?.[key];
     return !!h && (h.games > 0 || h.matches > 0);
@@ -1812,7 +1833,9 @@ export default function TournamentManager() {
     showToast(`Ενώθηκαν: «${absorb.name}» → «${keep.name}».`);
     if (runRecompute) await recomputeEloAndSeasonFromScratch();
   }
+  // #endregion Μητρώο & μόνιμα ID (μετάπτωση, ένωση προσώπων)
 
+  // #region Επίσημο τουρνουά, στοιχεία τουρνουά, μετάπτωση διοργανώσεων
   async function confirmOfficialToggle(runRecompute) {
     const next = !isOfficial;
     setConfirmingOfficial(false);
@@ -2031,9 +2054,11 @@ export default function TournamentManager() {
       setMetaBusy(false);
     }
   }
+  // #endregion Επίσημο τουρνουά, στοιχεία τουρνουά, μετάπτωση διοργανώσεων
 
   /* ---- data health: does the stored ELO / season match the catalogue? ---- */
 
+  // #region Έλεγχος συνέπειας
   /** Strict reads: a failed read throws instead of looking like "nothing
    * stored", which would show differences that are not really there. */
   async function loadHealthInputs(indexOverride) {
@@ -2071,9 +2096,11 @@ export default function TournamentManager() {
     if (!isAdmin) return;
     if (phase === "dashboard" || phase === "elo" || phase === "season" || phase === "archive" || phase === "control") refreshHealth();
   }, [isAdmin, phase, archive.length]);
+  // #endregion Έλεγχος συνέπειας
 
   /* ---- player registry ---- */
 
+  // #region Μητρώο παικτών: στοιχεία, συνδρομές, ιστορικό
   function persistRegistry(next) {
     const merged = { ...registry, ...next };
     // Registry numbers are never reused: remember the highest one ever given.
@@ -2222,7 +2249,9 @@ export default function TournamentManager() {
     rows.sort((a, b) => new Date(b.date) - new Date(a.date));
     setPlayerHistoryCache((prev) => ({ ...prev, [key]: rows }));
   }
+  // #endregion Μητρώο παικτών: στοιχεία, συνδρομές, ιστορικό
 
+  // #region ELO & Recompute
   /** Replays every match chronologically (the 11 embedded historical days,
    * then any other archived tournament by date) into a fresh, throwaway ELO
    * state, snapshotting each participant's rating and cumulative win rate
@@ -2430,7 +2459,9 @@ export default function TournamentManager() {
     showToast(`Recompute ολοκληρώθηκε — ${perSeason}`);
     refreshHealth(catalogue);
   }
+  // #endregion ELO & Recompute
 
+  // #region RSS & σύνοψη
   /** Builds a ready-to-paste Greek recap of this tournament: top finishers,
    * movement at the top of Season Standings, and ELO movement at the top —
    * with plain-text links back into the app (deep-linking via #season/#elo)
@@ -2654,7 +2685,9 @@ export default function TournamentManager() {
       setNotice(`Αποτυχία αδειάσματος feed: ${err.message}`);
     }
   }
+  // #endregion RSS & σύνοψη
 
+  // #region Στατιστικά & καρτέλα παίκτη
   /** Full breakdown of one player against every opponent they've ever
    * faced — across the 11 historical days and every other saved
    * tournament. Matched by normalized name (same approach as ELO/season
@@ -3086,7 +3119,9 @@ export default function TournamentManager() {
       computeEloTimeline();
     }
   }
+  // #endregion Στατιστικά & καρτέλα παίκτη
 
+  // #region Ιστορική σεζόν 2026
   async function importHistoricalSeason2026(seasonAlreadyRead) {
     // Called at start-up with the season it has just read strictly.
     const season = seasonAlreadyRead || (await loadSeasonStrict(2026));
@@ -3123,11 +3158,13 @@ export default function TournamentManager() {
     if (seasonBrowseYear === 2026) setSeasonData(season);
     setNotice(`Imported ${HISTORICAL_IMPORT_2026.length} players across 11 days into the 2026 season.`);
   }
+  // #endregion Ιστορική σεζόν 2026
 
   /* ---------------------------------------------------------------------- */
   /* Derived data                                                           */
   /* ---------------------------------------------------------------------- */
 
+  // #region Παράγωγες τιμές για τις οθόνες
   const buchholz = phase === "finished" ? computeBuchholz(players) : null;
 
   // Shared, visible "recompute" panel — used on both Season Standings and
@@ -3241,7 +3278,9 @@ export default function TournamentManager() {
   const archiveHasFilter = searchName || dateFrom || dateTo || archiveSeason || archiveCompetition;
   const archiveSeasonOptions = [...new Set([...archive, ...importedCatalogue()].map((t) => Number(t.seasonYear) || seasonForDate(t.date)).filter(Boolean))].sort((a, b) => b - a);
   const visibleArchive = archiveHasFilter || showAllArchive ? filteredArchive : filteredArchive.slice(0, 10);
+  // #endregion Παράγωγες τιμές για τις οθόνες
 
+  // #region Βοηθητικά οθονών: ανάλυση ELO, λίστα ζευγαρωμάτων
   /** "How this rating was reached" for one player: summary line and the
    * per-match table. Used on the player card and on the ELO page. Needs the
    * ELO replay (computeEloTimeline) to have run. */
@@ -3381,9 +3420,11 @@ export default function TournamentManager() {
       /* per-device convenience only */
     }
   }
+  // #endregion Βοηθητικά οθονών: ανάλυση ELO, λίστα ζευγαρωμάτων
 
   /* ---- Imported tournaments (isolated preview) ---- */
 
+  // #region Εισαγωγές & Πανελλήνια ELO
   async function loadImportsList() {
     try {
       const d = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
@@ -4186,9 +4227,11 @@ export default function TournamentManager() {
     });
     return out;
   }
+  // #endregion Εισαγωγές & Πανελλήνια ELO
 
   /* ---- Build 4A: matching imported names to persons ---- */
 
+  // #region Εισαγωγές: αντιστοίχιση παικτών
   /** Builds the matching table for every imported tournament not matched yet.
    * `decisions` (optional) is a prepared file: rows of { names, action,
    * person | name, club, guest }. Changes nothing. */
@@ -4603,9 +4646,11 @@ export default function TournamentManager() {
       </div>
     );
   }
+  // #endregion Εισαγωγές: αντιστοίχιση παικτών
 
   /* ---- Build 3D: locked seasons ---- */
 
+  // #region Σεζόν: κλείσιμο & κλείδωμα
   /** True when the open tournament may be changed. In a locked season the
    * admin must first unlock changes for this one tournament (tab «Στοιχεία»). */
   function tournamentEditable() {
@@ -4712,9 +4757,11 @@ export default function TournamentManager() {
       </div>
     );
   }
+  // #endregion Σεζόν: κλείσιμο & κλείδωμα
 
   /* ---- Competitions owned by clubs (Build 4A) ---- */
 
+  // #region Διοργανώσεις
   /** One-off upgrade: every competition gets the club it belongs to. The
    * finals go to a new organiser-only club «Πανελλήνιες Διοργανώσεις» and are
    * renamed. Numbers do not change: the home club's ranking is today's ELO. */
@@ -4873,9 +4920,11 @@ export default function TournamentManager() {
       </div>
     );
   }
+  // #endregion Διοργανώσεις
 
   /* ---- Build 3B3: clubs and registry numbers ---- */
 
+  // #region Σύλλογοι
   /** Dry run of the clubs migration: every club name in use today (players,
    * tournaments, the home club), grouped by spelling. Changes nothing. */
   async function runClubPlan() {
@@ -5060,7 +5109,9 @@ export default function TournamentManager() {
       reportSaveFailure("Σύλλογοι — ο σύλλογός σου δεν αποθηκεύτηκε");
     }
   }
+  // #endregion Σύλλογοι
 
+  // #region Αριθμός Μητρώου
   /** Dry run of the registry numbers: order of first participation. */
   async function runRegNoPlan() {
     setClubBusy(true);
@@ -5108,9 +5159,11 @@ export default function TournamentManager() {
       showToast(`Δόθηκαν ${regNoPlan.order.length} αριθμοί μητρώου.`);
     }
   }
+  // #endregion Αριθμός Μητρώου
 
   /* ---- Build 3B2: calendar ---- */
 
+  // #region Σεζόν & ημερολόγιο
   /** Fills the new-tournament form from a calendar day (or clears the link). */
   function applyCalendarEntry(entry, year) {
     if (!entry) {
@@ -5449,7 +5502,9 @@ export default function TournamentManager() {
       reportSaveFailure(`Κανόνες σεζόν ${year} — δεν αποθηκεύτηκαν`);
     }
   }
+  // #endregion Σεζόν & ημερολόγιο
 
+  // #region Βοηθητικά οθονών: επιστροφή σε παίκτη, tab «Στοιχεία» τουρνουά
   /** Way back to the player card the tournament was opened from. */
   function renderBackToPlayer() {
     if (!tournamentReturnPlayer || !registry.players[tournamentReturnPlayer]) return null;
@@ -5621,6 +5676,7 @@ export default function TournamentManager() {
       </div>
     );
   }
+  // #endregion Βοηθητικά οθονών: επιστροφή σε παίκτη, tab «Στοιχεία» τουρνουά
 
   /* ---------------------------------------------------------------------- */
   /* Render                                                                 */
@@ -5628,6 +5684,7 @@ export default function TournamentManager() {
 
   return (
     <div className="app">
+      {/* #region Στυλ (CSS) */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Source+Sans+3:wght@400;500;600;700&display=swap');
 
@@ -5934,7 +5991,9 @@ export default function TournamentManager() {
         .field-warning { font-size: 13px; color: #9a5b00; margin: 6px 0 0 0; }
         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
       `}</style>
+      {/* #endregion Στυλ (CSS) */}
 
+      {/* #region Ειδοποιήσεις, πλαίσια σφαλμάτων, διάλογοι επιβεβαίωσης */}
       {toast && (
         <div className="toast">
           <Check size={16} color="var(--win)" />
@@ -6057,7 +6116,9 @@ export default function TournamentManager() {
           </label>
         </ConfirmDialog>
       )}
+      {/* #endregion Ειδοποιήσεις, πλαίσια σφαλμάτων, διάλογοι επιβεβαίωσης */}
 
+      {/* #region Πάνω μπάρα */}
       {/* TOP BAR */}
       <div className="topbar">
         <div className="brand">
@@ -6147,7 +6208,9 @@ export default function TournamentManager() {
           )}
         </div>
       </div>
+      {/* #endregion Πάνω μπάρα */}
 
+      {/* #region Διάλογος κωδικού διαχειριστή */}
       {!inIframe && adminPasswordPrompt && (
         <div className="modal-overlay" onClick={() => setAdminPasswordPrompt(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -6169,7 +6232,9 @@ export default function TournamentManager() {
           </div>
         </div>
       )}
+      {/* #endregion Διάλογος κωδικού διαχειριστή */}
 
+      {/* #region Οθόνη: Σχετικά (phase "about") */}
       {phase === "about" && (
         <>
           <div className="header">
@@ -6219,7 +6284,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Σχετικά (phase "about") */}
 
+      {/* #region Οθόνη: Στατιστικά (phase "h2h") */}
       {phase === "h2h" && (
         <>
           <div className="header">
@@ -6549,7 +6616,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Στατιστικά (phase "h2h") */}
 
+      {/* #region Διάλογοι: σύνοψη ανακοίνωσης, ολοκλήρωση γύρου, αλλαγή κωδικού */}
       {recapText !== null && (
         <div className="modal-overlay" onClick={() => setRecapText(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 680, width: "92vw", maxHeight: "85vh", overflowY: "auto", padding: "28px 32px" }}>
@@ -6641,7 +6710,9 @@ export default function TournamentManager() {
           </div>
         </div>
       )}
+      {/* #endregion Διάλογοι: σύνοψη ανακοίνωσης, ολοκλήρωση γύρου, αλλαγή κωδικού */}
 
+      {/* #region Οθόνη: Βαθμολογία (phase "season") */}
       {/* SEASON STANDINGS */}
       {phase === "season" && (
         <>
@@ -6792,7 +6863,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Βαθμολογία (phase "season") */}
 
+      {/* #region Οθόνη: Κατάταξη ELO (phase "elo") */}
       {/* ELO RATINGS */}
       {phase === "elo" && (
         <>
@@ -6906,7 +6979,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Κατάταξη ELO (phase "elo") */}
 
+      {/* #region Οθόνη: Παίκτες / μητρώο (phase "players") */}
       {/* PLAYER REGISTRY */}
       {phase === "players" && !isAdmin && (
         <div className="content">
@@ -7039,7 +7114,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Παίκτες / μητρώο (phase "players") */}
 
+      {/* #region Οθόνη: Καρτέλα παίκτη (phase "playerDetail") */}
       {/* PLAYER DETAIL */}
       {phase === "playerDetail" && (() => {
         const key = expandedRegistryPlayer;
@@ -7386,7 +7463,9 @@ export default function TournamentManager() {
           </>
         );
       })()}
+      {/* #endregion Οθόνη: Καρτέλα παίκτη (phase "playerDetail") */}
 
+      {/* #region Οθόνη: Πίνακας Ελέγχου (phase "dashboard") */}
       {/* DASHBOARD */}
       {phase === "dashboard" && (
         <>
@@ -7482,7 +7561,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Πίνακας Ελέγχου (phase "dashboard") */}
 
+      {/* #region Οθόνη: Διαχείριση (phase "control") */}
       {/* ADMIN PAGE (Build 3B1): every admin tool for running the app, in one place */}
       {phase === "control" && isAdmin && (
         <>
@@ -8098,7 +8179,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Διαχείριση (phase "control") */}
 
+      {/* #region Οθόνη: Αρχείο τουρνουά (phase "archive") */}
       {/* TOURNAMENT ARCHIVE */}
       {phase === "archive" && (
         <>
@@ -8188,7 +8271,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Αρχείο τουρνουά (phase "archive") */}
 
+      {/* #region Οθόνη: Εισαγόμενο τουρνουά (phase "imported") */}
       {/* IMPORTED TOURNAMENT (public, read-only) */}
       {phase === "imported" && importView && (
         <>
@@ -8212,7 +8297,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Εισαγόμενο τουρνουά (phase "imported") */}
 
+      {/* #region Οθόνη: Κάδος (phase "trash") */}
       {/* TRASH */}
       {phase === "trash" && (
         <>
@@ -8264,7 +8351,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Κάδος (phase "trash") */}
 
+      {/* #region Οθόνη: Νέο τουρνουά (phase "setup") */}
       {/* SETUP */}
       {phase === "setup" && !isAdmin && (
         <div className="content">
@@ -8486,7 +8575,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Νέο τουρνουά (phase "setup") */}
 
+      {/* #region Οθόνη: Τουρνουά σε εξέλιξη (phase "tournament") */}
       {/* TOURNAMENT */}
       {phase === "tournament" && (
         <>
@@ -8697,7 +8788,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Τουρνουά σε εξέλιξη (phase "tournament") */}
 
+      {/* #region Οθόνη: Ολοκληρωμένο τουρνουά (phase "finished") */}
       {/* FINISHED */}
       {phase === "finished" && (
         <>
@@ -8895,7 +8988,9 @@ export default function TournamentManager() {
           </div>
         </>
       )}
+      {/* #endregion Οθόνη: Ολοκληρωμένο τουρνουά (phase "finished") */}
 
+      {/* #region Φόρτωση αρχείου τουρνουά (admin, τουρνουά) */}
       {isAdmin && (phase === "tournament" || phase === "finished") && (
         <div className="content" style={{ paddingTop: 0, marginTop: -20 }}>
           <button className="btn-ghost" onClick={() => fileInputRef.current?.click()}>
@@ -8904,6 +8999,7 @@ export default function TournamentManager() {
           <input type="file" accept="application/json" ref={fileInputRef} onChange={importJSON} style={{ display: "none" }} />
         </div>
       )}
+      {/* #endregion Φόρτωση αρχείου τουρνουά (admin, τουρνουά) */}
     </div>
   );
 }
