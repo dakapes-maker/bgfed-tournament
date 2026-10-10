@@ -178,7 +178,7 @@ function isEmbeddedOnFederationSite() {
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-const APP_BUILD_VERSION = "2026-10-09.11";
+const APP_BUILD_VERSION = "2026-10-10.01";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -204,6 +204,13 @@ const FEATURES_SUMMARY = [
 ];
 
 const CHANGELOG = [
+  {
+    version: "2026-10-10.01",
+    date: "2026-10-10",
+    items: [
+      "Τεχνικό: κλείδωμα εκδόσεων βιβλιοθηκών, χωρίς αλλαγή λειτουργίας.",
+    ],
+  },
   {
     version: "2026-10-09.11",
     date: "2026-10-09",
