@@ -157,6 +157,17 @@ export async function saveElo(data) {
   return await setDocData("meta", "elo", data);
 }
 
+/* 5D: additional ELO rankings (beyond the main one in meta/elo) are stored
+ * one document each in eloRankings/{id}; rebuilt only by their Recompute. */
+export async function loadRankingElo(id) {
+  const data = await getDocData("eloRankings", id);
+  return data || { players: {} };
+}
+
+export async function saveRankingElo(id, data) {
+  return await setDocData("eloRankings", id, data);
+}
+
 /* ---------------------------------------------------------------------- */
 /* RSS feed items — admin-approved recap summaries, read by the public    */
 /* /api/feed serverless function to build an RSS feed for WordPress'      */

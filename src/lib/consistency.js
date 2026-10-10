@@ -68,9 +68,13 @@ export function buildConsistencyReport({ elo, seasons, index, display }) {
 
   const eloPlayers = elo.players || {};
   Object.entries(eloPlayers).forEach(([key, p]) => {
-    if ((p.games ?? 0) > 0 && !seasonNames[key]) report.eloOnly.push({ name: p.name, games: p.games });
-    if (seasonNames[key] && p.wins !== undefined && (p.wins ?? 0) !== (seasonWins[key] || 0)) {
-      report.winsMismatch.push({ name: p.name, elo: p.wins ?? 0, season: seasonWins[key] || 0 });
+    // 5D: the ELO also holds imported tournaments (impWins / impGames);
+    // only the rest is comparable with the season standings.
+    const games = (p.games ?? 0) - (p.impGames || 0);
+    const wins = (p.wins ?? 0) - (p.impWins || 0);
+    if (games > 0 && !seasonNames[key]) report.eloOnly.push({ name: p.name, games });
+    if (seasonNames[key] && p.wins !== undefined && wins !== (seasonWins[key] || 0)) {
+      report.winsMismatch.push({ name: p.name, elo: wins, season: seasonWins[key] || 0 });
     }
   });
   Object.keys(seasonNames).forEach((key) => {

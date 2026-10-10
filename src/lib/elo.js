@@ -17,6 +17,15 @@ import { normalizeName, displayNameFor } from "./persons.js";
 /* ---------------------------------------------------------------------- */
 
 export const ELO_INITIAL = 1500;
+
+/* 5D: registry keys of guest players, kept in step by the component. */
+let ELO_GUEST_KEYS = new Set();
+export function setEloGuestKeys(keys) {
+  ELO_GUEST_KEYS = new Set(keys || []);
+}
+export function isEloGuest(key) {
+  return ELO_GUEST_KEYS.has(key);
+}
 export const ELO_K_BASE = 4;
 
 export function eloWinProbability(ratingA, ratingB, matchLength) {
@@ -49,6 +58,12 @@ export function ensureEloPlayer(elo, name) {
  * this same pass, rather than needing a separate heavy recompute. */
 export function applyEloRoundBatch(elo, roundMatches, matchLength) {
   const S = eloPointsAtStake(matchLength);
+  // 5D: guests (registry «guest») play every match at a fresh 1500 and keep nothing.
+  const dropGuests = () => roundMatches.forEach((m) => [m.w, m.l].forEach((n) => {
+    const k = normalizeName(n);
+    if (ELO_GUEST_KEYS.has(k)) delete elo.players[k];
+  }));
+  dropGuests();
   const deltas = {};
   roundMatches.forEach((m) => {
     const wKey = ensureEloPlayer(elo, m.w);
@@ -72,6 +87,7 @@ export function applyEloRoundBatch(elo, roundMatches, matchLength) {
   Object.entries(deltas).forEach(([key, d]) => {
     elo.players[key].rating += d;
   });
+  dropGuests();
 }
 
 /** Converts one round's pairs into the {w, l, ret} shape applyEloRoundBatch

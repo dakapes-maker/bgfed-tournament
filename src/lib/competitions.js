@@ -32,6 +32,34 @@ export let RUNTIME_HOME_CLUB = null;
 export function setRuntimeCompetitionState(sysState) {
   RUNTIME_COMPETITIONS = competitionsFrom(sysState);
   RUNTIME_HOME_CLUB = sysState.homeClubId || null;
+  RUNTIME_ELO_MEMBERS = new Set(eloRankingsFrom(sysState)[0].competitionIds);
+}
+
+/* ---- 5D: ELO rankings -------------------------------------------------
+ * An ELO ranking = name + member competitions. The FIRST ranking is the main
+ * one («Πανελλήνια Κατάταξη ELO»): stored in meta/elo, updated round by
+ * round / at the end of a tournament, rebuilt by Recompute, used by the
+ * consistency check and the RSS. Any other ranking is stored in
+ * eloRankings/{id} and rebuilt only by its own Recompute. Every ranking
+ * replays, in date order, the official in-app tournaments AND the imported
+ * tournaments of its member competitions. */
+export const PRIMARY_RANKING_ID = "national";
+export let RUNTIME_ELO_MEMBERS = null;
+
+export function eloRankingsFrom(sys) {
+  if (Array.isArray(sys?.eloRankings) && sys.eloRankings.length > 0) return sys.eloRankings;
+  const initial = new Set(DEFAULT_COMPETITIONS.map((c) => c.id)); // Premier League, Τελικές Φάσεις Πρωταθλήματος και Κυπέλλου
+  return [{
+    id: PRIMARY_RANKING_ID,
+    name: "Πανελλήνια Κατάταξη ELO",
+    competitionIds: competitionsFrom(sys).map((c) => c.id).filter((id) => initial.has(id)),
+    public: true,
+  }];
+}
+
+export function competitionInMainRanking(competitionId) {
+  const members = RUNTIME_ELO_MEMBERS || new Set(DEFAULT_COMPETITIONS.map((c) => c.id));
+  return members.has(competitionId || DEFAULT_COMPETITION_ID);
 }
 
 export function competitionById(id) {
@@ -56,7 +84,8 @@ export function competitionsFrom(sys) {
  * tournaments feed the ELO and the season standings. A catalogue entry with
  * no competition yet (before the Build 2 migration) is Premier League. */
 export function countsTowardRatings(t) {
-  return !!t && !!t.isOfficial && eloPoolOf(t.competitionId) === "club" && ELO_POOLS.club.active;
+  // 5D: an official tournament of a member competition of the main ranking.
+  return !!t && !!t.isOfficial && competitionInMainRanking(t.competitionId);
 }
 
 /** "Premier League (Ομοσπονδία Backgammon)" — the owner club, once set. */
