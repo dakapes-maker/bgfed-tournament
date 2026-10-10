@@ -112,6 +112,10 @@ import {
   setRuntimeCompetitionState,
   competitionHasStandings,
   countsTowardStandings,
+  competitionHasFinance,
+  financeSnapshotOf,
+  tournamentFinance,
+  FINANCE_FIELDS,
 } from "./lib/competitions.js";
 import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay } from "./lib/clubs.js";
 import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
@@ -219,6 +223,11 @@ export default function TournamentManager() {
   const [matchLength, setMatchLength] = useState(7);
   const [sideBets, setSideBets] = useState([]);
   const [calcuttaEntries, setCalcuttaEntries] = useState([]);
+  // 5B.4: the tournament's copy of its competition's finances (null = before 5B.4 / not started)
+  const [financeCopy, setFinanceCopyState] = useState(null);
+  const financeCopyRef = useRef(null);
+  const setFinanceCopy = (v) => { financeCopyRef.current = v; setFinanceCopyState(v); };
+  const [finDraft, setFinDraft] = useState(null); // 5B.4: competition page → Οικονομικά draft
   const [defaultSideBetAmount, setDefaultSideBetAmount] = useState(40);
   const [addToSideBet, setAddToSideBet] = useState(false);
   const [nameDropdownOpen, setNameDropdownOpen] = useState(false);
@@ -404,6 +413,9 @@ export default function TournamentManager() {
   const [trash, setTrash] = useState([]); // tournaments moved to the trash (restorable)
   const [sysState, setSysState] = useState({}); // lastExportAt, purgedIds
   const sn = (id) => seasonName(sysState, id); // 5B.2β: display name of a season id
+  // 5B.4: finances of the open tournament (its copy, or the competition switch before it starts)
+  const tFin = financeCopy ? tournamentFinance(financeCopy, competitionId) : { ...tournamentFinance(null, competitionId), enabled: competitionHasFinance(competitionsFrom(sysState).find((c) => c.id === competitionId)) };
+  const tOrgLabel = clubDisplay(sysState, (competitionsFrom(sysState).find((c) => c.id === competitionId) || {}).ownerClubId, "Φορέας");
   setRuntimeCompetitionState(sysState);
   const [health, setHealth] = useState(null); // result of buildConsistencyReport (admin only)
   const [consistencyReport, setConsistencyReport] = useState(null);
@@ -759,7 +771,7 @@ export default function TournamentManager() {
 
   // #region Τουρνουά & γύροι
   function currentSnapshot() {
-    return { tournamentName, totalRounds, matchLength, seasonYear, competitionId, organisation, organisationClubId, calendarEntryId, liveStandingsEnabled, isOfficial, sideBets, calcuttaEntries, phase, players, round, currentPairings, history, createdAt };
+    return { tournamentName, totalRounds, matchLength, seasonYear, competitionId, organisation, organisationClubId, calendarEntryId, liveStandingsEnabled, isOfficial, sideBets, calcuttaEntries, finance: financeCopyRef.current, phase, players, round, currentPairings, history, createdAt };
   }
 
   async function persistCurrent(nextPhase, nextRound, nextPlayers, nextPairings, nextHistory, nextSideBets = sideBets, nextCalcuttaEntries = calcuttaEntries) {
@@ -777,6 +789,7 @@ export default function TournamentManager() {
       isOfficial,
       sideBets: nextSideBets,
       calcuttaEntries: nextCalcuttaEntries,
+      finance: financeCopyRef.current,
       phase: nextPhase,
       players: nextPlayers,
       round: nextRound,
@@ -813,6 +826,7 @@ export default function TournamentManager() {
     setMatchLength(7);
     setSideBets([]);
     setCalcuttaEntries([]);
+    setFinanceCopy(null);
     setSeasonYear(currentSeasonId(sysState, DEFAULT_COMPETITION_ID));
     setCompetitionId(DEFAULT_COMPETITION_ID);
     setOrganisation(clubsActive(sysState) ? clubDisplay(sysState, sysState.homeClubId, sysState.homeClub) : sysState.homeClub || "");
@@ -915,7 +929,7 @@ export default function TournamentManager() {
     ];
     setPlayers(updatedPlayers);
     let updatedSideBets = sideBets;
-    if (addToSideBet) {
+    if (addToSideBet && tFin.enabled) {
       const existing = sideBets.find((b) => b.id === "default-sidebet");
       updatedSideBets = existing
         ? sideBets.map((b) => (b.id === "default-sidebet" ? { ...b, participantIds: [...b.participantIds, newId] } : b))
@@ -1091,6 +1105,8 @@ export default function TournamentManager() {
       return;
     }
     if (players.length < 3) return;
+    // 5B.4: keep a copy of the competition's finances as they are now.
+    setFinanceCopy(financeSnapshotOf(competitionsFrom(sysState).find((c) => c.id === competitionId)));
     const pairing = generatePairings(players, 1);
     setCurrentPairings(pairing);
     setRound(1);
@@ -1576,6 +1592,7 @@ export default function TournamentManager() {
         setMatchLength(data.matchLength || 7);
         setSideBets(data.sideBets || []);
         setCalcuttaEntries(data.calcuttaEntries || []);
+        setFinanceCopy(data.finance || null);
         setSeasonYear(data.seasonYear || seasonForDate(data.createdAt) || new Date().getFullYear());
         setCompetitionId(data.competitionId || DEFAULT_COMPETITION_ID);
         setOrganisation(data.organisation ?? (sysState.homeClub || ""));
@@ -1614,6 +1631,7 @@ export default function TournamentManager() {
     setMatchLength(data.matchLength || 7);
     setSideBets(data.sideBets || []);
     setCalcuttaEntries(data.calcuttaEntries || []);
+    setFinanceCopy(data.finance || null);
     setSeasonYear(data.seasonYear || seasonForDate(data.createdAt) || new Date().getFullYear());
     setCompetitionId(data.competitionId || DEFAULT_COMPETITION_ID);
     setOrganisation(data.organisation ?? (sysState.homeClub || ""));
@@ -5392,6 +5410,18 @@ export default function TournamentManager() {
     else reportSaveFailure("Διοργανώσεις — η αλλαγή δεν αποθηκεύτηκε");
   }
 
+  /** 5B.4: finances of a competition (switch and amounts). New tournaments
+   * copy them when they start; running and finished ones keep their copy. */
+  async function saveCompetitionFinance(comp, patch) {
+    const next = competitionsFrom(sysState).map((c) => (c.id === comp.id ? { ...c, ...patch } : c));
+    if (await saveSysState({ competitions: next })) {
+      setSysState((st) => ({ ...st, competitions: next }));
+      return true;
+    }
+    reportSaveFailure("Διοργανώσεις — τα οικονομικά δεν αποθηκεύτηκαν");
+    return false;
+  }
+
   /** 5B.2β: season picker limited to one competition's seasons. */
   function renderSeasonSelect(compId, value, onChange) {
     const list = seasonsOfCompetition(sysState, compId, controlSeasons).map((s) => s.id);
@@ -7790,7 +7820,56 @@ export default function TournamentManager() {
                   </label>
                 </dd>
                 <dt>Τουρνουά</dt><dd>{archive.filter(inComp).length}</dd>
+                <dt>Οικονομική διαχείριση</dt>
+                <dd>
+                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    <input type="checkbox" checked={competitionHasFinance(comp)} onChange={() => { setFinDraft(null); saveCompetitionFinance(comp, { hasFinance: !competitionHasFinance(comp) }); }} /> {competitionHasFinance(comp) ? "Ναι — συμμετοχή, έπαθλα, side bets, Calcutta" : "Όχι"}
+                  </label>
+                </dd>
               </dl>
+
+              {competitionHasFinance(comp) && (() => {
+                const cur = financeSnapshotOf(comp);
+                const draft = finDraft && finDraft.compId === comp.id ? finDraft.values : null;
+                return (
+                  <div style={{ marginTop: 14 }}>
+                    <h3 style={{ margin: "0 0 6px 0" }}>Οικονομικά</h3>
+                    <p className="control-sub">Ισχύουν για κάθε τουρνουά που ξεκινά από εδώ και πέρα· τουρνουά που ήδη τρέχουν ή έχουν τελειώσει κρατούν τα δικά τους ποσά. Η έκπτωση (ποιος και πόσο) ορίζεται στον παίκτη, στο Μητρώο· ο δικαιούχος πληρώνει το ποσό της έκπτωσής του, όλο στα έπαθλα.</p>
+                    {draft ? (
+                      <>
+                        <div className="row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
+                          {FINANCE_FIELDS.map(([k, label]) => (
+                            <div key={k} style={{ width: 170 }}>
+                              <label>{label} (€)</label>
+                              <input type="number" min="0" value={draft[k]} onChange={(e) => setFinDraft({ compId: comp.id, values: { ...draft, [k]: e.target.value } })} />
+                            </div>
+                          ))}
+                        </div>
+                        {Number(draft.potShare) + Number(draft.orgShare) + Number(draft.venueShare) !== Number(draft.buyIn) && (
+                          <p className="field-warning">⚠ Τα μερίδια (έπαθλα + φορέας + χώρος) δεν αθροίζουν στη συμμετοχή.</p>
+                        )}
+                        <div className="row">
+                          <button className="btn-secondary" onClick={() => setFinDraft(null)}>Άκυρο</button>
+                          <button className="btn-primary" disabled={FINANCE_FIELDS.some(([k]) => draft[k] === "" || isNaN(Number(draft[k])) || Number(draft[k]) < 0)} onClick={async () => {
+                            const finance = {};
+                            FINANCE_FIELDS.forEach(([k]) => { finance[k] = Number(draft[k]); });
+                            if (await saveCompetitionFinance(comp, { finance })) { setFinDraft(null); showToast("Τα οικονομικά της διοργάνωσης αποθηκεύτηκαν· ισχύουν από το επόμενο τουρνουά."); }
+                          }}>Αποθήκευση</button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <dl className="details-list">
+                          {FINANCE_FIELDS.map(([k, label]) => (<React.Fragment key={k}><dt>{label}</dt><dd>{cur[k]}€</dd></React.Fragment>))}
+                        </dl>
+                        <button className="btn-secondary" style={{ marginTop: 8 }} onClick={() => setFinDraft({ compId: comp.id, values: Object.fromEntries(FINANCE_FIELDS.map(([k]) => [k, String(cur[k])])) })}>
+                          <Pencil size={14} /> Αλλαγή ποσών
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
 
               <h3 style={{ margin: "18px 0 6px 0" }}>Σεζόν</h3>
               {compSeasons.length > 0 ? (
@@ -8638,10 +8717,12 @@ export default function TournamentManager() {
                     );
                   })()}
                 </div>
+                {tFin.enabled && (
                 <label className="live-toggle" style={{ margin: 0, whiteSpace: "nowrap" }} title="Include this player in the side bet, collected alongside the buy-in">
                   <input type="checkbox" checked={addToSideBet} onChange={(e) => setAddToSideBet(e.target.checked)} />
                   Side bet
                 </label>
+                )}
                 <button className="btn-secondary" onClick={addPlayer}>
                   <Plus size={16} /> Add
                 </button>
@@ -8659,8 +8740,10 @@ export default function TournamentManager() {
 
               <p style={{ fontSize: 13, color: "var(--muted)", margin: "14px 0 6px 0" }}>
                 <strong style={{ color: "var(--ink)" }}>{players.length}</strong> player{players.length === 1 ? "" : "s"} registered
+                {tFin.enabled && (<>
                 {" · "}
                 <strong style={{ color: "var(--ink)" }}>{sideBets.find((b) => b.id === "default-sidebet")?.participantIds.length || 0}</strong> in the side bet
+                </>)}
               </p>
               <div className="player-list">
                 {players.map((p) => {
@@ -8669,10 +8752,12 @@ export default function TournamentManager() {
                     <div className="player-chip" key={p.id}>
                       <span>{p.name}</span>
                       <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        {tFin.enabled && (
                         <label className="live-toggle" style={{ margin: 0 }}>
                           <input type="checkbox" checked={inSideBet} onChange={() => toggleDefaultSideBetForPlayer(p.id)} />
                           Side bet
                         </label>
+                        )}
                         <button className="btn-ghost" onClick={() => removePlayer(p.id)}>
                           <X size={15} />
                         </button>
@@ -8727,7 +8812,7 @@ export default function TournamentManager() {
               <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Pairings</button>
               <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Standings</button>
               <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
-              {isAdmin && (
+              {isAdmin && tFin.enabled && (
                 <>
                   <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>Prizes</button>
                   <button className={`tab ${view === "calcutta" ? "active" : ""}`} onClick={() => setView("calcutta")}>Calcutta</button>
@@ -8893,16 +8978,17 @@ export default function TournamentManager() {
               </>
             )}
 
-            {view === "standings" && <StandingsTable standings={standings} buchholz={null} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
-            {view === "finance" && isAdmin && (
+            {view === "standings" && <StandingsTable standings={standings} buchholz={null} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
+            {view === "finance" && isAdmin && tFin.enabled && (
               <FinanceTab
               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
               onToggleDiscount={toggleDiscount} onChangeDiscountAmount={updatePlayerDiscountAmount} onToggleCup={toggleWantsCup}
               sideBets={sideBets} onAddSideBet={addSideBet} onRemoveSideBet={removeSideBet}
               onToggleSideBetParticipant={toggleSideBetParticipant} onChangeSideBetAmount={updateSideBetAmount}
+              rules={tFin} orgLabel={tOrgLabel}
             />
             )}
-            {view === "calcutta" && isAdmin && (
+            {view === "calcutta" && isAdmin && tFin.enabled && (
               <CalcuttaTab players={players} totalRounds={totalRounds} entries={calcuttaEntries} onAdd={addCalcuttaEntry} onRemove={removeCalcuttaEntry} />
             )}
           </div>
@@ -8971,7 +9057,7 @@ export default function TournamentManager() {
               <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Pairings</button>
               <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Standings</button>
               <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
-              {isAdmin && (
+              {isAdmin && tFin.enabled && (
                 <>
                   <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>Prizes</button>
                   <button className={`tab ${view === "calcutta" ? "active" : ""}`} onClick={() => setView("calcutta")}>Calcutta</button>
@@ -9087,16 +9173,17 @@ export default function TournamentManager() {
               </>
             )}
 
-            {view === "standings" && <StandingsTable standings={standings} buchholz={buchholz} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
-            {view === "finance" && isAdmin && (
+            {view === "standings" && <StandingsTable standings={standings} buchholz={buchholz} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
+            {view === "finance" && isAdmin && tFin.enabled && (
               <FinanceTab
               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
               onToggleDiscount={toggleDiscount} onChangeDiscountAmount={updatePlayerDiscountAmount} onToggleCup={toggleWantsCup}
               sideBets={sideBets} onAddSideBet={addSideBet} onRemoveSideBet={removeSideBet}
               onToggleSideBetParticipant={toggleSideBetParticipant} onChangeSideBetAmount={updateSideBetAmount}
+              rules={tFin} orgLabel={tOrgLabel}
             />
             )}
-            {view === "calcutta" && isAdmin && (
+            {view === "calcutta" && isAdmin && tFin.enabled && (
               <CalcuttaTab players={players} totalRounds={totalRounds} entries={calcuttaEntries} onAdd={addCalcuttaEntry} onRemove={removeCalcuttaEntry} />
             )}
 

@@ -32,6 +32,8 @@ export function roundCell(player, roundNumber) {
 export function StandingsTable({ standings, buchholz, totalRounds, sideBets, isAdmin, onToggleExclusion, onOpenPlayer }) {
   const rounds = Array.from({ length: totalRounds || 0 }, (_, i) => i + 1);
   const inAnySideBet = (playerId) => (sideBets || []).some((b) => b.participantIds.includes(playerId));
+  // 5B.4: side bets are financial information — only the admin sees them.
+  const showSideBets = !!isAdmin && (sideBets || []).length > 0;
   return (
     <div className="card" style={{ padding: 0, overflowX: "auto" }}>
       <table>
@@ -45,7 +47,7 @@ export function StandingsTable({ standings, buchholz, totalRounds, sideBets, isA
             <th style={{ textAlign: "center" }}>Wins</th>
             {buchholz && <th className="buchholz-header">Buchholz</th>}
             <th>Active</th>
-            <th style={{ textAlign: "center" }}>Side bet</th>
+            {showSideBets && <th style={{ textAlign: "center" }}>Side bet</th>}
           </tr>
         </thead>
         <tbody>
@@ -73,11 +75,13 @@ export function StandingsTable({ standings, buchholz, totalRounds, sideBets, isA
                   <span style={{ marginLeft: 8, fontSize: 11, color: "var(--loss)" }}>Α.Α. σε R{p.withdrawnRound}</span>
                 )}
               </td>
+              {showSideBets && (
               <td style={{ textAlign: "center" }}>
                 <span style={{ display: "flex", justifyContent: "center" }}>
                   {inAnySideBet(p.id) ? <Check size={15} color="var(--win)" /> : "—"}
                 </span>
               </td>
+              )}
             </tr>
           ))}
         </tbody>

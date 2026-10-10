@@ -84,3 +84,49 @@ export function competitionHasStandings(c) {
 export function countsTowardStandings(t) {
   return !!t && !!t.isOfficial && competitionHasStandings(competitionById(t.competitionId));
 }
+
+/* ---------------------------------------------------------------------- */
+/* 5B.4: finances per competition                                         */
+/* ---------------------------------------------------------------------- */
+/* A competition either has financial management (buy-in, prizes, side bets,
+ * Calcutta) or not. Amounts are parameters of the competition; each new
+ * tournament keeps a COPY of them (`finance` in its document) when it
+ * starts, so a later change applies only from the next tournament on.
+ * Tournaments with no copy (before 5B.4) use DEFAULT_FINANCE — the Federation
+ * amounts of 2026 — so their figures never change. The discount itself
+ * (who and how much) stays on the person (registry → private contacts). */
+export const DEFAULT_FINANCE = {
+  buyIn: 40, // full buy-in
+  potShare: 32, // of a full buy-in, to the prize pool
+  orgShare: 6, // of a full buy-in, to the organising club (waived for discounted)
+  venueShare: 2, // of a full buy-in, to the venue (waived for discounted)
+  runnerUpPrize: 60, // fixed prize for one win short of a perfect score
+  cupCost: 15, // deducted from a perfect-score winner's prize if they take a cup
+};
+export const FINANCE_FIELDS = [
+  ["buyIn", "Συμμετοχή (buy-in)"],
+  ["potShare", "— από αυτά στα έπαθλα"],
+  ["orgShare", "— στον φορέα"],
+  ["venueShare", "— στον χώρο"],
+  ["runnerUpPrize", "Έπαθλο για μία νίκη λιγότερο από το τέλειο"],
+  ["cupCost", "Κόστος κυπέλλου"],
+];
+
+export function competitionHasFinance(c) {
+  if (!c) return false;
+  if (typeof c.hasFinance === "boolean") return c.hasFinance;
+  return c.id === DEFAULT_COMPETITION_ID;
+}
+
+/** The copy a new tournament keeps: { enabled, ...amounts }. */
+export function financeSnapshotOf(c) {
+  const enabled = competitionHasFinance(c);
+  return { enabled, ...DEFAULT_FINANCE, ...((c && c.finance) || {}) };
+}
+
+/** Finance of a tournament from its copy; before 5B.4 (no copy) from the
+ * competition's switch with the default amounts. */
+export function tournamentFinance(copy, competitionId) {
+  if (copy && typeof copy === "object") return { ...DEFAULT_FINANCE, ...copy, enabled: copy.enabled !== false };
+  return { ...DEFAULT_FINANCE, enabled: competitionHasFinance(competitionById(competitionId)) };
+}
