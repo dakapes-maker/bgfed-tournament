@@ -88,6 +88,7 @@ import {
   tournamentInScope,
   scopeLabel,
 } from "./lib/seasons.js";
+import { seasonCompetitionId, seasonsOfCompetition, currentSeasonId } from "./lib/seasonRegistry.js";
 import {
   newCalendarEntryId,
   todayYMD,
@@ -664,7 +665,7 @@ export default function TournamentManager() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
+      const current = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
       const years = (await listSeasonYears()).filter((y) => y <= current).sort((a, b) => b - a);
       let pick = current;
       for (const y of years) {
@@ -736,7 +737,7 @@ export default function TournamentManager() {
 
   useEffect(() => {
     if (phase !== "control") return;
-    const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
+    const current = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
     const opened = [...Object.keys(sysState.seasonCalendars || {}), ...Object.keys(sysState.seasonRules || {})].map(Number).filter((y) => !isNaN(y));
     listSeasonYears().then((years) => setControlSeasons([...new Set([current, ...years, ...opened])].sort((x, y) => y - x)));
   }, [phase, sysState.seasonCalendars, sysState.seasonRules]);
@@ -806,7 +807,7 @@ export default function TournamentManager() {
     setMatchLength(7);
     setSideBets([]);
     setCalcuttaEntries([]);
-    setSeasonYear(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
+    setSeasonYear(currentSeasonId(sysState, DEFAULT_COMPETITION_ID));
     setCompetitionId(DEFAULT_COMPETITION_ID);
     setOrganisation(clubsActive(sysState) ? clubDisplay(sysState, sysState.homeClubId, sysState.homeClub) : sysState.homeClub || "");
     setOrganisationClubId(clubsActive(sysState) ? sysState.homeClubId || null : null);
@@ -815,8 +816,9 @@ export default function TournamentManager() {
     setIsOfficial(true);
     setPlayers([]);
     // Prefill from the next open calendar day (current season, then next).
-    const cur = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
-    for (const y of [cur, cur + 1]) {
+    const cur = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
+    const later = seasonsOfCompetition(sysState, DEFAULT_COMPETITION_ID).map((s) => s.id).filter((id) => id > cur);
+    for (const y of [cur, ...later]) {
       const view = buildCalendarView(sysState, y, archive);
       const open = view.find((e) => !e.tournament && e.status === "scheduled");
       if (open) {
@@ -1956,7 +1958,7 @@ export default function TournamentManager() {
       return;
     }
     const nextCreatedAt = withLocalDate(createdAt, metaEdit.date);
-    const nextSeason = Number(metaEdit.seasonYear) || seasonForDate(nextCreatedAt) || seasonYear;
+    const nextSeason = Number(metaEdit.seasonYear) || seasonYear;
     const changes = {
       createdAt: nextCreatedAt,
       seasonYear: nextSeason,
@@ -5334,11 +5336,12 @@ export default function TournamentManager() {
     // Pin the rules of earlier seasons that still inherit, then give the new
     // season a copy of the latest rules (adjust them to the announcement).
     const rules = { ...(sysState.seasonRules || {}) };
-    controlSeasons.filter((y) => y < year && !rules[String(y)]).forEach((y) => {
-      const r = rulesForSeason({ seasonRules: rules }, y);
+    const newComp = seasonCompetitionId(sysState, year);
+    controlSeasons.filter((y) => y < year && !rules[String(y)] && seasonCompetitionId(sysState, y) === newComp).forEach((y) => {
+      const r = rulesForSeason({ ...sysState, seasonRules: rules }, y);
       rules[String(y)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: new Date().toISOString() };
     });
-    const base = rulesForSeason({ seasonRules: rules }, year);
+    const base = rulesForSeason({ ...sysState, seasonRules: rules }, year);
     rules[String(year)] = { bestOf: base.bestOf, cutoffR32: base.cutoffR32, cutoffR48: base.cutoffR48, setAt: new Date().toISOString() };
     const calendars = { ...(sysState.seasonCalendars || {}), [String(year)]: [] };
     const patch = { seasonRules: rules, seasonCalendars: calendars, seasonsOpened: { ...(sysState.seasonsOpened || {}), [String(year)]: new Date().toISOString() } };
@@ -5428,9 +5431,6 @@ export default function TournamentManager() {
             </div>
             <button className="btn-secondary" onClick={() => setCalDraft(null)}>Άκυρο</button>
             <button className="btn-primary" onClick={saveCalDraft} disabled={!calDraft.date || calBusy}>Αποθήκευση</button>
-            {calDraft.date && seasonForDate(withLocalDate(null, calDraft.date)) !== year && (
-              <p className="field-warning" style={{ width: "100%" }}>⚠ Η ημερομηνία δεν ανήκει στη σεζόν {year} ({seasonRangeLabel(year)}).</p>
-            )}
           </div>
         ) : (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
@@ -5578,8 +5578,9 @@ export default function TournamentManager() {
       reportSaveFailure("Κανόνες σεζόν — η λίστα σεζόν δεν διαβάστηκε· οι κανόνες δεν αποθηκεύτηκαν");
       return;
     }
-    years.filter((y) => y < year && !all[String(y)]).forEach((y) => {
-      const r = rulesForSeason({ seasonRules: all }, y);
+    const ruleComp = seasonCompetitionId(sysState, year);
+    years.filter((y) => y < year && !all[String(y)] && seasonCompetitionId(sysState, y) === ruleComp).forEach((y) => {
+      const r = rulesForSeason({ ...sysState, seasonRules: all }, y);
       all[String(y)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: next.setAt };
     });
     all[String(year)] = next;
@@ -5616,7 +5617,7 @@ export default function TournamentManager() {
     const rows = [
       ["Όνομα", tournamentName || "—"],
       ["Ημερομηνία", createdAt ? formatDate(createdAt) : "—"],
-      ["Σεζόν", `${seasonYear} (${seasonRangeLabel(seasonYear)})`],
+      ["Σεζόν", `${seasonYear}`],
       ["Διοργάνωση", comp ? `${comp.name} — ${COMPETITION_LEVEL_LABEL[comp.level] || comp.level}` : competitionName(comps, competitionId)],
       ["Σύλλογος της διοργάνωσης", (() => { const c = competitionById(competitionId); return c && c.ownerClubId ? clubDisplay(sysState, c.ownerClubId, "—") : "—"; })()],
       ["Κατάσταση", phase === "finished" ? "Ολοκληρώθηκε" : `Σε εξέλιξη — γύρος ${round} από ${totalRounds}`],
@@ -5627,7 +5628,6 @@ export default function TournamentManager() {
       ["Επίσημο", isOfficial ? "Ναι (Official League day)" : "Όχι (δοκιμαστικό)"],
       ["Μετράει σε ELO και Βαθμολογία", counts ? "Ναι" : isOfficial ? "Όχι — μετράει μόνο η Premier League προς το παρόν" : "Όχι — δεν είναι επίσημο"],
     ];
-    const seasonMismatch = seasonForDate(createdAt) !== null && seasonForDate(createdAt) !== seasonYear;
     return (
       <div className="details-tab">
         {isAdmin && seasonLocked(sysState, seasonYear) && (
@@ -5666,9 +5666,6 @@ export default function TournamentManager() {
                 </React.Fragment>
               ))}
             </dl>
-            {seasonMismatch && (
-              <p className="field-warning">⚠ Η ημερομηνία ανήκει στη σεζόν {seasonForDate(createdAt)}, όχι στη {seasonYear}.</p>
-            )}
           </div>
         )}
 
@@ -5683,8 +5680,7 @@ export default function TournamentManager() {
                   value={metaEdit.date}
                   onChange={(e) => {
                     if (!e.target.value) return;
-                    const suggested = seasonForDate(withLocalDate(createdAt, e.target.value));
-                    setMetaEdit({ ...metaEdit, date: e.target.value, seasonYear: suggested || metaEdit.seasonYear });
+                    setMetaEdit({ ...metaEdit, date: e.target.value });
                   }}
                 />
               </div>
@@ -5714,12 +5710,6 @@ export default function TournamentManager() {
                 </div>
               </div>
             </div>
-            {(() => {
-              const expected = seasonForDate(withLocalDate(createdAt, metaEdit.date));
-              return expected !== null && expected !== Number(metaEdit.seasonYear) ? (
-                <p className="field-warning">⚠ Η ημερομηνία ανήκει στη σεζόν {expected} ({seasonRangeLabel(expected)}), όχι στη {metaEdit.seasonYear}.</p>
-              ) : null;
-            })()}
             {isOfficial && (phase === "finished" || history.length > 0) && (
               <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0 0 0" }}>
                 Το τουρνουά μετράει ήδη σε ELO/Βαθμολογία. Αν αλλάξεις ημερομηνία, σεζόν ή διοργάνωση, τρέξε μετά Recompute.
@@ -6776,7 +6766,7 @@ export default function TournamentManager() {
             <div className="notice">
               <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
               <span>
-                Σεζόν {seasonBrowseYear}: {seasonRangeLabel(seasonBrowseYear)}. Μετράνε τα {rulesForSeason(sysState, seasonBrowseYear).bestOf} καλύτερα αποτελέσματα κάθε παίκτη στη σεζόν.
+                Σεζόν {seasonBrowseYear}. Μετράνε τα {rulesForSeason(sysState, seasonBrowseYear).bestOf} καλύτερα αποτελέσματα κάθε παίκτη στη σεζόν.
               </span>
             </div>
 
@@ -7635,7 +7625,7 @@ export default function TournamentManager() {
               <>
             {/* 1. Status */}
             {(() => {
-              const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
+              const current = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
               const lastExport = sysState.lastExportAt ? new Date(sysState.lastExportAt) : null;
               const daysSince = lastExport ? Math.floor((Date.now() - lastExport.getTime()) / 86400000) : null;
               const healthOk = health && !(health.needsRecompute && staleReasons.length > 0);
@@ -7655,7 +7645,7 @@ export default function TournamentManager() {
                         </React.Fragment>
                       ))}
                     <dt>Τρέχουσα σεζόν</dt>
-                    <dd>{current} ({seasonRangeLabel(current)}){seasonLocked(sysState, current) ? " 🔒" : ""}</dd>
+                    <dd>{current}{seasonLocked(sysState, current) ? " 🔒" : ""}</dd>
                     {(() => {
                       const prog = calendarProgress(buildCalendarView(sysState, current, archive));
                       return (
@@ -7721,7 +7711,7 @@ export default function TournamentManager() {
               <h2 className="control-h">Σεζόν</h2>
               <p className="control-sub">Διάλεξε σεζόν για τους κανόνες Βαθμολογίας, το ημερολόγιο και το κλείσιμό της.</p>
               {newSeasonYear === null ? (
-                <button className="btn-secondary" onClick={() => setNewSeasonYear(String(Math.max(...controlSeasons, seasonForDate(new Date().toISOString()) || 2026) + 1))}>
+                <button className="btn-secondary" onClick={() => setNewSeasonYear(String(Math.max(...controlSeasons, currentSeasonId(sysState, DEFAULT_COMPETITION_ID)) + 1))}>
                   <Plus size={14} /> Νέα σεζόν
                 </button>
               ) : (
@@ -7731,7 +7721,7 @@ export default function TournamentManager() {
                     <input type="number" value={newSeasonYear} onChange={(e) => setNewSeasonYear(e.target.value)} />
                   </div>
                   <span style={{ fontSize: 13, color: "var(--muted)", paddingBottom: 10 }}>
-                    {Number(newSeasonYear) >= 2027 ? `Διάρκεια ${seasonRangeLabel(Number(newSeasonYear))}· οι κανόνες αντιγράφονται από την προηγούμενη σεζόν.` : ""}
+                    {Number(newSeasonYear) >= 2027 ? "Οι κανόνες αντιγράφονται από την προηγούμενη σεζόν." : ""}
                   </span>
                   <button className="btn-secondary" onClick={() => setNewSeasonYear(null)}>Άκυρο</button>
                   <button className="btn-primary" onClick={createSeason}>Δημιουργία</button>
@@ -8470,26 +8460,14 @@ export default function TournamentManager() {
                       if (!e.target.value) return;
                       const nextIso = withLocalDate(createdAt, e.target.value);
                       setCreatedAt(nextIso);
-                      const suggested = seasonForDate(nextIso);
-                      if (suggested) setSeasonYear(suggested);
                     }}
                   />
                 </div>
                 <div style={{ width: 110 }}>
                   <label>Σεζόν</label>
-                  <input type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value) || seasonForDate(createdAt) || new Date().getFullYear())} />
+                  <input type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value) || seasonYear)} />
                 </div>
               </div>
-              {seasonForDate(createdAt) !== null && seasonForDate(createdAt) !== seasonYear && (
-                <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
-                  ⚠ Η ημερομηνία {formatDate(createdAt)} ανήκει στη σεζόν {seasonForDate(createdAt)} ({seasonRangeLabel(seasonForDate(createdAt))}), όχι στη {seasonYear}. Βεβαιώσου ότι αυτό θέλεις.
-                </p>
-              )}
-              {seasonForDate(createdAt) === null && (
-                <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
-                  ⚠ Η ημερομηνία είναι πριν από την πρώτη σεζόν (27/9/2025).
-                </p>
-              )}
               <div className="row" style={{ marginBottom: 14 }}>
                 <div style={{ width: 220 }}>
                   <label>Διοργάνωση</label>

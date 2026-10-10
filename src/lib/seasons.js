@@ -1,6 +1,7 @@
 import { saveSeason, loadSeasonStrict } from "../firebase.js";
 
 import { normalizeName, displayNameFor } from "./persons.js";
+import { DEFAULT_COMPETITION_ID } from "./competitions.js";
 
 export async function pushSeasonUpdate(year, tournamentId, tournamentName, date, playersList) {
   // Strict read: if the season cannot be read, write nothing. Writing onto
@@ -77,6 +78,9 @@ export function withLocalDate(iso, ymd) {
 /** The season a tournament date belongs to. The 2026 season is a one-off
  * that runs from 27/9/2025 to 31/12/2026; from 2027 a season is the
  * calendar year. Returns null for a date before the first season. */
+/** Pre-5B rule (season from the date). Since 5B.2α only a FALLBACK for
+ * old tournaments with no declared season, and for the very first default;
+ * never used to suggest or check a tournament's season. */
 export function seasonForDate(iso) {
   const ymd = isoToLocalYMD(iso);
   if (!ymd) return null;
@@ -97,7 +101,11 @@ export function rulesForSeason(sys, year) {
   const all = (sys && sys.seasonRules) || {};
   const y = Number(year);
   if (all[String(y)]) return { ...DEFAULT_SEASON_RULES, ...all[String(y)], inherited: false, from: y };
-  const earlier = Object.keys(all).map(Number).filter((k) => !isNaN(k) && k < y).sort((a, b) => b - a);
+  // 5B.2α: inherit only from an earlier season of the SAME competition
+  // (season ids grow with creation order; see lib/seasonRegistry.js).
+  const compOf = (k) => (sys && sys.seasons && sys.seasons[String(k)] && sys.seasons[String(k)].competitionId) || DEFAULT_COMPETITION_ID;
+  const comp = compOf(y);
+  const earlier = Object.keys(all).map(Number).filter((k) => !isNaN(k) && k < y && compOf(k) === comp).sort((a, b) => b - a);
   if (earlier.length) return { ...DEFAULT_SEASON_RULES, ...all[String(earlier[0])], inherited: true, from: earlier[0] };
   return { ...DEFAULT_SEASON_RULES, inherited: true, from: null };
 }

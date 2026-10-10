@@ -21,7 +21,6 @@ export function ConsistencyReportView({ report, onClose }) {
   if (report.winsMismatch.length) findings.push({ level: "warn", title: "Παίκτες με διαφορετικές νίκες σε ELO και Βαθμολογία", items: cap(report.winsMismatch, (x) => `${x.name}: ELO ${x.elo} · Βαθμολογία ${x.season}`) });
   if (report.seasonOnly.length) findings.push({ level: "info", title: "Παίκτες στη Βαθμολογία χωρίς ELO (π.χ. μόνο bye ή Α.Α.)", items: cap(report.seasonOnly, (x) => x.name) });
   if ((report.seasonWrongYear || []).length) findings.push({ level: "warn", title: "Τουρνουά καταχωρημένα σε λάθος σεζόν (διορθώνεται με Recompute)", items: cap(report.seasonWrongYear, (x) => `${x.name}: στη σεζόν ${x.found.join(", ")}, ανήκει στη ${x.expected}`) });
-  if ((report.dateSeasonMismatch || []).length) findings.push({ level: "warn", title: "Η σεζόν του τουρνουά δεν ταιριάζει με την ημερομηνία του (διορθώνεται από το tab «Στοιχεία», όχι με Recompute)", items: cap(report.dateSeasonMismatch, (x) => `${x.name}: σεζόν ${x.seasonYear}, η ημερομηνία ανήκει στη ${x.expected}`) });
   if (report.lookalikes.length) findings.push({ level: "warn", title: "Πιθανό ίδιο πρόσωπο με δύο γραφές (δεν διορθώνεται με Recompute)", items: cap(report.lookalikes, (g) => g.join("  ↔  ")) });
   const warns = findings.filter((f) => f.level === "warn").length;
 
