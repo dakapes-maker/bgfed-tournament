@@ -1188,7 +1188,7 @@ export default function TournamentManager() {
     setHistory(updatedHistory);
     setPlayers(recomputed);
     persistCurrent(phase, round, recomputed, currentPairings, updatedHistory);
-    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα \"Recompute ELO & Season Standings\" (Διαχείριση → Δεδομένα) για να συγχρονιστεί.");
+    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα «Recompute» στη Διαχείριση → Κατατάξεις ELO (και, για τη Βαθμολογία, «Recompute Βαθμολογίας» στη σελίδα της διοργάνωσης) για να συγχρονιστεί.");
   }
 
   function clearHistoricalResult(roundNumber, pairIndex) {
@@ -1202,7 +1202,7 @@ export default function TournamentManager() {
     setHistory(updatedHistory);
     setPlayers(recomputed);
     persistCurrent(phase, round, recomputed, currentPairings, updatedHistory);
-    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα \"Recompute ELO & Season Standings\" (Διαχείριση → Δεδομένα) για να συγχρονιστεί.");
+    setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα «Recompute» στη Διαχείριση → Κατατάξεις ELO (και, για τη Βαθμολογία, «Recompute Βαθμολογίας» στη σελίδα της διοργάνωσης) για να συγχρονιστεί.");
   }
 
   /** Redraws the live round. For round 1, that means deleting the round
@@ -1229,7 +1229,7 @@ export default function TournamentManager() {
     setRound(lastEntry.round);
     setCurrentPairings(restoredPairing);
     persistCurrent(phase, lastEntry.round, recomputed, restoredPairing, remainingHistory);
-    setNotice("Ο γύρος αναιρέθηκε — αλλά το ELO ΔΕΝ αναιρέθηκε αυτόματα μαζί του. Πάτα \"Recompute ELO & Season Standings\" (Διαχείριση → Δεδομένα) για να συγχρονιστεί, μόλις τελειώσεις τις διορθώσεις.");
+    setNotice("Ο γύρος αναιρέθηκε — αλλά το ELO ΔΕΝ αναιρέθηκε αυτόματα μαζί του. Πάτα «Recompute» στη Διαχείριση → Κατατάξεις ELO (και, για τη Βαθμολογία, «Recompute Βαθμολογίας» στη σελίδα της διοργάνωσης) για να συγχρονιστεί, μόλις τελειώσεις τις διορθώσεις.");
   }
 
   const roundComplete = currentPairings && currentPairings.pairs.every((pr) => pr.result !== null);
@@ -1345,7 +1345,7 @@ export default function TournamentManager() {
         } else {
           noticeMsg = [
             noticeMsg,
-            "Warning: couldn't save to Season Standings after two tries. Mark this tournament \"Official League day\" (if it should count) and use \"Recompute ELO & Season Standings from scratch\" on the ELO page to pick it up.",
+            "Warning: couldn't save to Season Standings after two tries. Mark this tournament \"Official League day\" (if it should count) and use «Recompute Βαθμολογίας» on the competition's page (Διαχείριση → Διοργανώσεις) to pick it up.",
           ].filter(Boolean).join(" ");
         }
       } else if (!ratingsCount && !standingsCount) {
@@ -2447,7 +2447,14 @@ export default function TournamentManager() {
    * flagged Official (e.g. a test) is skipped entirely, whether or not it
    * still exists in the archive — no need to delete it first. */
   async function recomputeEloAndSeasonFromScratch(indexOverride, opts = {}) {
-    setNotice("Recomputing ELO and Season Standings from official League days…");
+    // 5D.3: opts.scope — "all" (default; used after data changes such as a
+    // merge of persons), "elo" (only the main ELO ranking — Κατατάξεις ELO),
+    // or { season: id } (only that season's standings — competition page).
+    const scope = opts.scope || "all";
+    const doElo = scope !== "elo" ? scope === "all" : true;
+    const seasonOnly = scope && typeof scope === "object" ? Number(scope.season) : null;
+    const doSeasons = scope === "all" || seasonOnly !== null;
+    setNotice(doElo && doSeasons ? "Recompute ELO και Βαθμολογίας…" : doElo ? "Recompute κατάταξης ELO…" : `Recompute Βαθμολογίας σεζόν ${sn(seasonOnly)}…`);
     let elo = { players: {}, initialized: true };
     const seasonsBuilt = {}; // year -> { players }
     const seasonTournaments = {}; // year -> count
@@ -2465,7 +2472,7 @@ export default function TournamentManager() {
       if (!(id in dataCache)) dataCache[id] = await fetchTournamentDataStrict(id);
       return dataCache[id];
     };
-    try {
+    if (doElo) try {
       const importsList = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
       const importIds = (importsList && Array.isArray(importsList.list) ? importsList.list : []).map((x) => x.id);
       const built = await buildRankingElo({
@@ -2482,7 +2489,9 @@ export default function TournamentManager() {
       return;
     }
     // The season standings: tournaments whose competition keeps standings.
-    const officialTournaments = catalogue.filter((t) => countsTowardStandings(t)).sort((a, b) => new Date(a.date) - new Date(b.date));
+    const officialTournaments = !doSeasons ? [] : catalogue
+      .filter((t) => countsTowardStandings(t) && (seasonOnly === null || (Number(t.seasonYear) || seasonForDate(t.date)) === seasonOnly))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
     for (const t of officialTournaments) {
       // Strict read: if any official tournament cannot be read, stop and
       // write nothing — a rebuild without it would silently drop its matches.
@@ -2523,15 +2532,15 @@ export default function TournamentManager() {
     // Every season that exists in the database is rewritten — those with no
     // counting tournament become empty. The listing is strict: if it fails,
     // nothing at all is written.
-    let existingYears;
-    try {
+    let existingYears = [];
+    if (scope === "all") try {
       existingYears = await listSeasonYearsStrict();
     } catch {
       setNotice("");
       reportSaveFailure("Recompute — η λίστα σεζόν δεν διαβάστηκε· ΔΕΝ γράφτηκε τίποτα. Δοκίμασε ξανά.");
       return;
     }
-    const yearsToWrite = [...new Set([...existingYears, ...Object.keys(seasonsBuilt).map(Number)])].sort((a, b) => a - b);
+    const yearsToWrite = !doSeasons ? [] : seasonOnly !== null ? [seasonOnly] : [...new Set([...existingYears, ...Object.keys(seasonsBuilt).map(Number)])].sort((a, b) => a - b);
 
     // A locked season's standings may only change with explicit consent.
     if (!opts.allowLocked) {
@@ -2549,11 +2558,13 @@ export default function TournamentManager() {
       }
       if (conflicts.length > 0) {
         setNotice("");
-        setRecomputeLockConflict({ years: conflicts, indexOverride: Array.isArray(indexOverride) ? indexOverride : null });
+        setRecomputeLockConflict({ years: conflicts, indexOverride: Array.isArray(indexOverride) ? indexOverride : null, scope });
         return;
       }
     }
 
+    let eloSaved = true;
+    if (doElo) {
     elo.appliedTournaments = appliedNow;
     elo.builtFrom = {
       at: builtAt,
@@ -2564,7 +2575,8 @@ export default function TournamentManager() {
         yearsToWrite.map((y) => [String(y), { tournaments: seasonTournaments[y] || 0, players: Object.keys(seasonsBuilt[y]?.players || {}).length }])
       ),
     };
-    const eloSaved = await saveEloChecked(elo);
+    eloSaved = await saveEloChecked(elo);
+    }
     let seasonsOk = eloSaved;
     if (eloSaved) {
       for (const y of yearsToWrite) {
@@ -2581,12 +2593,14 @@ export default function TournamentManager() {
       refreshHealth(catalogue);
       return;
     }
-    setEloData(elo);
-    setEloTimeline(null);
-    setPlayerMatchStatsCache({});
-    setSeasonData(seasonsBuilt[seasonBrowseYear] || { players: {} });
-    const perSeason = yearsToWrite.map((y) => `${y}: ${seasonTournaments[y] || 0} τουρνουά`).join(" · ");
-    showToast(`Recompute ολοκληρώθηκε — ${perSeason}`);
+    if (doElo) {
+      setEloData(elo);
+      setEloTimeline(null);
+      setPlayerMatchStatsCache({});
+    }
+    if (doSeasons && (seasonOnly === null || seasonOnly === seasonBrowseYear)) setSeasonData(seasonsBuilt[seasonBrowseYear] || { players: {} });
+    const perSeason = yearsToWrite.map((y) => `${sn(y)}: ${seasonTournaments[y] || 0} τουρνουά`).join(" · ");
+    showToast(doElo && !doSeasons ? `Η κατάταξη ELO ξαναχτίστηκε (${matchesCounted} αγώνες).` : `Recompute ολοκληρώθηκε — ${perSeason || "Βαθμολογία"}`);
     refreshHealth(catalogue);
   }
   // #endregion ELO & Recompute
@@ -3325,7 +3339,7 @@ export default function TournamentManager() {
   const staleNotice = staleBlock ? (
     <div style={{ marginBottom: 16 }}>
       {staleBlock}
-      <button className="btn-secondary" onClick={() => { setControlTab("data"); setPhase("control"); }}>Άνοιγμα Διαχείρισης για Recompute</button>
+      <button className="btn-secondary" onClick={() => { setControlTab("rankings"); setPhase("control"); }}>Άνοιγμα Διαχείρισης (Κατατάξεις ELO)</button>
     </div>
   ) : null;
 
@@ -3335,8 +3349,8 @@ export default function TournamentManager() {
       {staleBlock}
       <div className="recompute-panel">
         <div>
-          <p style={{ fontWeight: 700, margin: "0 0 2px 0" }}>Χρειάζεσαι να ξαναχτίσεις τα δεδομένα;</p>
-          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Ξαναϋπολογίζει την ELO και τη Βαθμολογία κάθε σεζόν από την αρχή, μόνο από επίσημα τουρνουά Premier League· κάθε τουρνουά πηγαίνει στη σεζόν του.</p>
+          <p style={{ fontWeight: 700, margin: "0 0 2px 0" }}>Έλεγχος δεδομένων</p>
+          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>Excel σύγκρισης και έλεγχος συνέπειας. Το Recompute γίνεται πλέον χωριστά: της ELO από το «Κατατάξεις ELO» και της Βαθμολογίας από τη σελίδα κάθε διοργάνωσης (ανά σεζόν).</p>
           {builtFrom && (
             <p style={{ fontSize: 12, color: "var(--muted)", margin: "4px 0 0 0" }}>
               Τελευταίο Recompute: {formatDate(builtFrom.at)} — {builtFrom.tournaments} τουρνουά, {builtFrom.matches} αγώνες, {builtFrom.players} παίκτες.
@@ -3352,9 +3366,6 @@ export default function TournamentManager() {
           </button>
           <button className="btn-secondary" onClick={runConsistencyCheck} disabled={consistencyLoading}>
             <Check size={15} /> {consistencyLoading ? "Έλεγχος…" : "Έλεγχος συνέπειας"}
-          </button>
-          <button className="btn-secondary" onClick={() => setConfirmingRecompute(true)}>
-            <RotateCcw size={15} /> Recompute ELO &amp; Season Standings
           </button>
         </div>
       </div>
@@ -5385,7 +5396,7 @@ export default function TournamentManager() {
     const next = d.id ? list.map((r) => (r.id === d.id ? entry : r)) : [...list, entry];
     const membersChanged = !before || [...before.competitionIds].sort().join() !== [...entry.competitionIds].sort().join();
     const ok = await saveRankings(next, membersChanged
-      ? (isMain ? "Αποθηκεύτηκε. Οι διοργανώσεις άλλαξαν: τρέξε Recompute (Διαχείριση → Επισκόπηση) για να ξαναχτιστεί η κατάταξη." : "Αποθηκεύτηκε. Πάτα «Recompute κατάταξης» για να χτιστεί.")
+      ? (isMain ? "Αποθηκεύτηκε. Οι διοργανώσεις άλλαξαν: πάτα «Recompute» της κατάταξης για να ξαναχτιστεί." : "Αποθηκεύτηκε. Πάτα «Recompute» της κατάταξης για να χτιστεί.")
       : "Αποθηκεύτηκε.");
     if (ok) setRankingDraft(null);
   }
@@ -5442,7 +5453,7 @@ export default function TournamentManager() {
     return (
       <div className="card control-section">
         <h2 className="control-h">Κατατάξεις ELO</h2>
-        <p className="control-sub">Κάθε κατάταξη ξαναπαίζει, με σειρά ημερομηνίας, τα επίσημα τουρνουά και τις εισαγωγές των διοργανώσεών της. Η κύρια κατάταξη ενημερώνεται σε κάθε τουρνουά και ξαναχτίζεται με το Recompute· οι πρόσθετες με το δικό τους «Recompute κατάταξης».</p>
+        <p className="control-sub">Κάθε κατάταξη ξαναπαίζει, με σειρά ημερομηνίας, τα επίσημα τουρνουά και τις εισαγωγές των διοργανώσεών της. Η κύρια κατάταξη ενημερώνεται σε κάθε τουρνουά· οι πρόσθετες μόνο με το Recompute τους. Recompute χρειάζεται μετά από νέα εισαγωγή ή αλλαγή διοργανώσεων.</p>
         <table className="cal-table">
           <thead><tr><th>Κατάταξη</th><th>Διοργανώσεις</th><th></th></tr></thead>
           <tbody>
@@ -5452,9 +5463,13 @@ export default function TournamentManager() {
                 <td>{rankingMembersLabel(r)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Επεξεργασία" onClick={() => setRankingDraft({ id: r.id, name: r.name, competitionIds: [...r.competitionIds], public: r.public })}><Pencil size={13} /></button>
+                  <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Recompute κατάταξης" onClick={() => {
+                    if (r.id === PRIMARY_RANKING_ID) {
+                      if (window.confirm(`Recompute της «${r.name}»: ξαναχτίζεται από την αρχή από τα επίσημα τουρνουά και τις εισαγωγές των διοργανώσεών της. Η Βαθμολογία δεν αλλάζει. Συνέχεια;`)) recomputeEloAndSeasonFromScratch(undefined, { scope: "elo" });
+                    } else recomputeRanking(r);
+                  }}><RefreshCw size={13} /> Recompute</button>
                   {r.id !== PRIMARY_RANKING_ID && (
                     <>
-                      <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Recompute κατάταξης" onClick={() => recomputeRanking(r)}><RefreshCw size={13} /></button>
                       <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Διαγραφή" onClick={() => { if (window.confirm(`Διαγραφή της κατάταξης «${r.name}»;`)) saveRankings(list.filter((x) => x.id !== r.id), "Η κατάταξη διαγράφηκε."); }}><Trash2 size={13} /></button>
                     </>
                   )}
@@ -6223,7 +6238,7 @@ export default function TournamentManager() {
                 onClick={() => {
                   const c = recomputeLockConflict;
                   setRecomputeLockConflict(null);
-                  recomputeEloAndSeasonFromScratch(c.indexOverride || undefined, { allowLocked: true });
+                  recomputeEloAndSeasonFromScratch(c.indexOverride || undefined, { allowLocked: true, scope: c.scope });
                 }}
               >
                 Συνέχεια παρά το κλείδωμα
@@ -7822,7 +7837,7 @@ export default function TournamentManager() {
                 </button>
                 <button className="dashboard-card" onClick={() => setControlTab("data")}>
                   <span className="dashboard-card-title">Δεδομένα</span>
-                  <span className="dashboard-card-desc">Recompute, έλεγχος συνέπειας, Excel, Κάδος</span>
+                  <span className="dashboard-card-desc">Έλεγχος συνέπειας, Excel, Κάδος</span>
                 </button>
                 <button className="dashboard-card" onClick={() => setControlTab("backup")}>
                   <span className="dashboard-card-title">Backup</span>
@@ -7913,7 +7928,7 @@ export default function TournamentManager() {
               <h3 style={{ margin: "18px 0 6px 0" }}>Σεζόν</h3>
               {compSeasons.length > 0 ? (
                 <table className="cal-table">
-                  <thead><tr><th>Σεζόν</th><th>Κατάσταση</th><th>Τουρνουά</th><th></th></tr></thead>
+                  <thead><tr><th>Σεζόν</th><th>Κατάσταση</th><th>Τουρνουά</th><th></th>{competitionHasStandings(comp) && <th></th>}</tr></thead>
                   <tbody>
                     {compSeasons.map((s) => (
                       <tr key={s.id} style={controlSeasonYear === s.id ? { background: "var(--accent-soft, #f3efe6)" } : undefined}>
@@ -7925,6 +7940,13 @@ export default function TournamentManager() {
                             <button className="btn-ghost" style={{ padding: "2px 6px" }} onClick={() => { setControlSeasonYear(s.id); resetDrafts(); }}>Άνοιγμα</button>
                           )}
                         </td>
+                        {competitionHasStandings(comp) && (
+                          <td>
+                            <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Ξαναχτίζει τη Βαθμολογία αυτής της σεζόν από τα επίσημα τουρνουά της· η ELO δεν αλλάζει" onClick={() => {
+                              if (window.confirm(`Recompute της Βαθμολογίας της σεζόν ${s.name}: ξαναχτίζεται από τα επίσημα τουρνουά της. Η ELO δεν αλλάζει. Συνέχεια;`)) recomputeEloAndSeasonFromScratch(undefined, { scope: { season: s.id } });
+                            }}><RefreshCw size={13} /> Recompute Βαθμολογίας</button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -8711,7 +8733,7 @@ export default function TournamentManager() {
                 </p>
               )}
 
-              <label className="live-toggle" style={{ marginBottom: 14 }} title="Only Official days are included when you use 'Recompute ELO & Season Standings from scratch' on the ELO page">
+              <label className="live-toggle" style={{ marginBottom: 14 }} title="Only Official days are included in the ELO and Season Standings (and in their Recompute)">
                 <input type="checkbox" checked={isOfficial} onChange={(e) => setIsOfficial(e.target.checked)} />
                 Official League day (counts toward ELO &amp; Season Standings on recompute — leave unchecked for a test)
               </label>
