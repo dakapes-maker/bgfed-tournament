@@ -53,7 +53,7 @@ import {
 } from "./firebase.js";
 
 import { APP_BUILD_VERSION, FEATURES_SUMMARY, TECHNICAL_SUMMARY } from "./config/build.js";
-import { CHANGELOG } from "./config/changelog.js";
+import { changelogFor, changelogKey, formatChangelogDate } from "./config/changelog.js";
 import { ADMIN_UNLOCK_LOCALSTORAGE_KEY, WHATS_NEW_SEEN_KEY, LANG_STORAGE_KEY } from "./config/constants.js";
 import { TRANSLATIONS } from "./config/i18n.js";
 import { ELO_INITIAL, eloWinProbability, eloPointsAtStake, applyEloRoundBatch, buildEloRoundMatches, markEloApplied } from "./lib/elo.js";
@@ -151,7 +151,7 @@ export default function TournamentManager() {
       })()
   ).current;
   const [deviceUnlocked, setDeviceUnlocked] = useState(initiallyUnlocked);
-  const [hasUnseenUpdate, setHasUnseenUpdate] = useState(false);
+  const [whatsNewSeen, setWhatsNewSeen] = useState(null); // last build whose changelog was opened ("" = never); null = unknown → no dot
   const [aboutTab, setAboutTab] = useState("features");
   const [expandedMatch, setExpandedMatch] = useState(null);
   const [recapText, setRecapText] = useState(null);
@@ -190,6 +190,9 @@ export default function TournamentManager() {
   }
   const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
   const isAdmin = role === "admin";
+  // Red dot on «Σχετικά»: only for changelog lines this user can see that are
+  // newer than the last build whose changelog they opened.
+  const hasUnseenUpdate = whatsNewSeen !== null && changelogFor(isAdmin).some((e) => changelogKey(e) > whatsNewSeen);
   const [adminPasswordPrompt, setAdminPasswordPrompt] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
   const [adminPasswordError, setAdminPasswordError] = useState("");
@@ -467,15 +470,14 @@ export default function TournamentManager() {
   // instead of forcing an interruption — pure localStorage, no Firestore.
   useEffect(() => {
     try {
-      const seen = window.localStorage.getItem(WHATS_NEW_SEEN_KEY);
-      if (seen !== APP_BUILD_VERSION) setHasUnseenUpdate(true);
+      setWhatsNewSeen(window.localStorage.getItem(WHATS_NEW_SEEN_KEY) || "");
     } catch {
       // localStorage unavailable (private mode, etc.) — just skip silently.
     }
   }, []);
 
   function dismissWhatsNew() {
-    setHasUnseenUpdate(false);
+    setWhatsNewSeen(APP_BUILD_VERSION);
     try {
       window.localStorage.setItem(WHATS_NEW_SEEN_KEY, APP_BUILD_VERSION);
     } catch {
@@ -6202,13 +6204,12 @@ export default function TournamentManager() {
             )}
             {aboutTab === "changelog" && (
               <>
-                {CHANGELOG.map((entry) => (
-                  <div key={entry.version} style={{ marginBottom: 22 }}>
-                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 2px 0" }}>{entry.version}</p>
-                    <p style={{ fontSize: 12, color: "var(--muted)", margin: "0 0 8px 0" }}>{entry.date}</p>
+                {changelogFor(isAdmin).map((entry) => (
+                  <div key={changelogKey(entry)} style={{ marginBottom: 22 }}>
+                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>{formatChangelogDate(entry.date)}</p>
                     <ul style={{ margin: 0, paddingLeft: 20, fontSize: 15, lineHeight: 1.7 }}>
                       {entry.items.map((it, idx) => (
-                        <li key={idx} style={{ marginBottom: 6 }}>{it}</li>
+                        <li key={idx} style={{ marginBottom: 6 }}>{it.text}</li>
                       ))}
                     </ul>
                   </div>
