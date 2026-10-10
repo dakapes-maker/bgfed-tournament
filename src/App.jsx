@@ -6378,7 +6378,7 @@ export default function TournamentManager() {
             <TrendingUp size={14} /> {L.navSeason}
           </button>
           <button className="btn-ghost" onClick={() => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); }}>
-            <Award size={14} /> {L.navElo}
+            <Award size={14} /> {L.navEloNational}
           </button>
           <button className="btn-ghost" onClick={() => setPhase("h2h")}>
             <Users size={14} /> {L.navStats}
@@ -7701,7 +7701,7 @@ export default function TournamentManager() {
               </button>
               <button className="dashboard-card" onClick={() => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); }}>
                 <Award size={26} />
-                <span className="dashboard-card-title">{L.navElo}</span>
+                <span className="dashboard-card-title">{L.navEloNational}</span>
                 <span className="dashboard-card-desc">Lifetime skill rating for every player</span>
               </button>
               <button className="dashboard-card" onClick={() => setPhase("h2h")}>
