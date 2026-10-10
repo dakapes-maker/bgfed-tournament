@@ -1,0 +1,481 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index d5fb39c..48eb0f1 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -187,7 +187,7 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ 2. **5B** Διοργανώσεις: σεζόν, Βαθμολογία και οικονομικά **ανά διοργάνωση** (εγκεκριμένο 2026-10-10). Αποφάσεις:
+    - **Σεζόν = διοργάνωση + ελεύθερο όνομα** (π.χ. «2026», «2026–27»), με μόνιμο εσωτερικό id, δικούς της κανόνες, ημερολόγιο (ελεύθερη λίστα ημερομηνιών/τουρνουά) και κλείδωμα. **Καμία σύνδεση με ημερομηνίες:** δεν υπάρχει έναρξη/λήξη· άλλοι σύλλογοι έχουν ημερολογιακή σεζόν, άλλοι σχολική. Το τουρνουά δηλώνει **ρητά** τη σεζόν του· καταργείται ο υπολογισμός σεζόν από ημερομηνία (`seasonForDate`, εξαίρεση 2026 στον κώδικα). Σειρά σεζόν = σειρά δημιουργίας· η «Νέα σεζόν» προτείνει τους κανόνες της προηγούμενης της ίδιας διοργάνωσης.
+    - **«Έχει Βαθμολογία σεζόν»**: ρύθμιση ανά διοργάνωση — ναι για Premier League (και αργότερα το πρωτάθλημα Τρικάλων), όχι για Κύπελλο / Τελική Φάση.
+-   - **Οικονομικός κανονισμός ανά διοργάνωση** (σήμερα μόνο της Ομοσπονδίας): παράμετροι (buy-in και κατανομή, έκπτωση και ποια μερίδια χαρίζει, σχήμα επάθλων με τις παραμέτρους του, κόστος κυπέλλου)· **λίστα δικαιούχων έκπτωσης ανά διοργάνωση** (ιδιωτική, αρχικά από τις σημερινές εκπτώσεις ανά πρόσωπο)· **ελεύθερο κείμενο κανονισμού** που εμφανίζεται στα Οικονομικά του τουρνουά. Ένα σχήμα επάθλων (το σημερινό της Ομοσπονδίας)· νέο σχήμα μόνο όταν το χρειαστεί σύλλογος — όχι γενική «μηχανή κανόνων». Κάθε νέο τουρνουά κρατά **αντίγραφο** του κανονισμού· τα παλιά συνεχίζουν με τις σημερινές τιμές, χωρίς μετάπτωση.
++   - **Οικονομικά ανά διοργάνωση** (5B.4, απλοποιημένο με απόφαση του Γιάννη — άλλοι σύλλογοι μάλλον δεν έχουν οικονομική διαχείριση): διακόπτης `hasFinance` ανά διοργάνωση (`competitionHasFinance`: ρητή τιμή, αλλιώς μόνο η Premier League)· όταν είναι ανενεργός δεν εμφανίζονται Prizes, Calcutta, side bets. **Όλα τα οικονομικά (Prizes, Calcutta, στήλη «Side bet» στη Βαθμολογία τουρνουά, ποσά διοργάνωσης) φαίνονται μόνο στον διαχειριστή** — απόφαση του Γιάννη· στη βάση παραμένουν αναγνώσιμα μέχρι το «ιδιωτικό έγγραφο οικονομικών ανά τουρνουά». Ποσά `finance` ανά διοργάνωση (`DEFAULT_FINANCE` = τα ποσά 2026: 40 / 32 / 6 / 2, έπαθλο 4/5 60, κύπελλο 15)· ένα σχήμα επάθλων. Κάθε τουρνουά κρατά **αντίγραφο** (`finance` στο έγγραφό του, `financeSnapshotOf`) όταν **ξεκινά**· αλλαγή ποσών ισχύει από το επόμενο τουρνουά, χωρίς κουμπί αλλαγής σε τουρνουά που τρέχει. Τουρνουά χωρίς αντίγραφο (πριν το 5B.4) → `DEFAULT_FINANCE` (`tournamentFinance`). Η έκπτωση (ποιος και πόσο) μένει στον παίκτη (Μητρώο → ιδιωτικά στοιχεία) και ισχύει μόνο σε διοργανώσεις με οικονομικά. **Όταν χρειαστεί** (όχι τώρα): κείμενο κανονισμού, δικαιούχοι έκπτωσης ανά διοργάνωση, ιδιωτικό έγγραφο οικονομικών ανά τουρνουά.
+    - **Βήματα:** **5B.1** κανόνες «χρυσής τομής» στο `CLAUDE.md` (επ. 1) · **5B.2α** νέα δομή σεζόν διοργάνωσης + «Αντιγραφή ρυθμίσεων σεζόν» + ανάγνωση από τη νέα δομή, ίδια εμφάνιση (επ. 2, ⚠️ βαρύ) · **5B.2β** οθόνες: διοργάνωση → σεζόν στη Διαχείριση, ονόματα σεζόν στα φίλτρα (επ. 2) · **5B.3** Βαθμολογία ανά διοργάνωση και σεζόν, Recompute ανά διοργάνωση, επιλογή στη σελίδα Βαθμολογίας (επ. 2) · **5B.4** οικονομικός κανονισμός (ίσως 5B.4α παράμετροι/κείμενο/αντίγραφο, 5B.4β δικαιούχοι έκπτωσης) (επ. 2) · **5B.5** οικονομικά τουρνουά σε ιδιωτικό έγγραφο ανά τουρνουά + κανόνας (επ. 3, χωρίς Claude Code — Rules Playground) · **5B.6** καθαρισμός παλιών πεδίων ανά έτος (επ. 2).
+    - Οι συνδρομές (`membership`) ανήκουν στον σύλλογο/φορέα — εξετάζονται στο 5C.
+ 3. **5C** Ρόλος «admin συλλόγου» και onboarding Τρικάλων (Swiss 4 γύρων, best 8 από 10).
+@@ -200,6 +200,6 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ 
+ - **Τελευταίο ολοκληρωμένο:** στάδιο **5A** (build `2026-10-10.04`, PR #7) — εφαρμόστηκε πλήρως στην παραγωγή στις 2026-10-10 (βήματα 0–5 του `docs/plan-5A.md` §6). Πριν από αυτό: σχέδιο R (builds `.01`–`.03`, PR #3, #4, #6).
+ - **Δοκιμές 5A:** κανόνες 6/6 (`npm run test:rules`)· εφαρμογή 29/29 σε Emulator Firestore + Auth με τους πραγματικούς κανόνες· Excel πανομοιότυπο πριν/μετά τη μετάπτωση· Google ελέγχθηκε από τον Γιάννη στο preview και στην παραγωγή.
+-- **Τρέχον:** στάδιο **5B** (§9). Ολοκληρώθηκαν **5B.1**, **5B.2α** (`.05`: κατάλογος σεζόν, id σεζόν, κληρονομιά κανόνων ανά διοργάνωση, σεζόν ανεξάρτητη από ημερομηνίες), **5B.2β** (`.06`: «Νέα σεζόν» με ελεύθερο όνομα και id από 100001, επιλογή σεζόν ανά διοργάνωση, ονόματα σεζόν παντού, `hasStandings`), **5B.2γ** (`.07`: σελίδα διοργάνωσης — Διαχείριση → «Διοργανώσεις & σύλλογοι» → κλικ στο όνομα → Στοιχεία, Σεζόν + «Νέα σεζόν», κανόνες / ημερολόγιο / κλείσιμο· `openCompetitionPage`, `compPageOpen`) και **5B.3** (`2026-10-10.08`: Βαθμολογία ανά διοργάνωση και σεζόν — `countsTowardStandings` = επίσημο + διοργάνωση με Βαθμολογία, ανεξάρτητο από την ELO· ολοκλήρωση τουρνουά, live ενημέρωση, Recompute και έλεγχος συνέπειας ακολουθούν τον κανόνα· το έγγραφο `seasons/{id}` είναι ήδη ανά διοργάνωση και σεζόν· στη σελίδα Βαθμολογίας επιλογή διοργάνωσης όταν υπάρχουν πάνω από μία). Επόμενο: **5B.4** (οικονομικός κανονισμός ανά διοργάνωση).
++- **Τρέχον:** στάδιο **5B** (§9). Ολοκληρώθηκαν **5B.1**, **5B.2α** (`.05`: κατάλογος σεζόν, id σεζόν, κληρονομιά κανόνων ανά διοργάνωση, σεζόν ανεξάρτητη από ημερομηνίες), **5B.2β** (`.06`: «Νέα σεζόν» με ελεύθερο όνομα και id από 100001, επιλογή σεζόν ανά διοργάνωση, ονόματα σεζόν παντού, `hasStandings`), **5B.2γ** (`.07`: σελίδα διοργάνωσης — Διαχείριση → «Διοργανώσεις & σύλλογοι» → κλικ στο όνομα → Στοιχεία, Σεζόν + «Νέα σεζόν», κανόνες / ημερολόγιο / κλείσιμο· `openCompetitionPage`, `compPageOpen`) και **5B.3** (`2026-10-10.08`: Βαθμολογία ανά διοργάνωση και σεζόν — `countsTowardStandings` = επίσημο + διοργάνωση με Βαθμολογία, ανεξάρτητο από την ELO· ολοκλήρωση τουρνουά, live ενημέρωση, Recompute και έλεγχος συνέπειας ακολουθούν τον κανόνα· το έγγραφο `seasons/{id}` είναι ήδη ανά διοργάνωση και σεζόν· στη σελίδα Βαθμολογίας επιλογή διοργάνωσης όταν υπάρχουν πάνω από μία). Επίσης **5B.4** (`2026-10-10.09`: οικονομικά ανά διοργάνωση — βλ. §9). Επόμενο: **5B.6** (καθαρισμός παλιών πεδίων ανά έτος, όταν κριθεί ασφαλές) και μετά **5C**· τα 5B.4β / 5B.5 μένουν «όταν χρειαστεί».
+ - **Εκκρεμότητες εκτός κώδικα:** ο admin του bgfed.gr να επιβεβαιώσει την ανάκληση του WordPress Application Password (βλ. §8).
+ - **Μικρά υπόλοιπα (για μελλοντικό build):** η οριστική διαγραφή δεν ελέγχει το αποτέλεσμα του `deleteTournamentData`· η αναίρεση αντιστοίχισης δεν αναφέρει αποτυχία ανάγνωσης εισαγωγής ούτε αποτυχία του `saveSysState({ importMatching })`· το `eslint@9.39.5` δεν υποστηρίζεται πια (μόνο εργαλείο ελέγχου)· η επικεφαλίδα-σχόλιο «Storage helpers» στο `config/constants.js` δεν αντιστοιχεί σε κώδικα· οι αυτόματες εγγραφές της εκκίνησης σε **άδεια** βάση (αρχικό μητρώο, ιστορική σεζόν 2026) δεν γίνονται χωρίς σύνδεση διαχειριστή (δεν αφορά την παραγωγή).
+diff --git a/src/App.jsx b/src/App.jsx
+index 279612c..ee3092f 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -112,6 +112,10 @@ import {
+   setRuntimeCompetitionState,
+   competitionHasStandings,
+   countsTowardStandings,
++  competitionHasFinance,
++  financeSnapshotOf,
++  tournamentFinance,
++  FINANCE_FIELDS,
+ } from "./lib/competitions.js";
+ import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay } from "./lib/clubs.js";
+ import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
+@@ -219,6 +223,11 @@ export default function TournamentManager() {
+   const [matchLength, setMatchLength] = useState(7);
+   const [sideBets, setSideBets] = useState([]);
+   const [calcuttaEntries, setCalcuttaEntries] = useState([]);
++  // 5B.4: the tournament's copy of its competition's finances (null = before 5B.4 / not started)
++  const [financeCopy, setFinanceCopyState] = useState(null);
++  const financeCopyRef = useRef(null);
++  const setFinanceCopy = (v) => { financeCopyRef.current = v; setFinanceCopyState(v); };
++  const [finDraft, setFinDraft] = useState(null); // 5B.4: competition page → Οικονομικά draft
+   const [defaultSideBetAmount, setDefaultSideBetAmount] = useState(40);
+   const [addToSideBet, setAddToSideBet] = useState(false);
+   const [nameDropdownOpen, setNameDropdownOpen] = useState(false);
+@@ -404,6 +413,9 @@ export default function TournamentManager() {
+   const [trash, setTrash] = useState([]); // tournaments moved to the trash (restorable)
+   const [sysState, setSysState] = useState({}); // lastExportAt, purgedIds
+   const sn = (id) => seasonName(sysState, id); // 5B.2β: display name of a season id
++  // 5B.4: finances of the open tournament (its copy, or the competition switch before it starts)
++  const tFin = financeCopy ? tournamentFinance(financeCopy, competitionId) : { ...tournamentFinance(null, competitionId), enabled: competitionHasFinance(competitionsFrom(sysState).find((c) => c.id === competitionId)) };
++  const tOrgLabel = clubDisplay(sysState, (competitionsFrom(sysState).find((c) => c.id === competitionId) || {}).ownerClubId, "Φορέας");
+   setRuntimeCompetitionState(sysState);
+   const [health, setHealth] = useState(null); // result of buildConsistencyReport (admin only)
+   const [consistencyReport, setConsistencyReport] = useState(null);
+@@ -759,7 +771,7 @@ export default function TournamentManager() {
+ 
+   // #region Τουρνουά & γύροι
+   function currentSnapshot() {
+-    return { tournamentName, totalRounds, matchLength, seasonYear, competitionId, organisation, organisationClubId, calendarEntryId, liveStandingsEnabled, isOfficial, sideBets, calcuttaEntries, phase, players, round, currentPairings, history, createdAt };
++    return { tournamentName, totalRounds, matchLength, seasonYear, competitionId, organisation, organisationClubId, calendarEntryId, liveStandingsEnabled, isOfficial, sideBets, calcuttaEntries, finance: financeCopyRef.current, phase, players, round, currentPairings, history, createdAt };
+   }
+ 
+   async function persistCurrent(nextPhase, nextRound, nextPlayers, nextPairings, nextHistory, nextSideBets = sideBets, nextCalcuttaEntries = calcuttaEntries) {
+@@ -777,6 +789,7 @@ export default function TournamentManager() {
+       isOfficial,
+       sideBets: nextSideBets,
+       calcuttaEntries: nextCalcuttaEntries,
++      finance: financeCopyRef.current,
+       phase: nextPhase,
+       players: nextPlayers,
+       round: nextRound,
+@@ -813,6 +826,7 @@ export default function TournamentManager() {
+     setMatchLength(7);
+     setSideBets([]);
+     setCalcuttaEntries([]);
++    setFinanceCopy(null);
+     setSeasonYear(currentSeasonId(sysState, DEFAULT_COMPETITION_ID));
+     setCompetitionId(DEFAULT_COMPETITION_ID);
+     setOrganisation(clubsActive(sysState) ? clubDisplay(sysState, sysState.homeClubId, sysState.homeClub) : sysState.homeClub || "");
+@@ -915,7 +929,7 @@ export default function TournamentManager() {
+     ];
+     setPlayers(updatedPlayers);
+     let updatedSideBets = sideBets;
+-    if (addToSideBet) {
++    if (addToSideBet && tFin.enabled) {
+       const existing = sideBets.find((b) => b.id === "default-sidebet");
+       updatedSideBets = existing
+         ? sideBets.map((b) => (b.id === "default-sidebet" ? { ...b, participantIds: [...b.participantIds, newId] } : b))
+@@ -1091,6 +1105,8 @@ export default function TournamentManager() {
+       return;
+     }
+     if (players.length < 3) return;
++    // 5B.4: keep a copy of the competition's finances as they are now.
++    setFinanceCopy(financeSnapshotOf(competitionsFrom(sysState).find((c) => c.id === competitionId)));
+     const pairing = generatePairings(players, 1);
+     setCurrentPairings(pairing);
+     setRound(1);
+@@ -1576,6 +1592,7 @@ export default function TournamentManager() {
+         setMatchLength(data.matchLength || 7);
+         setSideBets(data.sideBets || []);
+         setCalcuttaEntries(data.calcuttaEntries || []);
++        setFinanceCopy(data.finance || null);
+         setSeasonYear(data.seasonYear || seasonForDate(data.createdAt) || new Date().getFullYear());
+         setCompetitionId(data.competitionId || DEFAULT_COMPETITION_ID);
+         setOrganisation(data.organisation ?? (sysState.homeClub || ""));
+@@ -1614,6 +1631,7 @@ export default function TournamentManager() {
+     setMatchLength(data.matchLength || 7);
+     setSideBets(data.sideBets || []);
+     setCalcuttaEntries(data.calcuttaEntries || []);
++    setFinanceCopy(data.finance || null);
+     setSeasonYear(data.seasonYear || seasonForDate(data.createdAt) || new Date().getFullYear());
+     setCompetitionId(data.competitionId || DEFAULT_COMPETITION_ID);
+     setOrganisation(data.organisation ?? (sysState.homeClub || ""));
+@@ -5392,6 +5410,18 @@ export default function TournamentManager() {
+     else reportSaveFailure("Διοργανώσεις — η αλλαγή δεν αποθηκεύτηκε");
+   }
+ 
++  /** 5B.4: finances of a competition (switch and amounts). New tournaments
++   * copy them when they start; running and finished ones keep their copy. */
++  async function saveCompetitionFinance(comp, patch) {
++    const next = competitionsFrom(sysState).map((c) => (c.id === comp.id ? { ...c, ...patch } : c));
++    if (await saveSysState({ competitions: next })) {
++      setSysState((st) => ({ ...st, competitions: next }));
++      return true;
++    }
++    reportSaveFailure("Διοργανώσεις — τα οικονομικά δεν αποθηκεύτηκαν");
++    return false;
++  }
++
+   /** 5B.2β: season picker limited to one competition's seasons. */
+   function renderSeasonSelect(compId, value, onChange) {
+     const list = seasonsOfCompetition(sysState, compId, controlSeasons).map((s) => s.id);
+@@ -7790,8 +7820,57 @@ export default function TournamentManager() {
+                   </label>
+                 </dd>
+                 <dt>Τουρνουά</dt><dd>{archive.filter(inComp).length}</dd>
++                <dt>Οικονομική διαχείριση</dt>
++                <dd>
++                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
++                    <input type="checkbox" checked={competitionHasFinance(comp)} onChange={() => { setFinDraft(null); saveCompetitionFinance(comp, { hasFinance: !competitionHasFinance(comp) }); }} /> {competitionHasFinance(comp) ? "Ναι — συμμετοχή, έπαθλα, side bets, Calcutta" : "Όχι"}
++                  </label>
++                </dd>
+               </dl>
+ 
++              {competitionHasFinance(comp) && (() => {
++                const cur = financeSnapshotOf(comp);
++                const draft = finDraft && finDraft.compId === comp.id ? finDraft.values : null;
++                return (
++                  <div style={{ marginTop: 14 }}>
++                    <h3 style={{ margin: "0 0 6px 0" }}>Οικονομικά</h3>
++                    <p className="control-sub">Ισχύουν για κάθε τουρνουά που ξεκινά από εδώ και πέρα· τουρνουά που ήδη τρέχουν ή έχουν τελειώσει κρατούν τα δικά τους ποσά. Η έκπτωση (ποιος και πόσο) ορίζεται στον παίκτη, στο Μητρώο· ο δικαιούχος πληρώνει το ποσό της έκπτωσής του, όλο στα έπαθλα.</p>
++                    {draft ? (
++                      <>
++                        <div className="row" style={{ flexWrap: "wrap", alignItems: "flex-end" }}>
++                          {FINANCE_FIELDS.map(([k, label]) => (
++                            <div key={k} style={{ width: 170 }}>
++                              <label>{label} (€)</label>
++                              <input type="number" min="0" value={draft[k]} onChange={(e) => setFinDraft({ compId: comp.id, values: { ...draft, [k]: e.target.value } })} />
++                            </div>
++                          ))}
++                        </div>
++                        {Number(draft.potShare) + Number(draft.orgShare) + Number(draft.venueShare) !== Number(draft.buyIn) && (
++                          <p className="field-warning">⚠ Τα μερίδια (έπαθλα + φορέας + χώρος) δεν αθροίζουν στη συμμετοχή.</p>
++                        )}
++                        <div className="row">
++                          <button className="btn-secondary" onClick={() => setFinDraft(null)}>Άκυρο</button>
++                          <button className="btn-primary" disabled={FINANCE_FIELDS.some(([k]) => draft[k] === "" || isNaN(Number(draft[k])) || Number(draft[k]) < 0)} onClick={async () => {
++                            const finance = {};
++                            FINANCE_FIELDS.forEach(([k]) => { finance[k] = Number(draft[k]); });
++                            if (await saveCompetitionFinance(comp, { finance })) { setFinDraft(null); showToast("Τα οικονομικά της διοργάνωσης αποθηκεύτηκαν· ισχύουν από το επόμενο τουρνουά."); }
++                          }}>Αποθήκευση</button>
++                        </div>
++                      </>
++                    ) : (
++                      <>
++                        <dl className="details-list">
++                          {FINANCE_FIELDS.map(([k, label]) => (<React.Fragment key={k}><dt>{label}</dt><dd>{cur[k]}€</dd></React.Fragment>))}
++                        </dl>
++                        <button className="btn-secondary" style={{ marginTop: 8 }} onClick={() => setFinDraft({ compId: comp.id, values: Object.fromEntries(FINANCE_FIELDS.map(([k]) => [k, String(cur[k])])) })}>
++                          <Pencil size={14} /> Αλλαγή ποσών
++                        </button>
++                      </>
++                    )}
++                  </div>
++                );
++              })()}
++
+               <h3 style={{ margin: "18px 0 6px 0" }}>Σεζόν</h3>
+               {compSeasons.length > 0 ? (
+                 <table className="cal-table">
+@@ -8638,10 +8717,12 @@ export default function TournamentManager() {
+                     );
+                   })()}
+                 </div>
++                {tFin.enabled && (
+                 <label className="live-toggle" style={{ margin: 0, whiteSpace: "nowrap" }} title="Include this player in the side bet, collected alongside the buy-in">
+                   <input type="checkbox" checked={addToSideBet} onChange={(e) => setAddToSideBet(e.target.checked)} />
+                   Side bet
+                 </label>
++                )}
+                 <button className="btn-secondary" onClick={addPlayer}>
+                   <Plus size={16} /> Add
+                 </button>
+@@ -8659,8 +8740,10 @@ export default function TournamentManager() {
+ 
+               <p style={{ fontSize: 13, color: "var(--muted)", margin: "14px 0 6px 0" }}>
+                 <strong style={{ color: "var(--ink)" }}>{players.length}</strong> player{players.length === 1 ? "" : "s"} registered
++                {tFin.enabled && (<>
+                 {" · "}
+                 <strong style={{ color: "var(--ink)" }}>{sideBets.find((b) => b.id === "default-sidebet")?.participantIds.length || 0}</strong> in the side bet
++                </>)}
+               </p>
+               <div className="player-list">
+                 {players.map((p) => {
+@@ -8669,10 +8752,12 @@ export default function TournamentManager() {
+                     <div className="player-chip" key={p.id}>
+                       <span>{p.name}</span>
+                       <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
++                        {tFin.enabled && (
+                         <label className="live-toggle" style={{ margin: 0 }}>
+                           <input type="checkbox" checked={inSideBet} onChange={() => toggleDefaultSideBetForPlayer(p.id)} />
+                           Side bet
+                         </label>
++                        )}
+                         <button className="btn-ghost" onClick={() => removePlayer(p.id)}>
+                           <X size={15} />
+                         </button>
+@@ -8727,7 +8812,7 @@ export default function TournamentManager() {
+               <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Pairings</button>
+               <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Standings</button>
+               <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
+-              {isAdmin && (
++              {isAdmin && tFin.enabled && (
+                 <>
+                   <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>Prizes</button>
+                   <button className={`tab ${view === "calcutta" ? "active" : ""}`} onClick={() => setView("calcutta")}>Calcutta</button>
+@@ -8893,16 +8978,17 @@ export default function TournamentManager() {
+               </>
+             )}
+ 
+-            {view === "standings" && <StandingsTable standings={standings} buchholz={null} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
+-            {view === "finance" && isAdmin && (
++            {view === "standings" && <StandingsTable standings={standings} buchholz={null} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
++            {view === "finance" && isAdmin && tFin.enabled && (
+               <FinanceTab
+               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
+               onToggleDiscount={toggleDiscount} onChangeDiscountAmount={updatePlayerDiscountAmount} onToggleCup={toggleWantsCup}
+               sideBets={sideBets} onAddSideBet={addSideBet} onRemoveSideBet={removeSideBet}
+               onToggleSideBetParticipant={toggleSideBetParticipant} onChangeSideBetAmount={updateSideBetAmount}
++              rules={tFin} orgLabel={tOrgLabel}
+             />
+             )}
+-            {view === "calcutta" && isAdmin && (
++            {view === "calcutta" && isAdmin && tFin.enabled && (
+               <CalcuttaTab players={players} totalRounds={totalRounds} entries={calcuttaEntries} onAdd={addCalcuttaEntry} onRemove={removeCalcuttaEntry} />
+             )}
+           </div>
+@@ -8971,7 +9057,7 @@ export default function TournamentManager() {
+               <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Pairings</button>
+               <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Standings</button>
+               <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
+-              {isAdmin && (
++              {isAdmin && tFin.enabled && (
+                 <>
+                   <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>Prizes</button>
+                   <button className={`tab ${view === "calcutta" ? "active" : ""}`} onClick={() => setView("calcutta")}>Calcutta</button>
+@@ -9087,16 +9173,17 @@ export default function TournamentManager() {
+               </>
+             )}
+ 
+-            {view === "standings" && <StandingsTable standings={standings} buchholz={buchholz} totalRounds={totalRounds} sideBets={sideBets} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
+-            {view === "finance" && isAdmin && (
++            {view === "standings" && <StandingsTable standings={standings} buchholz={buchholz} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
++            {view === "finance" && isAdmin && tFin.enabled && (
+               <FinanceTab
+               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
+               onToggleDiscount={toggleDiscount} onChangeDiscountAmount={updatePlayerDiscountAmount} onToggleCup={toggleWantsCup}
+               sideBets={sideBets} onAddSideBet={addSideBet} onRemoveSideBet={removeSideBet}
+               onToggleSideBetParticipant={toggleSideBetParticipant} onChangeSideBetAmount={updateSideBetAmount}
++              rules={tFin} orgLabel={tOrgLabel}
+             />
+             )}
+-            {view === "calcutta" && isAdmin && (
++            {view === "calcutta" && isAdmin && tFin.enabled && (
+               <CalcuttaTab players={players} totalRounds={totalRounds} entries={calcuttaEntries} onAdd={addCalcuttaEntry} onRemove={removeCalcuttaEntry} />
+             )}
+ 
+diff --git a/src/components/StandingsTable.jsx b/src/components/StandingsTable.jsx
+index 83009ce..5c42f84 100644
+--- a/src/components/StandingsTable.jsx
++++ b/src/components/StandingsTable.jsx
+@@ -32,6 +32,8 @@ export function roundCell(player, roundNumber) {
+ export function StandingsTable({ standings, buchholz, totalRounds, sideBets, isAdmin, onToggleExclusion, onOpenPlayer }) {
+   const rounds = Array.from({ length: totalRounds || 0 }, (_, i) => i + 1);
+   const inAnySideBet = (playerId) => (sideBets || []).some((b) => b.participantIds.includes(playerId));
++  // 5B.4: side bets are financial information — only the admin sees them.
++  const showSideBets = !!isAdmin && (sideBets || []).length > 0;
+   return (
+     <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+       <table>
+@@ -45,7 +47,7 @@ export function StandingsTable({ standings, buchholz, totalRounds, sideBets, isA
+             <th style={{ textAlign: "center" }}>Wins</th>
+             {buchholz && <th className="buchholz-header">Buchholz</th>}
+             <th>Active</th>
+-            <th style={{ textAlign: "center" }}>Side bet</th>
++            {showSideBets && <th style={{ textAlign: "center" }}>Side bet</th>}
+           </tr>
+         </thead>
+         <tbody>
+@@ -73,11 +75,13 @@ export function StandingsTable({ standings, buchholz, totalRounds, sideBets, isA
+                   <span style={{ marginLeft: 8, fontSize: 11, color: "var(--loss)" }}>Α.Α. σε R{p.withdrawnRound}</span>
+                 )}
+               </td>
++              {showSideBets && (
+               <td style={{ textAlign: "center" }}>
+                 <span style={{ display: "flex", justifyContent: "center" }}>
+                   {inAnySideBet(p.id) ? <Check size={15} color="var(--win)" /> : "—"}
+                 </span>
+               </td>
++              )}
+             </tr>
+           ))}
+         </tbody>
+diff --git a/src/components/finance.jsx b/src/components/finance.jsx
+index c67f4ea..e1d615f 100644
+--- a/src/components/finance.jsx
++++ b/src/components/finance.jsx
+@@ -1,7 +1,7 @@
+ import { useState } from "react";
+ import { Plus, X, Info } from "lucide-react";
+ 
+-import { BUYIN_FULL, RUNNER_UP_PRIZE, CUP_COST } from "../config/constants.js";
++import { DEFAULT_FINANCE } from "../lib/competitions.js";
+ import { computeTournamentFinance, computeSideBetResult, computeCalcuttaResult } from "../lib/finance.js";
+ 
+ export function CalcuttaTab({ players, totalRounds, entries, onAdd, onRemove }) {
+@@ -98,8 +98,11 @@ export function CalcuttaTab({ players, totalRounds, entries, onAdd, onRemove })
+ export function FinanceTab({
+   players, totalRounds, isAdmin, onToggleDiscount, onChangeDiscountAmount, onToggleCup,
+   sideBets, onAddSideBet, onRemoveSideBet, onToggleSideBetParticipant, onChangeSideBetAmount,
++  rules = DEFAULT_FINANCE, orgLabel = "Federation",
+ }) {
+-  const f = computeTournamentFinance(players, totalRounds);
++  const r = { ...DEFAULT_FINANCE, ...(rules || {}) };
++  const BUYIN_FULL = r.buyIn, RUNNER_UP_PRIZE = r.runnerUpPrize, CUP_COST = r.cupCost;
++  const f = computeTournamentFinance(players, totalRounds, r);
+   const playersById = {};
+   players.forEach((p) => (playersById[p.id] = p));
+   const sideBetsTotal = sideBets.reduce((sum, bet) => sum + computeSideBetResult(bet, playersById).pool, 0);
+@@ -111,7 +114,7 @@ export function FinanceTab({
+           <span className="finance-stat-value">{f.totalCollected}€</span>
+         </div>
+         <div className="finance-stat">
+-          <span className="finance-stat-label">Federation</span>
++          <span className="finance-stat-label">{orgLabel}</span>
+           <span className="finance-stat-value">{f.federationTotal}€</span>
+         </div>
+         <div className="finance-stat">
+diff --git a/src/config/build.js b/src/config/build.js
+index 5b4f485..b157ca4 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-10-10.08";
++export const APP_BUILD_VERSION = "2026-10-10.09";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index a39f3dc..0df3d3c 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -9,6 +9,7 @@ export const CHANGELOG = [
+     { text: "Η σεζόν ενός τουρνουά ορίζεται μόνο από τον διαχειριστή και δεν εξαρτάται πια από την ημερομηνία· οι κανόνες μιας νέας σεζόν προέρχονται από την προηγούμενη σεζόν της ίδιας διοργάνωσης.", audience: "admin" },
+     { text: "Διαχείριση: κάθε διοργάνωση έχει δική της σελίδα (πατάς το όνομά της), με τα στοιχεία της, τις σεζόν της και, για κάθε σεζόν, κανόνες, ημερολόγιο και κλείσιμο. Η «Νέα σεζόν» φτιάχνεται μέσα από τη διοργάνωση και παίρνει ελεύθερο όνομα (π.χ. «2027» ή «2026–27»). Στο νέο τουρνουά η σεζόν επιλέγεται από τις σεζόν της διοργάνωσης. Νέα ρύθμιση «Βαθμολογία» ανά διοργάνωση.", audience: "admin" },
+     { text: "Η Βαθμολογία σεζόν υπολογίζεται πλέον ανά διοργάνωση και σεζόν: μετράει κάθε επίσημο τουρνουά διοργάνωσης με «Βαθμολογία», ανεξάρτητα από την ELO. Στη σελίδα Βαθμολογίας επιλέγεται η διοργάνωση όταν υπάρχουν περισσότερες από μία.", audience: "admin" },
++    { text: "Οικονομικά ανά διοργάνωση: διακόπτης «Οικονομική διαχείριση» (ενεργός μόνο στην Premier League) και ποσά (συμμετοχή, μερίδια, έπαθλο 4/5, κύπελλο) στη σελίδα της διοργάνωσης. Κάθε νέο τουρνουά κρατά τα ποσά που ίσχυαν όταν ξεκίνησε· σε διοργανώσεις χωρίς οικονομικά δεν εμφανίζονται Prizes, Calcutta και side bets. Η στήλη «Side bet» της Βαθμολογίας τουρνουά φαίνεται πλέον μόνο στον διαχειριστή.", audience: "admin" },
+   ]},
+   { date: "2026-10-09", items: [
+     { text: "Πανελλήνια Κατάταξη ELO από τις Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος, με δική της θέση στο μενού. Η «Βαθμολογία ELO» λέγεται πλέον «Κατάταξη ELO».", audience: "all" },
+diff --git a/src/lib/competitions.js b/src/lib/competitions.js
+index 53e8ae1..1285572 100644
+--- a/src/lib/competitions.js
++++ b/src/lib/competitions.js
+@@ -84,3 +84,49 @@ export function competitionHasStandings(c) {
+ export function countsTowardStandings(t) {
+   return !!t && !!t.isOfficial && competitionHasStandings(competitionById(t.competitionId));
+ }
++
++/* ---------------------------------------------------------------------- */
++/* 5B.4: finances per competition                                         */
++/* ---------------------------------------------------------------------- */
++/* A competition either has financial management (buy-in, prizes, side bets,
++ * Calcutta) or not. Amounts are parameters of the competition; each new
++ * tournament keeps a COPY of them (`finance` in its document) when it
++ * starts, so a later change applies only from the next tournament on.
++ * Tournaments with no copy (before 5B.4) use DEFAULT_FINANCE — the Federation
++ * amounts of 2026 — so their figures never change. The discount itself
++ * (who and how much) stays on the person (registry → private contacts). */
++export const DEFAULT_FINANCE = {
++  buyIn: 40, // full buy-in
++  potShare: 32, // of a full buy-in, to the prize pool
++  orgShare: 6, // of a full buy-in, to the organising club (waived for discounted)
++  venueShare: 2, // of a full buy-in, to the venue (waived for discounted)
++  runnerUpPrize: 60, // fixed prize for one win short of a perfect score
++  cupCost: 15, // deducted from a perfect-score winner's prize if they take a cup
++};
++export const FINANCE_FIELDS = [
++  ["buyIn", "Συμμετοχή (buy-in)"],
++  ["potShare", "— από αυτά στα έπαθλα"],
++  ["orgShare", "— στον φορέα"],
++  ["venueShare", "— στον χώρο"],
++  ["runnerUpPrize", "Έπαθλο για μία νίκη λιγότερο από το τέλειο"],
++  ["cupCost", "Κόστος κυπέλλου"],
++];
++
++export function competitionHasFinance(c) {
++  if (!c) return false;
++  if (typeof c.hasFinance === "boolean") return c.hasFinance;
++  return c.id === DEFAULT_COMPETITION_ID;
++}
++
++/** The copy a new tournament keeps: { enabled, ...amounts }. */
++export function financeSnapshotOf(c) {
++  const enabled = competitionHasFinance(c);
++  return { enabled, ...DEFAULT_FINANCE, ...((c && c.finance) || {}) };
++}
++
++/** Finance of a tournament from its copy; before 5B.4 (no copy) from the
++ * competition's switch with the default amounts. */
++export function tournamentFinance(copy, competitionId) {
++  if (copy && typeof copy === "object") return { ...DEFAULT_FINANCE, ...copy, enabled: copy.enabled !== false };
++  return { ...DEFAULT_FINANCE, enabled: competitionHasFinance(competitionById(competitionId)) };
++}
+diff --git a/src/lib/finance.js b/src/lib/finance.js
+index 4610dad..0350c44 100644
+--- a/src/lib/finance.js
++++ b/src/lib/finance.js
+@@ -1,18 +1,20 @@
+-import { BUYIN_FULL, POT_SHARE_PER_PLAYER, FEDERATION_SHARE_PER_PLAYER, VENUE_SHARE_PER_PLAYER, RUNNER_UP_PRIZE } from "../config/constants.js";
++import { DEFAULT_FINANCE } from "./competitions.js";
+ 
+-export function computeTournamentFinance(players, totalRounds) {
++/** 5B.4: amounts come from the tournament's finance copy (default: 2026 Federation amounts). */
++export function computeTournamentFinance(players, totalRounds, rules = DEFAULT_FINANCE) {
++  const r = { ...DEFAULT_FINANCE, ...(rules || {}) };
+   const active = players; // withdrawn players still paid to enter; finance is per entrant
+   const totalPlayers = active.length;
+   const discounted = active.filter((p) => p.hasDiscount);
+   const regular = active.filter((p) => !p.hasDiscount);
+   const discountedTotal = discounted.reduce((s, p) => s + (p.discountAmount ?? 32), 0);
+-  const totalCollected = discountedTotal + regular.length * BUYIN_FULL;
+-  const federationTotal = regular.length * FEDERATION_SHARE_PER_PLAYER;
+-  const venueTotal = regular.length * VENUE_SHARE_PER_PLAYER;
++  const totalCollected = discountedTotal + regular.length * r.buyIn;
++  const federationTotal = regular.length * r.orgShare;
++  const venueTotal = regular.length * r.venueShare;
+   // A discounted entrant's whole payment goes to the pot (that's the point of
+   // the discount — no Federation/venue share); a full-price entrant's pot
+   // share is the fixed 32€ regardless of the 40€ they paid in total.
+-  const prizePool = discountedTotal + regular.length * POT_SHARE_PER_PLAYER;
++  const prizePool = discountedTotal + regular.length * r.potShare;
+ 
+   // A player only qualifies for a final prize once they've actually played
+   // out all their matches — reaching "4 wins" with a round still to go
+@@ -20,7 +22,7 @@ export function computeTournamentFinance(players, totalRounds) {
+   const hasCompleted = (p) => p.matchLog.length >= totalRounds;
+   const runnerUps = active.filter((p) => hasCompleted(p) && p.wins === totalRounds - 1);
+   const perfects = active.filter((p) => hasCompleted(p) && p.wins === totalRounds);
+-  const runnerUpTotal = runnerUps.length * RUNNER_UP_PRIZE;
++  const runnerUpTotal = runnerUps.length * r.runnerUpPrize;
+   const remainingForPerfects = prizePool - runnerUpTotal;
+   const perfectShare = perfects.length > 0 ? remainingForPerfects / perfects.length : 0;
+   const shortfall = remainingForPerfects < 0;
