@@ -1,0 +1,479 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index ea9bdf8..11ad636 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -78,9 +78,14 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ 
+ ## 2. Κανόνες εργασίας (υποχρεωτικοί)
+ 
+-1. **Πρώτα changelog, μετά κώδικας.** Πριν από κάθε υλοποίηση, παρουσίασε αναλυτικό changelog (τι αλλάζει, τι ΔΕΝ αλλάζει, αποφάσεις με προτεινόμενες προεπιλογές) και περίμενε έγκριση. Μετά την υλοποίηση: αναλυτικά βήματα εφαρμογής και ελέγχων.
+-2. **Ποτέ απευθείας στο `main`.** Δούλευε σε branch· ο Γιάννης ελέγχει στο Vercel preview και κάνει merge ο ίδιος.
+-   - **Εξαίρεση: μόνο το `CLAUDE.md`** (απόφαση του Γιάννη, 2026-10-10). Όταν αλλάζει **μόνο** αυτό το αρχείο, το Claude Code κάνει commit και push απευθείας στο `main`, χωρίς PR. Αν στο ίδιο commit υπάρχει οποιοδήποτε άλλο αρχείο (κώδικας, `docs/`, ρυθμίσεις), ισχύει ο κανόνας branch → PR → merge από τον Γιάννη. Μετά από κάθε τέτοια ενημέρωση, ο Γιάννης συγχρονίζει το `CLAUDE.md` στα αρχεία του Project.
++1. **Πρώτα changelog, μετά κώδικας.** Πριν από κάθε υλοποίηση, παρουσίασε changelog ανάλογο του μεγέθους (για επίπεδο 1 αρκούν λίγες γραμμές, βλ. §2.2) (τι αλλάζει, τι ΔΕΝ αλλάζει, αποφάσεις με προτεινόμενες προεπιλογές) και περίμενε έγκριση. Μετά την υλοποίηση: αναλυτικά βήματα εφαρμογής και ελέγχων.
++2. **Επίπεδα κινδύνου — «χρυσή τομή»** (απόφαση του Γιάννη, 2026-10-10). Δεν φτιάχνουμε λογισμικό νοσοκομείου: προσοχή στο build, αλλά με μέτρο στο κόστος και στη διαδικασία. Κάθε build δηλώνει από την αρχή το επίπεδό του:
++   - **Επίπεδο 1 — ασφαλές → απευθείας στο `main`:** κείμενα, ετικέτες, εμφάνιση, changelog, `CLAUDE.md`, `docs/`, αλλαγές στην προβολή που δεν γράφουν δεδομένα.
++   - **Επίπεδο 2 — συνηθισμένο → branch → γρήγορη ματιά στο preview → merge:** νέες λειτουργίες, αλλαγές σε υπολογισμούς (Βαθμολογία, ELO), εγγραφές που δεν σβήνουν τίποτα (π.χ. αντιγραφή σε νέα δομή, προσθήκη πεδίων).
++   - **Επίπεδο 3 — ευαίσθητο → branch + Export All Data πριν + στοχευμένοι έλεγχοι:** μεταπτώσεις που μετακινούν ή σβήνουν δεδομένα, διαγραφές, κανόνες ασφαλείας, σύνδεση. Σπάνιο.
++   - **Μικρά βήματα:** ένα build = ένα πράγμα, ώστε κάθε build να είναι σημείο αναφοράς. Επιστροφή από πρόβλημα: Vercel → Deployments → προηγούμενο → «Promote to Production» (ασφαλές για επίπεδα 1–2, που δεν αλλάζουν δομή δεδομένων).
++   - **Προτίμηση «αντιγραφή αντί για μετακίνηση»:** όπου γίνεται, τα δεδομένα αντιγράφονται στη νέα δομή και τα παλιά μένουν ανέγγιχτα ως εφεδρεία μέχρι ξεχωριστό build καθαρισμού — έτσι ένα βήμα μένει στο επίπεδο 2.
++   - Ο Γιάννης κάνει πάντα ο ίδιος το merge.
+ 3. **Build number και changelog σε κάθε build:** `APP_BUILD_VERSION = "YYYY-MM-DD.NN"` στο `src/config/build.js` (δύο ψηφία, ξεκινά από .01 κάθε μέρα). Changelog στο `src/config/changelog.js`, νεότερο πρώτο, στα Ελληνικά:
+    - **Μία ημερήσια σύνοψη ανά ημέρα** (`date`, χωρίς `version`), που συμπληρώνεται σε κάθε build της ημέρας.
+    - **Μόνο αλλαγές ορατές στον χρήστη** («τι κερδίζει»)· καθαρά τεχνικά builds **δεν καταγράφονται** (η τεχνική ιστορία μένει στο Git και εδώ).
+@@ -94,16 +99,17 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+    - **Μεταπτώσεις:** αναφορά dry-run → απαίτηση Export All Data των τελευταίων 24 ωρών → εφαρμογή → επαλήθευση. Πάντα αναστρέψιμες όπου γίνεται.
+    - **Σύγκριση Excel:** μετά από κάθε build που αγγίζει υπολογισμούς, τα φύλλα ELO / Βαθμολογία / Αναλυτικά πρέπει να βγαίνουν πανομοιότυπα με τη βάση σύγκρισης, εκτός αν η αλλαγή είναι σκόπιμη.
+ 5. **Περιορισμοί Firestore:** ΟΧΙ πίνακες μέσα σε πίνακες (π.χ. πλέγμα κελιών → αποθήκευση ως JSON κείμενο, βλ. `sourceSheetsJson`). Όριο 1 MB ανά έγγραφο.
+-6. **Πριν παραδώσεις:** `npm run lint` (eslint: `no-undef`, `react/jsx-no-undef`, `react/jsx-uses-vars`, ρύθμιση στο `eslint.config.js`) και `npm run build` (Vite) χωρίς σφάλματα. Δοκίμασε ξεχωριστά κάθε νέα λογική με πραγματικά δεδομένα όπου γίνεται.
++6. **Πριν παραδώσεις** (και από το chat, στο δικό του περιβάλλον): `npm run lint` (eslint: `no-undef`, `react/jsx-no-undef`, `react/jsx-uses-vars`, ρύθμιση στο `eslint.config.js`) και `npm run build` (Vite) χωρίς σφάλματα. Δοκίμασε ξεχωριστά κάθε νέα λογική με πραγματικά δεδομένα όπου γίνεται.
++   - **Μέτρο στις δοκιμές:** lint + build πάντα· δοκιμές κανόνων όταν αλλάζουν κανόνες· Emulator / Playwright **μόνο** για επίπεδο 3 ή όταν το ορίζει ρητά το σχέδιο, και τότε ένας σύντομος έλεγχος, όχι εξαντλητικά σενάρια. Τον οπτικό έλεγχο τον κάνει ο Γιάννης στο preview.
+    - **Κανόνες Firestore:** όταν αλλάζουν ή προστίθεται νέα διαδρομή στη βάση, ενημέρωσε το `firestore.rules` και τις δοκιμές του, και τρέξε `firebase emulators:exec --only firestore "npm run test:rules"`. Ο Γιάννης δημοσιεύει τους κανόνες χειροκίνητα (Rules Playground → Publish).
+    - **Πώς δοκιμάζεται μια αποτυχία:** η αποσύνδεση δικτύου προκαλεί αποτυχία **μόνο στις αναγνώσεις** (πετούν `unavailable` αμέσως). Οι **εγγραφές δεν αποτυγχάνουν** offline: το Firestore τις βάζει σε αναμονή και το promise μένει σε εκκρεμότητα μέχρι να επανέλθει η σύνδεση. Για αποτυχία εγγραφής χρησιμοποίησε **Firebase Emulator με κανόνες που αρνούνται την εγγραφή** (ή την ανάγνωση) στο συγκεκριμένο έγγραφο, ή ελεγχόμενη αποτυχία στο preview.
+    - Στήσιμο emulator (εκτός repo, χωρίς αλλαγή κώδικα): `firebase emulators:start --only firestore --project bgfed-tournament-application`· η εφαρμογή συνδέεται με ένα Vite config που προσθέτει `connectFirestoreEmulator(db, "127.0.0.1", <port>)` μετά το `getFirestore` στο `firebase.js` (plugin `transform`). Κανόνες αλλάζουν «ζωντανά» με `PUT /emulator/v1/projects/<project>:securityRules`. Στους κανόνες, ξεχωριστά `allow get` και `allow list` (μια έκφραση με το id του εγγράφου αποτυγχάνει στο `list`).
+ 7. **Μικρά, αναστρέψιμα βήματα.** Ο Γιάννης προτιμά απλότητα και απομόνωση: νέες λειτουργίες πρώτα χωρίς επίπτωση στα υπάρχοντα νούμερα, και αξιολόγηση πριν την πλήρη ενσωμάτωση.
+ 8. **Τρόπος δουλειάς.**
+-   - Σχεδιασμός, αποφάσεις και μικρά builds γίνονται στο **chat του Project** («Ομοσπονδία Backgammon»), που διαβάζει κάθε φορά τον τρέχοντα κώδικα του `main` από το δημόσιο GitHub repository. Από το chat παραδίδονται **μόνο τα αρχεία που άλλαξαν**· ο Γιάννης τα ανεβάζει σε branch (GitHub → Add file → Upload files), ελέγχει στο Vercel preview και κάνει merge.
+-   - Στο **Claude Code** πηγαίνουν όσα κερδίζουν καθαρά από αυτό: μηχανικές αλλαγές σε πολλά αρχεία, `npm install`, δοκιμές με Firebase Emulator / Playwright. Ο σχεδιασμός στο chat λέει ρητά πού προτείνεται να γίνει κάθε υλοποίηση.
++   - Σχεδιασμός, αποφάσεις και μικρά builds γίνονται στο **chat του Project** («Ομοσπονδία Backgammon»), που διαβάζει κάθε φορά τον τρέχοντα κώδικα του `main` από το δημόσιο GitHub repository. Από το chat παραδίδονται **μόνο τα αρχεία που άλλαξαν**· ο Γιάννης τα ανεβάζει (GitHub → Add file → Upload files) απευθείας στο `main` ή σε branch, ανάλογα με το επίπεδο (§2.2).
++   - Στο **Claude Code** πηγαίνουν μόνο όσα κερδίζουν καθαρά από αυτό (επίπεδο 3 με Emulator, μηχανικές αλλαγές σε πολλά αρχεία), με όριο δοκιμών μέσα στις οδηγίες και **νέα, σύντομη συνεδρία ανά build**. Το 5A κατανάλωσε μεγάλο μέρος του ορίου χρήσης του Γιάννη σε μία εντολή.
++   - **Κόστος:** όταν ένα βήμα είναι βαρύ (για το chat ή για το Claude Code), ο Γιάννης ειδοποιείται **πριν** ξεκινήσει, με ⚠️ και ελαφρύτερη εναλλακτική. Διαβάζονται μόνο οι σχετικές ενότητες (`#region`), όχι ολόκληρο το `App.jsx`.
+    - Το repository είναι **δημόσιο**: ποτέ μυστικά (κωδικοί, κλειδιά API). Το Firebase web config δεν είναι μυστικό.
+-   - Ο Γιάννης κάνει πάντα ο ίδιος το merge.
+ 9. **Σταδιακή διάσπαση του `TournamentManager` (Φάση 2).** Όταν δουλεύουμε σε μια οθόνη, εξετάζουμε τη μεταφορά της σε δικό της αρχείο (στο `components/`) **μαζί με τη λογική της** (στο `lib/` ή στο ίδιο αρχείο), στο ίδιο build. Όχι μαζική διάσπαση.
+ 10. **Νέος κώδικας σε νέα αρχεία.** Νέες συναρτήσεις και components μπαίνουν σε νέα αρχεία στο `lib/` / `components/`· στο `App.jsx` μπαίνει μόνο ό,τι τα συνδέει (state, κλήσεις, το JSX που τα εμφανίζει).
+ 
+@@ -122,7 +128,8 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ | `tournaments/sys-state` | Ρυθμίσεις: `clubs`, `homeClubId`, `competitions`, `competitionsVersion`, `seasonRules`, `seasonCalendars`, `seasonLocks`, `importMatching`, `lastExportAt`, `purgedIds` κ.λπ. |
+ | `tournaments/sys-trash` | Κάδος |
+ | `tournaments/sys-imports` | Λίστα εισαγόμενων τουρνουά |
+-| `seasons/{έτος}` | Βαθμολογία σεζόν (σήμερα ανά έτος, ενιαία — θα γίνει ανά διοργάνωση στο 5B) |
++| `seasons/{id σεζόν}` | Βαθμολογία σεζόν (ανά διοργάνωση από το 5B.3) |
++| `tournaments/sys-state` → `seasons` | (5B.2α) Κατάλογος σεζόν `{ "<id>": { competitionId, name, createdAt } }`. **Id σεζόν = ακέραιος**: οι σεζόν πριν το 5B έχουν id το έτος (2026) και, χωρίς εγγραφή στον κατάλογο, ανήκουν στην Premier League με όνομα το έτος· οι νέες (από 5B.2β) παίρνουν id από 100001 (`nextSeasonId`). Το πεδίο `seasonYear` των τουρνουά κρατά το όνομά του αλλά σημαίνει **id σεζόν**. Κανόνες/ημερολόγιο/κλείδωμα στα `seasonRules`/`seasonCalendars`/`seasonLocks`, με κλειδί το id. Βοηθητικά στο `lib/seasonRegistry.js`. |
+ 
+ ## 4. Μητρώο και πρόσωπα
+ 
+@@ -174,10 +181,12 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+    - Διαχειριστές στο `users/{uid}` (μόνο από το console)· ένα επίπεδο ρόλου· `can(user, action, target)` έτοιμο για μελλοντικούς ρόλους.
+    - Ιδιωτικά στοιχεία στο `private/contacts`· ο παλιός κοινός κωδικός καταργήθηκε.
+    - Μελλοντικά (όχι στο 5A): υπερ-διαχειριστής και διαχειριστές ανά σύλλογο· σελίδα διαχείρισης της λίστας διαχειριστών· ανοιχτό ζήτημα ποιος δημιουργεί/διορθώνει/ενώνει πρόσωπα στο κοινό μητρώο.
+-2. **5B** Σεζόν/κανόνες/ημερολόγιο/Βαθμολογία **ανά διοργάνωση** — μαζί με τα **οικονομικά ανά διοργάνωση και τουρνουά** (απόφαση 2026-10-10, `docs/plan-5A.md` §5):
+-   - Όλα τα οικονομικά (buy-in και κατανομή, έπαθλα, κύπελλο, εκπτώσεις, side bets, Calcutta) γίνονται ρυθμίσεις της **διοργάνωσης**, όχι σταθερές του κώδικα (`BUYIN_FULL` … `CUP_COST` στο `config/constants.js`). Κάθε τουρνουά κρατά **αντίγραφο** των ρυθμίσεων τη στιγμή της δημιουργίας του.
+-   - Η έκπτωση ανά παίκτη (`hasDiscount`, `discountAmount`, στο `private/contacts`) μένει προεπιλογή για νέα τουρνουά· αργότερα ρύθμιση ανά διοργάνωση (π.χ. «μέλη ΔΣ»). Οι συνδρομές (`membership`) ανήκουν στον σύλλογο/φορέα — εξετάζονται μαζί με τους διαχειριστές συλλόγων.
+-   - Τα οικονομικά ενός τουρνουά σε ιδιωτικό έγγραφο ανά τουρνουά (π.χ. `tournamentsPrivate/{id}`), όχι στο δημόσιο `tournaments/{id}`· το `can(user, action, tournament)` είναι έτοιμο.
++2. **5B** Διοργανώσεις: σεζόν, Βαθμολογία και οικονομικά **ανά διοργάνωση** (εγκεκριμένο 2026-10-10). Αποφάσεις:
++   - **Σεζόν = διοργάνωση + ελεύθερο όνομα** (π.χ. «2026», «2026–27»), με μόνιμο εσωτερικό id, δικούς της κανόνες, ημερολόγιο (ελεύθερη λίστα ημερομηνιών/τουρνουά) και κλείδωμα. **Καμία σύνδεση με ημερομηνίες:** δεν υπάρχει έναρξη/λήξη· άλλοι σύλλογοι έχουν ημερολογιακή σεζόν, άλλοι σχολική. Το τουρνουά δηλώνει **ρητά** τη σεζόν του· καταργείται ο υπολογισμός σεζόν από ημερομηνία (`seasonForDate`, εξαίρεση 2026 στον κώδικα). Σειρά σεζόν = σειρά δημιουργίας· η «Νέα σεζόν» προτείνει τους κανόνες της προηγούμενης της ίδιας διοργάνωσης.
++   - **«Έχει Βαθμολογία σεζόν»**: ρύθμιση ανά διοργάνωση — ναι για Premier League (και αργότερα το πρωτάθλημα Τρικάλων), όχι για Κύπελλο / Τελική Φάση.
++   - **Οικονομικός κανονισμός ανά διοργάνωση** (σήμερα μόνο της Ομοσπονδίας): παράμετροι (buy-in και κατανομή, έκπτωση και ποια μερίδια χαρίζει, σχήμα επάθλων με τις παραμέτρους του, κόστος κυπέλλου)· **λίστα δικαιούχων έκπτωσης ανά διοργάνωση** (ιδιωτική, αρχικά από τις σημερινές εκπτώσεις ανά πρόσωπο)· **ελεύθερο κείμενο κανονισμού** που εμφανίζεται στα Οικονομικά του τουρνουά. Ένα σχήμα επάθλων (το σημερινό της Ομοσπονδίας)· νέο σχήμα μόνο όταν το χρειαστεί σύλλογος — όχι γενική «μηχανή κανόνων». Κάθε νέο τουρνουά κρατά **αντίγραφο** του κανονισμού· τα παλιά συνεχίζουν με τις σημερινές τιμές, χωρίς μετάπτωση.
++   - **Βήματα:** **5B.1** κανόνες «χρυσής τομής» στο `CLAUDE.md` (επ. 1) · **5B.2α** νέα δομή σεζόν διοργάνωσης + «Αντιγραφή ρυθμίσεων σεζόν» + ανάγνωση από τη νέα δομή, ίδια εμφάνιση (επ. 2, ⚠️ βαρύ) · **5B.2β** οθόνες: διοργάνωση → σεζόν στη Διαχείριση, ονόματα σεζόν στα φίλτρα (επ. 2) · **5B.3** Βαθμολογία ανά διοργάνωση και σεζόν, Recompute ανά διοργάνωση, επιλογή στη σελίδα Βαθμολογίας (επ. 2) · **5B.4** οικονομικός κανονισμός (ίσως 5B.4α παράμετροι/κείμενο/αντίγραφο, 5B.4β δικαιούχοι έκπτωσης) (επ. 2) · **5B.5** οικονομικά τουρνουά σε ιδιωτικό έγγραφο ανά τουρνουά + κανόνας (επ. 3, χωρίς Claude Code — Rules Playground) · **5B.6** καθαρισμός παλιών πεδίων ανά έτος (επ. 2).
++   - Οι συνδρομές (`membership`) ανήκουν στον σύλλογο/φορέα — εξετάζονται στο 5C.
+ 3. **5C** Ρόλος «admin συλλόγου» και onboarding Τρικάλων (Swiss 4 γύρων, best 8 από 10).
+ 4. **5D** Δημόσιες σελίδες ανά πρωτάθλημα.
+ 5. Εισαγωγή απευθείας από link DrawBoss (serverless function) και ELO ανά σύλλογο από εισαγωγές.
+@@ -188,6 +197,6 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ 
+ - **Τελευταίο ολοκληρωμένο:** στάδιο **5A** (build `2026-10-10.04`, PR #7) — εφαρμόστηκε πλήρως στην παραγωγή στις 2026-10-10 (βήματα 0–5 του `docs/plan-5A.md` §6). Πριν από αυτό: σχέδιο R (builds `.01`–`.03`, PR #3, #4, #6).
+ - **Δοκιμές 5A:** κανόνες 6/6 (`npm run test:rules`)· εφαρμογή 29/29 σε Emulator Firestore + Auth με τους πραγματικούς κανόνες· Excel πανομοιότυπο πριν/μετά τη μετάπτωση· Google ελέγχθηκε από τον Γιάννη στο preview και στην παραγωγή.
+-- **Επόμενα:** σχεδιασμός **5B** στο chat (σεζόν/κανόνες/ημερολόγιο/Βαθμολογία ανά διοργάνωση, μαζί με τα οικονομικά ανά διοργάνωση και τουρνουά — §9).
++- **Τρέχον:** στάδιο **5B** (§9). Ολοκληρώθηκαν **5B.1** (κανόνες «χρυσής τομής») και **5B.2α** (build `2026-10-10.05`: κατάλογος σεζόν και id σεζόν, κληρονομιά κανόνων ανά διοργάνωση, «τρέχουσα σεζόν» = η παλαιότερη μη κλειδωμένη της διοργάνωσης, καμία πρόταση/προειδοποίηση σεζόν από ημερομηνία· το `seasonForDate` μένει μόνο ως εφεδρεία για παλιά τουρνουά χωρίς δηλωμένη σεζόν). Επόμενο: **5B.2β** (οθόνες: διοργάνωση → σεζόν στη Διαχείριση, «Νέα σεζόν» με όνομα, ονόματα σεζόν στα φίλτρα).
+ - **Εκκρεμότητες εκτός κώδικα:** ο admin του bgfed.gr να επιβεβαιώσει την ανάκληση του WordPress Application Password (βλ. §8).
+ - **Μικρά υπόλοιπα (για μελλοντικό build):** η οριστική διαγραφή δεν ελέγχει το αποτέλεσμα του `deleteTournamentData`· η αναίρεση αντιστοίχισης δεν αναφέρει αποτυχία ανάγνωσης εισαγωγής ούτε αποτυχία του `saveSysState({ importMatching })`· το `eslint@9.39.5` δεν υποστηρίζεται πια (μόνο εργαλείο ελέγχου)· η επικεφαλίδα-σχόλιο «Storage helpers» στο `config/constants.js` δεν αντιστοιχεί σε κώδικα· οι αυτόματες εγγραφές της εκκίνησης σε **άδεια** βάση (αρχικό μητρώο, ιστορική σεζόν 2026) δεν γίνονται χωρίς σύνδεση διαχειριστή (δεν αφορά την παραγωγή).
+diff --git a/src/App.jsx b/src/App.jsx
+index 9b377a4..8868924 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -88,6 +88,7 @@ import {
+   tournamentInScope,
+   scopeLabel,
+ } from "./lib/seasons.js";
++import { seasonCompetitionId, seasonsOfCompetition, currentSeasonId } from "./lib/seasonRegistry.js";
+ import {
+   newCalendarEntryId,
+   todayYMD,
+@@ -664,7 +665,7 @@ export default function TournamentManager() {
+   useEffect(() => {
+     let cancelled = false;
+     (async () => {
+-      const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
++      const current = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
+       const years = (await listSeasonYears()).filter((y) => y <= current).sort((a, b) => b - a);
+       let pick = current;
+       for (const y of years) {
+@@ -736,7 +737,7 @@ export default function TournamentManager() {
+ 
+   useEffect(() => {
+     if (phase !== "control") return;
+-    const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
++    const current = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
+     const opened = [...Object.keys(sysState.seasonCalendars || {}), ...Object.keys(sysState.seasonRules || {})].map(Number).filter((y) => !isNaN(y));
+     listSeasonYears().then((years) => setControlSeasons([...new Set([current, ...years, ...opened])].sort((x, y) => y - x)));
+   }, [phase, sysState.seasonCalendars, sysState.seasonRules]);
+@@ -806,7 +807,7 @@ export default function TournamentManager() {
+     setMatchLength(7);
+     setSideBets([]);
+     setCalcuttaEntries([]);
+-    setSeasonYear(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
++    setSeasonYear(currentSeasonId(sysState, DEFAULT_COMPETITION_ID));
+     setCompetitionId(DEFAULT_COMPETITION_ID);
+     setOrganisation(clubsActive(sysState) ? clubDisplay(sysState, sysState.homeClubId, sysState.homeClub) : sysState.homeClub || "");
+     setOrganisationClubId(clubsActive(sysState) ? sysState.homeClubId || null : null);
+@@ -815,8 +816,9 @@ export default function TournamentManager() {
+     setIsOfficial(true);
+     setPlayers([]);
+     // Prefill from the next open calendar day (current season, then next).
+-    const cur = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
+-    for (const y of [cur, cur + 1]) {
++    const cur = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
++    const later = seasonsOfCompetition(sysState, DEFAULT_COMPETITION_ID).map((s) => s.id).filter((id) => id > cur);
++    for (const y of [cur, ...later]) {
+       const view = buildCalendarView(sysState, y, archive);
+       const open = view.find((e) => !e.tournament && e.status === "scheduled");
+       if (open) {
+@@ -1956,7 +1958,7 @@ export default function TournamentManager() {
+       return;
+     }
+     const nextCreatedAt = withLocalDate(createdAt, metaEdit.date);
+-    const nextSeason = Number(metaEdit.seasonYear) || seasonForDate(nextCreatedAt) || seasonYear;
++    const nextSeason = Number(metaEdit.seasonYear) || seasonYear;
+     const changes = {
+       createdAt: nextCreatedAt,
+       seasonYear: nextSeason,
+@@ -5334,11 +5336,12 @@ export default function TournamentManager() {
+     // Pin the rules of earlier seasons that still inherit, then give the new
+     // season a copy of the latest rules (adjust them to the announcement).
+     const rules = { ...(sysState.seasonRules || {}) };
+-    controlSeasons.filter((y) => y < year && !rules[String(y)]).forEach((y) => {
+-      const r = rulesForSeason({ seasonRules: rules }, y);
++    const newComp = seasonCompetitionId(sysState, year);
++    controlSeasons.filter((y) => y < year && !rules[String(y)] && seasonCompetitionId(sysState, y) === newComp).forEach((y) => {
++      const r = rulesForSeason({ ...sysState, seasonRules: rules }, y);
+       rules[String(y)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: new Date().toISOString() };
+     });
+-    const base = rulesForSeason({ seasonRules: rules }, year);
++    const base = rulesForSeason({ ...sysState, seasonRules: rules }, year);
+     rules[String(year)] = { bestOf: base.bestOf, cutoffR32: base.cutoffR32, cutoffR48: base.cutoffR48, setAt: new Date().toISOString() };
+     const calendars = { ...(sysState.seasonCalendars || {}), [String(year)]: [] };
+     const patch = { seasonRules: rules, seasonCalendars: calendars, seasonsOpened: { ...(sysState.seasonsOpened || {}), [String(year)]: new Date().toISOString() } };
+@@ -5428,9 +5431,6 @@ export default function TournamentManager() {
+             </div>
+             <button className="btn-secondary" onClick={() => setCalDraft(null)}>Άκυρο</button>
+             <button className="btn-primary" onClick={saveCalDraft} disabled={!calDraft.date || calBusy}>Αποθήκευση</button>
+-            {calDraft.date && seasonForDate(withLocalDate(null, calDraft.date)) !== year && (
+-              <p className="field-warning" style={{ width: "100%" }}>⚠ Η ημερομηνία δεν ανήκει στη σεζόν {year} ({seasonRangeLabel(year)}).</p>
+-            )}
+           </div>
+         ) : (
+           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+@@ -5578,8 +5578,9 @@ export default function TournamentManager() {
+       reportSaveFailure("Κανόνες σεζόν — η λίστα σεζόν δεν διαβάστηκε· οι κανόνες δεν αποθηκεύτηκαν");
+       return;
+     }
+-    years.filter((y) => y < year && !all[String(y)]).forEach((y) => {
+-      const r = rulesForSeason({ seasonRules: all }, y);
++    const ruleComp = seasonCompetitionId(sysState, year);
++    years.filter((y) => y < year && !all[String(y)] && seasonCompetitionId(sysState, y) === ruleComp).forEach((y) => {
++      const r = rulesForSeason({ ...sysState, seasonRules: all }, y);
+       all[String(y)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: next.setAt };
+     });
+     all[String(year)] = next;
+@@ -5616,7 +5617,7 @@ export default function TournamentManager() {
+     const rows = [
+       ["Όνομα", tournamentName || "—"],
+       ["Ημερομηνία", createdAt ? formatDate(createdAt) : "—"],
+-      ["Σεζόν", `${seasonYear} (${seasonRangeLabel(seasonYear)})`],
++      ["Σεζόν", `${seasonYear}`],
+       ["Διοργάνωση", comp ? `${comp.name} — ${COMPETITION_LEVEL_LABEL[comp.level] || comp.level}` : competitionName(comps, competitionId)],
+       ["Σύλλογος της διοργάνωσης", (() => { const c = competitionById(competitionId); return c && c.ownerClubId ? clubDisplay(sysState, c.ownerClubId, "—") : "—"; })()],
+       ["Κατάσταση", phase === "finished" ? "Ολοκληρώθηκε" : `Σε εξέλιξη — γύρος ${round} από ${totalRounds}`],
+@@ -5627,7 +5628,6 @@ export default function TournamentManager() {
+       ["Επίσημο", isOfficial ? "Ναι (Official League day)" : "Όχι (δοκιμαστικό)"],
+       ["Μετράει σε ELO και Βαθμολογία", counts ? "Ναι" : isOfficial ? "Όχι — μετράει μόνο η Premier League προς το παρόν" : "Όχι — δεν είναι επίσημο"],
+     ];
+-    const seasonMismatch = seasonForDate(createdAt) !== null && seasonForDate(createdAt) !== seasonYear;
+     return (
+       <div className="details-tab">
+         {isAdmin && seasonLocked(sysState, seasonYear) && (
+@@ -5666,9 +5666,6 @@ export default function TournamentManager() {
+                 </React.Fragment>
+               ))}
+             </dl>
+-            {seasonMismatch && (
+-              <p className="field-warning">⚠ Η ημερομηνία ανήκει στη σεζόν {seasonForDate(createdAt)}, όχι στη {seasonYear}.</p>
+-            )}
+           </div>
+         )}
+ 
+@@ -5683,8 +5680,7 @@ export default function TournamentManager() {
+                   value={metaEdit.date}
+                   onChange={(e) => {
+                     if (!e.target.value) return;
+-                    const suggested = seasonForDate(withLocalDate(createdAt, e.target.value));
+-                    setMetaEdit({ ...metaEdit, date: e.target.value, seasonYear: suggested || metaEdit.seasonYear });
++                    setMetaEdit({ ...metaEdit, date: e.target.value });
+                   }}
+                 />
+               </div>
+@@ -5714,12 +5710,6 @@ export default function TournamentManager() {
+                 </div>
+               </div>
+             </div>
+-            {(() => {
+-              const expected = seasonForDate(withLocalDate(createdAt, metaEdit.date));
+-              return expected !== null && expected !== Number(metaEdit.seasonYear) ? (
+-                <p className="field-warning">⚠ Η ημερομηνία ανήκει στη σεζόν {expected} ({seasonRangeLabel(expected)}), όχι στη {metaEdit.seasonYear}.</p>
+-              ) : null;
+-            })()}
+             {isOfficial && (phase === "finished" || history.length > 0) && (
+               <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0 0 0" }}>
+                 Το τουρνουά μετράει ήδη σε ELO/Βαθμολογία. Αν αλλάξεις ημερομηνία, σεζόν ή διοργάνωση, τρέξε μετά Recompute.
+@@ -6776,7 +6766,7 @@ export default function TournamentManager() {
+             <div className="notice">
+               <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+               <span>
+-                Σεζόν {seasonBrowseYear}: {seasonRangeLabel(seasonBrowseYear)}. Μετράνε τα {rulesForSeason(sysState, seasonBrowseYear).bestOf} καλύτερα αποτελέσματα κάθε παίκτη στη σεζόν.
++                Σεζόν {seasonBrowseYear}. Μετράνε τα {rulesForSeason(sysState, seasonBrowseYear).bestOf} καλύτερα αποτελέσματα κάθε παίκτη στη σεζόν.
+               </span>
+             </div>
+ 
+@@ -7635,7 +7625,7 @@ export default function TournamentManager() {
+               <>
+             {/* 1. Status */}
+             {(() => {
+-              const current = seasonForDate(new Date().toISOString()) || new Date().getFullYear();
++              const current = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
+               const lastExport = sysState.lastExportAt ? new Date(sysState.lastExportAt) : null;
+               const daysSince = lastExport ? Math.floor((Date.now() - lastExport.getTime()) / 86400000) : null;
+               const healthOk = health && !(health.needsRecompute && staleReasons.length > 0);
+@@ -7655,7 +7645,7 @@ export default function TournamentManager() {
+                         </React.Fragment>
+                       ))}
+                     <dt>Τρέχουσα σεζόν</dt>
+-                    <dd>{current} ({seasonRangeLabel(current)}){seasonLocked(sysState, current) ? " 🔒" : ""}</dd>
++                    <dd>{current}{seasonLocked(sysState, current) ? " 🔒" : ""}</dd>
+                     {(() => {
+                       const prog = calendarProgress(buildCalendarView(sysState, current, archive));
+                       return (
+@@ -7721,7 +7711,7 @@ export default function TournamentManager() {
+               <h2 className="control-h">Σεζόν</h2>
+               <p className="control-sub">Διάλεξε σεζόν για τους κανόνες Βαθμολογίας, το ημερολόγιο και το κλείσιμό της.</p>
+               {newSeasonYear === null ? (
+-                <button className="btn-secondary" onClick={() => setNewSeasonYear(String(Math.max(...controlSeasons, seasonForDate(new Date().toISOString()) || 2026) + 1))}>
++                <button className="btn-secondary" onClick={() => setNewSeasonYear(String(Math.max(...controlSeasons, currentSeasonId(sysState, DEFAULT_COMPETITION_ID)) + 1))}>
+                   <Plus size={14} /> Νέα σεζόν
+                 </button>
+               ) : (
+@@ -7731,7 +7721,7 @@ export default function TournamentManager() {
+                     <input type="number" value={newSeasonYear} onChange={(e) => setNewSeasonYear(e.target.value)} />
+                   </div>
+                   <span style={{ fontSize: 13, color: "var(--muted)", paddingBottom: 10 }}>
+-                    {Number(newSeasonYear) >= 2027 ? `Διάρκεια ${seasonRangeLabel(Number(newSeasonYear))}· οι κανόνες αντιγράφονται από την προηγούμενη σεζόν.` : ""}
++                    {Number(newSeasonYear) >= 2027 ? "Οι κανόνες αντιγράφονται από την προηγούμενη σεζόν." : ""}
+                   </span>
+                   <button className="btn-secondary" onClick={() => setNewSeasonYear(null)}>Άκυρο</button>
+                   <button className="btn-primary" onClick={createSeason}>Δημιουργία</button>
+@@ -8470,26 +8460,14 @@ export default function TournamentManager() {
+                       if (!e.target.value) return;
+                       const nextIso = withLocalDate(createdAt, e.target.value);
+                       setCreatedAt(nextIso);
+-                      const suggested = seasonForDate(nextIso);
+-                      if (suggested) setSeasonYear(suggested);
+                     }}
+                   />
+                 </div>
+                 <div style={{ width: 110 }}>
+                   <label>Σεζόν</label>
+-                  <input type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value) || seasonForDate(createdAt) || new Date().getFullYear())} />
++                  <input type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value) || seasonYear)} />
+                 </div>
+               </div>
+-              {seasonForDate(createdAt) !== null && seasonForDate(createdAt) !== seasonYear && (
+-                <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
+-                  ⚠ Η ημερομηνία {formatDate(createdAt)} ανήκει στη σεζόν {seasonForDate(createdAt)} ({seasonRangeLabel(seasonForDate(createdAt))}), όχι στη {seasonYear}. Βεβαιώσου ότι αυτό θέλεις.
+-                </p>
+-              )}
+-              {seasonForDate(createdAt) === null && (
+-                <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
+-                  ⚠ Η ημερομηνία είναι πριν από την πρώτη σεζόν (27/9/2025).
+-                </p>
+-              )}
+               <div className="row" style={{ marginBottom: 14 }}>
+                 <div style={{ width: 220 }}>
+                   <label>Διοργάνωση</label>
+diff --git a/src/components/ConsistencyReportView.jsx b/src/components/ConsistencyReportView.jsx
+index c3d3898..4bfeaae 100644
+--- a/src/components/ConsistencyReportView.jsx
++++ b/src/components/ConsistencyReportView.jsx
+@@ -21,7 +21,6 @@ export function ConsistencyReportView({ report, onClose }) {
+   if (report.winsMismatch.length) findings.push({ level: "warn", title: "Παίκτες με διαφορετικές νίκες σε ELO και Βαθμολογία", items: cap(report.winsMismatch, (x) => `${x.name}: ELO ${x.elo} · Βαθμολογία ${x.season}`) });
+   if (report.seasonOnly.length) findings.push({ level: "info", title: "Παίκτες στη Βαθμολογία χωρίς ELO (π.χ. μόνο bye ή Α.Α.)", items: cap(report.seasonOnly, (x) => x.name) });
+   if ((report.seasonWrongYear || []).length) findings.push({ level: "warn", title: "Τουρνουά καταχωρημένα σε λάθος σεζόν (διορθώνεται με Recompute)", items: cap(report.seasonWrongYear, (x) => `${x.name}: στη σεζόν ${x.found.join(", ")}, ανήκει στη ${x.expected}`) });
+-  if ((report.dateSeasonMismatch || []).length) findings.push({ level: "warn", title: "Η σεζόν του τουρνουά δεν ταιριάζει με την ημερομηνία του (διορθώνεται από το tab «Στοιχεία», όχι με Recompute)", items: cap(report.dateSeasonMismatch, (x) => `${x.name}: σεζόν ${x.seasonYear}, η ημερομηνία ανήκει στη ${x.expected}`) });
+   if (report.lookalikes.length) findings.push({ level: "warn", title: "Πιθανό ίδιο πρόσωπο με δύο γραφές (δεν διορθώνεται με Recompute)", items: cap(report.lookalikes, (g) => g.join("  ↔  ")) });
+   const warns = findings.filter((f) => f.level === "warn").length;
+ 
+diff --git a/src/config/build.js b/src/config/build.js
+index 9758611..0b829ce 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-10-10.04";
++export const APP_BUILD_VERSION = "2026-10-10.05";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index 4176dbd..5ee571c 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -6,6 +6,7 @@ export const CHANGELOG = [
+   { date: "2026-10-10", items: [
+     { text: "Το Changelog έγινε πιο σύντομο: μία σύνοψη για κάθε ημέρα, και κάθε χρήστης βλέπει μόνο ό,τι τον αφορά.", audience: "all" },
+     { text: "Οι διαχειριστές συνδέονται με προσωπικό λογαριασμό (Google ή email). Τα στοιχεία επικοινωνίας των παικτών δεν είναι πλέον δημόσια προσβάσιμα.", audience: "all" },
++    { text: "Η σεζόν ενός τουρνουά ορίζεται μόνο από τον διαχειριστή και δεν εξαρτάται πια από την ημερομηνία· οι κανόνες μιας νέας σεζόν προέρχονται από την προηγούμενη σεζόν της ίδιας διοργάνωσης.", audience: "admin" },
+   ]},
+   { date: "2026-10-09", items: [
+     { text: "Πανελλήνια Κατάταξη ELO από τις Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος, με δική της θέση στο μενού. Η «Βαθμολογία ELO» λέγεται πλέον «Κατάταξη ELO».", audience: "all" },
+diff --git a/src/lib/consistency.js b/src/lib/consistency.js
+index fe13666..3d6fb35 100644
+--- a/src/lib/consistency.js
++++ b/src/lib/consistency.js
+@@ -1,5 +1,4 @@
+ import { stripAccents } from "./persons.js";
+-import { seasonForDate } from "./seasons.js";
+ import { countsTowardRatings } from "./competitions.js";
+ 
+ /** "Backgammon Premier League 2026 - Ημέρα 7" -> "Ημέρα 7" (for compact lists). */
+@@ -62,13 +61,7 @@ export function buildConsistencyReport({ elo, seasons, index, display }) {
+     const wrong = [...info.years].filter((y) => y !== Number(t.seasonYear));
+     if (wrong.length) report.seasonWrongYear.push({ id, name: t.name, expected: Number(t.seasonYear), found: wrong });
+   });
+-  index.forEach((t) => {
+-    if (!countsTowardRatings(t) || !t.seasonYear) return;
+-    const expected = seasonForDate(t.date);
+-    if (expected && expected !== Number(t.seasonYear)) {
+-      report.dateSeasonMismatch.push({ id: t.id, name: t.name, seasonYear: Number(t.seasonYear), expected });
+-    }
+-  });
++  // 5B.2α: a season is not tied to dates, so there is no date check.
+ 
+   const eloPlayers = elo.players || {};
+   Object.entries(eloPlayers).forEach(([key, p]) => {
+diff --git a/src/lib/seasonRegistry.js b/src/lib/seasonRegistry.js
+new file mode 100644
+index 0000000..9cc9aab
+--- /dev/null
++++ b/src/lib/seasonRegistry.js
+@@ -0,0 +1,76 @@
++import { DEFAULT_COMPETITION_ID } from "./competitions.js";
++import { seasonForDate } from "./seasons.js";
++
++/* ---------------------------------------------------------------------- */
++/* Seasons of competitions (Build 5B.2α)                                  */
++/* ---------------------------------------------------------------------- */
++/* A season belongs to one competition and has a free name ("2026",
++ * "2026–27"); it is NOT tied to dates — a tournament names its season
++ * explicitly. A season is identified by an integer id, which is also the id
++ * of its standings document (seasons/{id}) and the key of its rules,
++ * calendar and lock in the system document. The seasons opened before 5B
++ * use the year as id (2026) and belong to the home competition (Premier
++ * League); seasons opened from 5B.2β on get ids from NEW_SEASON_ID_BASE up.
++ * Optional catalogue in the system document:
++ *   seasons: { "<id>": { competitionId, name, createdAt } }
++ * An id with no catalogue entry is a pre-5B season: home competition, name
++ * = the year. So existing data needs no migration. */
++
++export const NEW_SEASON_ID_BASE = 100000;
++
++function implicitIds(sys) {
++  const keys = new Set();
++  ["seasonRules", "seasonCalendars", "seasonsOpened", "seasonLocks", "seasons"].forEach((f) => {
++    Object.keys((sys && sys[f]) || {}).forEach((k) => keys.add(k));
++  });
++  return [...keys].map(Number).filter((n) => Number.isInteger(n) && n > 0);
++}
++
++export function seasonInfo(sys, id) {
++  const n = Number(id);
++  const entry = sys && sys.seasons && sys.seasons[String(n)];
++  return {
++    id: n,
++    competitionId: (entry && entry.competitionId) || DEFAULT_COMPETITION_ID,
++    name: (entry && entry.name) || String(n),
++    createdAt: (entry && entry.createdAt) || null,
++  };
++}
++
++export function seasonName(sys, id) {
++  return seasonInfo(sys, id).name;
++}
++
++export function seasonCompetitionId(sys, id) {
++  return seasonInfo(sys, id).competitionId;
++}
++
++/** Every known season, oldest first (ids grow with creation order).
++ * extraIds: ids known from elsewhere (e.g. the standings documents). */
++export function seasonsFrom(sys, extraIds = []) {
++  const ids = new Set([...implicitIds(sys), ...extraIds.map(Number).filter((n) => Number.isInteger(n) && n > 0)]);
++  return [...ids].sort((a, b) => a - b).map((id) => seasonInfo(sys, id));
++}
++
++export function seasonsOfCompetition(sys, competitionId, extraIds = []) {
++  const comp = competitionId || DEFAULT_COMPETITION_ID;
++  return seasonsFrom(sys, extraIds).filter((s) => s.competitionId === comp);
++}
++
++/** Current season of a competition: the oldest one not yet closed (locked);
++ * if all are closed, the newest. Before any season exists, the pre-5B
++ * season of today's date. */
++export function currentSeasonId(sys, competitionId, extraIds = []) {
++  const list = seasonsOfCompetition(sys, competitionId, extraIds);
++  const locks = (sys && sys.seasonLocks) || {};
++  const open = list.filter((s) => !locks[String(s.id)]);
++  if (open.length) return open[0].id;
++  if (list.length) return list[list.length - 1].id;
++  return seasonForDate(new Date().toISOString()) || new Date().getFullYear();
++}
++
++/** Next id for a new season (5B.2β). */
++export function nextSeasonId(sys, extraIds = []) {
++  const ids = seasonsFrom(sys, extraIds).map((s) => s.id).filter((n) => n >= NEW_SEASON_ID_BASE);
++  return ids.length ? Math.max(...ids) + 1 : NEW_SEASON_ID_BASE + 1;
++}
+diff --git a/src/lib/seasons.js b/src/lib/seasons.js
+index eae29db..c813cd8 100644
+--- a/src/lib/seasons.js
++++ b/src/lib/seasons.js
+@@ -1,6 +1,7 @@
+ import { saveSeason, loadSeasonStrict } from "../firebase.js";
+ 
+ import { normalizeName, displayNameFor } from "./persons.js";
++import { DEFAULT_COMPETITION_ID } from "./competitions.js";
+ 
+ export async function pushSeasonUpdate(year, tournamentId, tournamentName, date, playersList) {
+   // Strict read: if the season cannot be read, write nothing. Writing onto
+@@ -77,6 +78,9 @@ export function withLocalDate(iso, ymd) {
+ /** The season a tournament date belongs to. The 2026 season is a one-off
+  * that runs from 27/9/2025 to 31/12/2026; from 2027 a season is the
+  * calendar year. Returns null for a date before the first season. */
++/** Pre-5B rule (season from the date). Since 5B.2α only a FALLBACK for
++ * old tournaments with no declared season, and for the very first default;
++ * never used to suggest or check a tournament's season. */
+ export function seasonForDate(iso) {
+   const ymd = isoToLocalYMD(iso);
+   if (!ymd) return null;
+@@ -97,7 +101,11 @@ export function rulesForSeason(sys, year) {
+   const all = (sys && sys.seasonRules) || {};
+   const y = Number(year);
+   if (all[String(y)]) return { ...DEFAULT_SEASON_RULES, ...all[String(y)], inherited: false, from: y };
+-  const earlier = Object.keys(all).map(Number).filter((k) => !isNaN(k) && k < y).sort((a, b) => b - a);
++  // 5B.2α: inherit only from an earlier season of the SAME competition
++  // (season ids grow with creation order; see lib/seasonRegistry.js).
++  const compOf = (k) => (sys && sys.seasons && sys.seasons[String(k)] && sys.seasons[String(k)].competitionId) || DEFAULT_COMPETITION_ID;
++  const comp = compOf(y);
++  const earlier = Object.keys(all).map(Number).filter((k) => !isNaN(k) && k < y && compOf(k) === comp).sort((a, b) => b - a);
+   if (earlier.length) return { ...DEFAULT_SEASON_RULES, ...all[String(earlier[0])], inherited: true, from: earlier[0] };
+   return { ...DEFAULT_SEASON_RULES, inherited: true, from: null };
+ }
