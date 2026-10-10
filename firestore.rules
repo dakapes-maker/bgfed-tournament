@@ -25,6 +25,12 @@ service cloud.firestore {
       // meta/adminPassword (παλιός κοινός κωδικός) και κάθε άλλο: κανείς.
     }
 
+    // 5D: πρόσθετες κατατάξεις ELO (η κύρια είναι στο meta/elo).
+    match /eloRankings/{rankingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     // Βαθμολογίες σεζόν (και λίστα σεζόν).
     match /seasons/{seasonId} {
       allow read: if true;
