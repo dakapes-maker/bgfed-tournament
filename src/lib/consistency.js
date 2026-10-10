@@ -1,5 +1,5 @@
 import { stripAccents } from "./persons.js";
-import { countsTowardRatings } from "./competitions.js";
+import { countsTowardRatings, countsTowardStandings } from "./competitions.js";
 
 /** "Backgammon Premier League 2026 - Ημέρα 7" -> "Ημέρα 7" (for compact lists). */
 export function shortTournamentLabel(name) {
@@ -12,6 +12,8 @@ export function shortTournamentLabel(name) {
 export function buildConsistencyReport({ elo, seasons, index, display }) {
   const idx = new Map(index.map((t) => [t.id, t]));
   const finishedOfficial = index.filter((t) => countsTowardRatings(t) && t.status === "Completed");
+  // 5B.3: the standings follow their own rule (official + competition keeps standings).
+  const finishedStandings = index.filter((t) => countsTowardStandings(t) && t.status === "Completed");
   const report = {
     trackingMissing: !elo.appliedTournaments,
     eloExtra: [], eloMissing: [], seasonExtra: [], seasonMissing: [],
@@ -42,16 +44,17 @@ export function buildConsistencyReport({ elo, seasons, index, display }) {
       entries.forEach(([id, e]) => {
         if (!seasonIds.has(id)) seasonIds.set(id, { name: e.tournamentName, year, years: new Set() });
         seasonIds.get(id).years.add(Number(year));
-        seasonWins[key] = (seasonWins[key] || 0) + (e.wins ?? e.points ?? 0);
+        // Wins are compared with the Federation ELO, so only tournaments that feed it count here.
+        if (countsTowardRatings(idx.get(id))) seasonWins[key] = (seasonWins[key] || 0) + (e.wins ?? e.points ?? 0);
       });
     });
   });
   seasonIds.forEach((info, id) => {
     const t = idx.get(id);
     if (!t) report.seasonExtra.push({ id, name: info.name, year: info.year, reason: "missing" });
-    else if (!countsTowardRatings(t)) report.seasonExtra.push({ id, name: t.name, year: info.year, reason: "unofficial" });
+    else if (!countsTowardStandings(t)) report.seasonExtra.push({ id, name: t.name, year: info.year, reason: "unofficial" });
   });
-  finishedOfficial.forEach((t) => {
+  finishedStandings.forEach((t) => {
     if (!seasonIds.has(t.id)) report.seasonMissing.push({ id: t.id, name: t.name });
   });
   // Build 2: is each tournament in the season it belongs to?
