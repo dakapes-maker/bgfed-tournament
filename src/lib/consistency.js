@@ -1,5 +1,4 @@
 import { stripAccents } from "./persons.js";
-import { seasonForDate } from "./seasons.js";
 import { countsTowardRatings } from "./competitions.js";
 
 /** "Backgammon Premier League 2026 - Ημέρα 7" -> "Ημέρα 7" (for compact lists). */
@@ -62,13 +61,7 @@ export function buildConsistencyReport({ elo, seasons, index, display }) {
     const wrong = [...info.years].filter((y) => y !== Number(t.seasonYear));
     if (wrong.length) report.seasonWrongYear.push({ id, name: t.name, expected: Number(t.seasonYear), found: wrong });
   });
-  index.forEach((t) => {
-    if (!countsTowardRatings(t) || !t.seasonYear) return;
-    const expected = seasonForDate(t.date);
-    if (expected && expected !== Number(t.seasonYear)) {
-      report.dateSeasonMismatch.push({ id: t.id, name: t.name, seasonYear: Number(t.seasonYear), expected });
-    }
-  });
+  // 5B.2α: a season is not tied to dates, so there is no date check.
 
   const eloPlayers = elo.players || {};
   Object.entries(eloPlayers).forEach(([key, p]) => {
