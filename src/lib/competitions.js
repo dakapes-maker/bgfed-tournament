@@ -69,3 +69,11 @@ export function competitionName(competitions, id) {
   const c = (competitions || DEFAULT_COMPETITIONS).find((x) => x.id === id);
   return c ? c.name : id || "—";
 }
+
+/** 5B.2β: does this competition keep season standings (Βαθμολογία σεζόν)?
+ * Explicit setting, else only the home competition (Premier League). */
+export function competitionHasStandings(c) {
+  if (!c) return false;
+  if (typeof c.hasStandings === "boolean") return c.hasStandings;
+  return c.id === DEFAULT_COMPETITION_ID;
+}
