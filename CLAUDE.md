@@ -85,6 +85,7 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
    - **Επίπεδο 3 — ευαίσθητο → branch + Export All Data πριν + στοχευμένοι έλεγχοι:** μεταπτώσεις που μετακινούν ή σβήνουν δεδομένα, διαγραφές, κανόνες ασφαλείας, σύνδεση. Σπάνιο.
    - **Μικρά βήματα:** ένα build = ένα πράγμα, ώστε κάθε build να είναι σημείο αναφοράς. Επιστροφή από πρόβλημα: Vercel → Deployments → προηγούμενο → «Promote to Production» (ασφαλές για επίπεδα 1–2, που δεν αλλάζουν δομή δεδομένων).
    - **Προτίμηση «αντιγραφή αντί για μετακίνηση»:** όπου γίνεται, τα δεδομένα αντιγράφονται στη νέα δομή και τα παλιά μένουν ανέγγιχτα ως εφεδρεία μέχρι ξεχωριστό build καθαρισμού — έτσι ένα βήμα μένει στο επίπεδο 2.
+   - **Σταθερό branch preview:** κάθε build που πάει σε branch γίνεται στο **`claude/kind-tesla-vchqn9`** (preview: `bgfed-tournament-git-claude-kind-tesla-vchqn9-bgfed.vercel.app`, ήδη στα Authorized domains του Firebase, άρα σύνδεση admin με Google). Το Claude Code ξεκινά το branch από το τρέχον `main`, κάνει push εκεί (όχι σε branch της συνεδρίας) και ανοίγει νέο PR. Το branch **δεν σβήνεται** μετά το merge.
    - Ο Γιάννης κάνει πάντα ο ίδιος το merge.
 3. **Build number και changelog σε κάθε build:** `APP_BUILD_VERSION = "YYYY-MM-DD.NN"` στο `src/config/build.js` (δύο ψηφία, ξεκινά από .01 κάθε μέρα). Changelog στο `src/config/changelog.js`, νεότερο πρώτο, στα Ελληνικά:
    - **Μία ημερήσια σύνοψη ανά ημέρα** (`date`, χωρίς `version`), που συμπληρώνεται σε κάθε build της ημέρας.
