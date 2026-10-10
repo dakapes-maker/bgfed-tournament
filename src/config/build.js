@@ -1,7 +1,7 @@
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-export const APP_BUILD_VERSION = "2026-10-10.05";
+export const APP_BUILD_VERSION = "2026-10-10.06";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
