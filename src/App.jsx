@@ -197,13 +197,18 @@ export default function TournamentManager() {
   // test the Firestore rules make. While this is being worked out the app
   // behaves as for a visitor, so no admin screen flashes up.
   const [authUser, setAuthUser] = useState(null); // { uid, email, emailVerified } or null
-  const [authRights, setAuthRights] = useState("out"); // out | checking | unverified | none | admin | error
+  const [authRights, setAuthRights] = useState("out"); // out | checking | unverified | none | admin | clubAdmin | error
+  const [adminClubIds, setAdminClubIds] = useState([]); // 5C: clubs of a club administrator
   const [adminDataReady, setAdminDataReady] = useState(false); // private contacts joined into the registry
   const [showLogin, setShowLogin] = useState(false);
-  const isAdmin = authRights === "admin" && adminDataReady;
+  // 5C: «admin» = super administrator (everything); «clubAdmin» = administrator
+  // of the clubs in users/{uid}.clubIds. isAdminAny: any administrator; the
+  // context-aware isAdmin used by the screens is defined further down.
+  const isAdminAny = (authRights === "admin" || authRights === "clubAdmin") && adminDataReady;
+  const isSuper = authRights === "admin" && adminDataReady;
   // Red dot on «Σχετικά»: only for changelog lines this user can see that are
   // newer than the last build whose changelog they opened.
-  const hasUnseenUpdate = whatsNewSeen !== null && changelogFor(isAdmin).some((e) => changelogKey(e) > whatsNewSeen);
+  const hasUnseenUpdate = whatsNewSeen !== null && changelogFor(isAdminAny).some((e) => changelogKey(e) > whatsNewSeen);
 
   async function logoutAdmin() {
     try {
@@ -415,6 +420,22 @@ export default function TournamentManager() {
   const sn = (id) => seasonName(sysState, id); // 5B.2β: display name of a season id
   // 5B.4: finances of the open tournament (its copy, or the competition switch before it starts)
   const tFin = financeCopy ? tournamentFinance(financeCopy, competitionId) : { ...tournamentFinance(null, competitionId), enabled: competitionHasFinance(competitionsFrom(sysState).find((c) => c.id === competitionId)) };
+  // 5C: may the signed-in administrator edit things of this competition?
+  const canEditCompetition = (compId) => {
+    if (isSuper) return true;
+    if (!isAdminAny) return false;
+    const comp = competitionsFrom(sysState).find((c) => c.id === (compId || DEFAULT_COMPETITION_ID));
+    return !!comp && adminClubIds.includes(String(comp.ownerClubId));
+  };
+  // Context-aware: inside a tournament, admin rights only for the clubs'
+  // own competitions; on a player card, only for players of the clubs.
+  const isAdmin = ["setup", "tournament", "finished"].includes(phase)
+    ? canEditCompetition(competitionId)
+    : phase === "playerDetail" && !isSuper
+      ? isAdminAny && !!expandedRegistryPlayer && adminClubIds.includes(String(registry.players?.[expandedRegistryPlayer]?.clubId || ""))
+      : ["players", "trash"].includes(phase)
+        ? isSuper // registry with everyone's contacts, trash: super administrator only
+        : isAdminAny;
   const tOrgLabel = clubDisplay(sysState, (competitionsFrom(sysState).find((c) => c.id === competitionId) || {}).ownerClubId, "Φορέας");
   setRuntimeCompetitionState(sysState);
   const [health, setHealth] = useState(null); // result of buildConsistencyReport (admin only)
@@ -489,29 +510,39 @@ export default function TournamentManager() {
         return;
       }
       // A token refresh re-checks the rights without hiding admin screens meanwhile.
-      setAuthRights((r) => (r === "admin" ? r : "checking"));
+      setAuthRights((r) => (r === "admin" || r === "clubAdmin" ? r : "checking"));
       let rights;
+      let clubIds = [];
       try {
         const d = await loadUserDocStrict(user.uid);
-        rights = d && d.role === "admin" ? "admin" : "none";
+        rights = d && d.role === "admin" ? "admin" : d && d.role === "clubAdmin" ? "clubAdmin" : "none";
+        if (rights === "clubAdmin") clubIds = Array.isArray(d.clubIds) ? d.clubIds.map(String) : [];
       } catch {
         rights = "error";
       }
-      if (mine === seq) setAuthRights(rights);
+      if (mine === seq) {
+        setAdminClubIds(clubIds);
+        setAuthRights(rights);
+      }
     });
   }, []);
 
   // Every database write asks can() with the current user (firebase.js).
   useEffect(() => {
-    setPermissionUser(authUser ? { uid: authUser.uid, email: authUser.email, isAdmin } : null);
-  }, [authUser, isAdmin]);
+    setPermissionUser(authUser ? { uid: authUser.uid, email: authUser.email, isAdmin: isAdminAny, isSuper, clubIds: adminClubIds } : null);
+  }, [authUser, isAdminAny, isSuper, adminClubIds]);
+
+  // 5C: a club administrator has only the «Διοργανώσεις» page of Διαχείριση.
+  useEffect(() => {
+    if (isAdminAny && !isSuper && controlTab !== "competitions") setControlTab("competitions");
+  }, [isAdminAny, isSuper, controlTab]);
 
   // An administrator reads private/contacts (strictly) and works with the
   // joined registry; a visitor never reads it. If the read FAILS, every
   // write is blocked: saving the registry then would wipe everybody's
   // details. Signing out forgets them again.
   useEffect(() => {
-    if (authRights !== "admin") {
+    if (authRights !== "admin" && authRights !== "clubAdmin") {
       if (adminDataReady && authRights !== "checking") {
         setAdminDataReady(false);
         contactsRef.current = { status: "none", data: null };
@@ -827,8 +858,10 @@ export default function TournamentManager() {
     setSideBets([]);
     setCalcuttaEntries([]);
     setFinanceCopy(null);
-    setSeasonYear(currentSeasonId(sysState, DEFAULT_COMPETITION_ID));
-    setCompetitionId(DEFAULT_COMPETITION_ID);
+    // 5C: a club administrator starts on the first competition of their clubs.
+    const startComp = isSuper ? DEFAULT_COMPETITION_ID : (competitionsFrom(sysState).find((c) => canEditCompetition(c.id)) || {}).id || DEFAULT_COMPETITION_ID;
+    setSeasonYear(currentSeasonId(sysState, startComp));
+    setCompetitionId(startComp);
     setOrganisation(clubsActive(sysState) ? clubDisplay(sysState, sysState.homeClubId, sysState.homeClub) : sysState.homeClub || "");
     setOrganisationClubId(clubsActive(sysState) ? sysState.homeClubId || null : null);
     setCalendarEntryId(null);
@@ -5001,7 +5034,7 @@ export default function TournamentManager() {
         <table className="cal-table">
           <thead><tr><th>Διοργάνωση</th><th>Σύλλογος</th><th>ELO</th><th title="Έχει πίνακα Βαθμολογίας σεζόν">Βαθμολογία</th><th>Τουρνουά</th><th></th></tr></thead>
           <tbody>
-            {comps.map((c) => {
+            {comps.filter((c) => canEditCompetition(c.id)).map((c) => {
               const count = archive.filter((t) => (t.competitionId || DEFAULT_COMPETITION_ID) === c.id).length;
               const editing = compDraft && compDraft.id === c.id;
               return (
@@ -5038,17 +5071,19 @@ export default function TournamentManager() {
               <label>Ανήκει στον σύλλογο</label>
               <select value={compDraft.ownerClubId || ""} onChange={(e) => setCompDraft({ ...compDraft, ownerClubId: e.target.value })} style={{ width: "100%", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
                 <option value="">—</option>
-                {clubsSorted.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {clubsSorted.filter((c) => isSuper || adminClubIds.includes(String(c.id))).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
+            {isSuper && (
             <label style={{ display: "flex", gap: 6, alignItems: "center", paddingBottom: 10 }}>
               <input type="checkbox" checked={compDraft.countsElo !== false} onChange={(e) => setCompDraft({ ...compDraft, countsElo: e.target.checked })} /> μετράει σε ELO
             </label>
+            )}
             <button className="btn-secondary" onClick={() => setCompDraft(null)}>Άκυρο</button>
             <button className="btn-primary" onClick={saveCompDraft} disabled={!compDraft.name.trim() || !compDraft.ownerClubId}>Δημιουργία</button>
           </div>
         ) : (
-          <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setCompDraft({ name: "", ownerClubId: "", countsElo: true })}><Plus size={14} /> Νέα διοργάνωση</button>
+          <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setCompDraft({ name: "", ownerClubId: "", countsElo: isSuper })}><Plus size={14} /> Νέα διοργάνωση</button>
         )}
       </div>
     );
@@ -5815,7 +5850,7 @@ export default function TournamentManager() {
           </div>
         )}
 
-        {isAdmin && (
+        {isSuper && (
           <div className="card details-card">
             <strong>Μετακίνηση στον κάδο</strong>
             <div style={{ marginTop: 10 }}>
@@ -6323,13 +6358,13 @@ export default function TournamentManager() {
           <button className="btn-ghost" onClick={() => setPhase("h2h")}>
             <Users size={14} /> {L.navStats}
           </button>
-          {isAdmin && (
+          {isAdminAny && (
             <button className="btn-ghost" onClick={() => setPhase("players")}>
               <Users size={14} /> {L.navPlayers}
             </button>
           )}
-          {isAdmin && (
-            <button className="btn-ghost" onClick={() => { setControlTab("overview"); setPhase("control"); }}>
+          {isAdminAny && (
+            <button className="btn-ghost" onClick={() => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); }}>
               <Lock size={14} /> {L.navControl}
             </button>
           )}
@@ -7353,7 +7388,7 @@ export default function TournamentManager() {
                       <button className="btn-primary" onClick={() => saveContactDraft(key)}>
                         <Save size={15} /> Save
                       </button>
-                      {playerHasHistory(key) ? (
+                      {!isSuper ? null : playerHasHistory(key) ? (
                         <span style={{ fontSize: 13, color: "var(--muted)" }}>Έχει ιστορικό αγώνων: δεν διαγράφεται από το μητρώο.</span>
                       ) : confirmingDeletePlayer !== key ? (
                         <button className="btn-ghost" onClick={() => setConfirmingDeletePlayer(key)}>
@@ -7376,7 +7411,7 @@ export default function TournamentManager() {
                         </span>
                       )}
                     </div>
-                    {registry.identityVersion === 2 && (
+                    {isSuper && registry.identityVersion === 2 && (
                       <div style={{ marginTop: 10 }}>
                         {mergeFor !== key ? (
                           <button className="btn-ghost" onClick={() => { setMergeFor(key); setMergeTarget(""); }}>
@@ -7599,7 +7634,7 @@ export default function TournamentManager() {
             </div>
           </div>
           <div className="content">
-            {isAdmin && (() => {
+            {isSuper && (() => {
               const lastExport = sysState.lastExportAt ? new Date(sysState.lastExportAt) : null;
               const daysSince = lastExport ? Math.floor((Date.now() - lastExport.getTime()) / 86400000) : null;
               const newerFinished = lastExport
@@ -7666,7 +7701,7 @@ export default function TournamentManager() {
                 </button>
               )}
               {isAdmin && (
-                <button className="dashboard-card" onClick={() => { setControlTab("overview"); setPhase("control"); }}>
+                <button className="dashboard-card" onClick={() => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); }}>
                   <Lock size={26} />
                   <span className="dashboard-card-title">{L.navControl}</span>
                   <span className="dashboard-card-desc">Σεζόν, κανόνες, δεδομένα, backup, ρυθμίσεις</span>
@@ -7705,13 +7740,13 @@ export default function TournamentManager() {
             )}
 
             <div className="tabs control-tabs">
-              <button className={`tab ${controlTab === "overview" ? "active" : ""}`} onClick={() => setControlTab("overview")}>Επισκόπηση</button>
+              {isSuper && <button className={`tab ${controlTab === "overview" ? "active" : ""}`} onClick={() => setControlTab("overview")}>Επισκόπηση</button>}
               <button className={`tab ${controlTab === "competitions" ? "active" : ""}`} onClick={() => { setControlTab("competitions"); setCompPageOpen(false); }}>Διοργανώσεις & σύλλογοι</button>
-              <button className={`tab ${controlTab === "players" ? "active" : ""}`} onClick={() => setControlTab("players")}>Παίκτες</button>
-              <button className={`tab ${controlTab === "data" ? "active" : ""}`} onClick={() => setControlTab("data")}>Δεδομένα</button>
-              <button className={`tab ${controlTab === "backup" ? "active" : ""}`} onClick={() => setControlTab("backup")}>Backup</button>
-              <button className={`tab ${controlTab === "settings" ? "active" : ""}`} onClick={() => setControlTab("settings")}>Ρυθμίσεις</button>
-              <button className={`tab ${controlTab === "imports" ? "active" : ""}`} onClick={() => { setControlTab("imports"); if (importsList === null) loadImportsList(); }}>Εισαγωγές</button>
+              {isSuper && <button className={`tab ${controlTab === "players" ? "active" : ""}`} onClick={() => setControlTab("players")}>Παίκτες</button>}
+              {isSuper && <button className={`tab ${controlTab === "data" ? "active" : ""}`} onClick={() => setControlTab("data")}>Δεδομένα</button>}
+              {isSuper && <button className={`tab ${controlTab === "backup" ? "active" : ""}`} onClick={() => setControlTab("backup")}>Backup</button>}
+              {isSuper && <button className={`tab ${controlTab === "settings" ? "active" : ""}`} onClick={() => setControlTab("settings")}>Ρυθμίσεις</button>}
+              {isSuper && <button className={`tab ${controlTab === "imports" ? "active" : ""}`} onClick={() => { setControlTab("imports"); if (importsList === null) loadImportsList(); }}>Εισαγωγές</button>}
             </div>
 
             {controlTab === "overview" && (
@@ -7811,7 +7846,7 @@ export default function TournamentManager() {
               <button className="btn-ghost" style={{ padding: "2px 0", marginBottom: 6 }} onClick={() => { setCompPageOpen(false); setNewSeasonYear(null); resetDrafts(); }}>← Όλες οι διοργανώσεις</button>
               <h2 className="control-h">{comp.name}</h2>
               <dl className="details-list" style={{ marginTop: 8 }}>
-                <dt>Σύλλογος</dt><dd>{clubDisplay(sysState, comp.ownerClubId, "—")}</dd>
+                <dt>Σύλλογος</dt><dd>{clubDisplay(sysState, comp.ownerClubId, "—")}{isSuper && comp.ownerClubId ? <span className="cal-note"> · id για διαχειριστή συλλόγου: <code>{comp.ownerClubId}</code></span> : null}</dd>
                 <dt>ELO</dt><dd>{eloLabel}</dd>
                 <dt>Βαθμολογία σεζόν</dt>
                 <dd>
@@ -7924,7 +7959,7 @@ export default function TournamentManager() {
             <div className="card control-section">
               <h2 className="control-h">Διοργανώσεις & σύλλογοι</h2>
               {renderCompetitionsCard()}
-              {isAdmin && (() => {
+              {isSuper && (() => {
                 const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
                 const comps = competitionsFrom(sysState);
                 const migrated = sysState.tournamentMetaVersion === 1;
@@ -8648,7 +8683,7 @@ export default function TournamentManager() {
                     onChange={(e) => { setCompetitionId(e.target.value); setSeasonYear(currentSeasonId(sysState, e.target.value, controlSeasons)); }}
                     style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
                   >
-                    {competitionsFrom(sysState).map((c) => (
+                    {competitionsFrom(sysState).filter((c) => canEditCompetition(c.id) || c.id === competitionId).map((c) => (
                       <option key={c.id} value={c.id}>{competitionLabel(sysState, c)}</option>
                     ))}
                   </select>
