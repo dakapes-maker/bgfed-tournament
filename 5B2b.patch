@@ -1,0 +1,609 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 792ad1a..638d6f7 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -108,6 +108,7 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ 7. **Μικρά, αναστρέψιμα βήματα.** Ο Γιάννης προτιμά απλότητα και απομόνωση: νέες λειτουργίες πρώτα χωρίς επίπτωση στα υπάρχοντα νούμερα, και αξιολόγηση πριν την πλήρη ενσωμάτωση.
+ 8. **Τρόπος δουλειάς.**
+    - Σχεδιασμός, αποφάσεις και μικρά builds γίνονται στο **chat του Project** («Ομοσπονδία Backgammon»), που διαβάζει κάθε φορά τον τρέχοντα κώδικα του `main` από το δημόσιο GitHub repository. Από το chat παραδίδονται **μόνο τα αρχεία που άλλαξαν**· ο Γιάννης τα ανεβάζει (GitHub → Add file → Upload files) απευθείας στο `main` ή σε branch, ανάλογα με το επίπεδο (§2.2).
++   - **Παράδοση από το chat** (απόφαση του Γιάννη, 2026-10-10): αν αλλάζει **ένα** αρχείο, το chat δίνει το αρχείο και ο Γιάννης το ανεβάζει (στο `main` για επίπεδο 1, στον σταθερό branch για επίπεδο 2). Αν αλλάζουν **πολλά**, το chat δίνει **ένα αρχείο `.patch`** (ελεγμένο ότι εφαρμόζεται στο τρέχον `main` και ότι περνά lint/build)· ο Γιάννης το ανεβάζει στη ρίζα του `main` και πατά τον σύνδεσμο του chat· το Claude Code ξαναστήνει τον σταθερό branch από το `main`, τρέχει `git apply`, σβήνει το `.patch`, τρέχει `npm ci` / lint / build, κάνει commit και ανοίγει PR (για επίπεδο 1: απευθείας στο `main`). Τίποτε άλλο· αν το patch δεν εφαρμόζεται, σταματά και το λέει.
+    - Στο **Claude Code** πηγαίνουν μόνο όσα κερδίζουν καθαρά από αυτό (επίπεδο 3 με Emulator, μηχανικές αλλαγές σε πολλά αρχεία), με όριο δοκιμών μέσα στις οδηγίες και **νέα, σύντομη συνεδρία ανά build**. Το 5A κατανάλωσε μεγάλο μέρος του ορίου χρήσης του Γιάννη σε μία εντολή.
+    - **Κόστος:** όταν ένα βήμα είναι βαρύ (για το chat ή για το Claude Code), ο Γιάννης ειδοποιείται **πριν** ξεκινήσει, με ⚠️ και ελαφρύτερη εναλλακτική. Διαβάζονται μόνο οι σχετικές ενότητες (`#region`), όχι ολόκληρο το `App.jsx`.
+    - Το repository είναι **δημόσιο**: ποτέ μυστικά (κωδικοί, κλειδιά API). Το Firebase web config δεν είναι μυστικό.
+@@ -198,6 +199,6 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ 
+ - **Τελευταίο ολοκληρωμένο:** στάδιο **5A** (build `2026-10-10.04`, PR #7) — εφαρμόστηκε πλήρως στην παραγωγή στις 2026-10-10 (βήματα 0–5 του `docs/plan-5A.md` §6). Πριν από αυτό: σχέδιο R (builds `.01`–`.03`, PR #3, #4, #6).
+ - **Δοκιμές 5A:** κανόνες 6/6 (`npm run test:rules`)· εφαρμογή 29/29 σε Emulator Firestore + Auth με τους πραγματικούς κανόνες· Excel πανομοιότυπο πριν/μετά τη μετάπτωση· Google ελέγχθηκε από τον Γιάννη στο preview και στην παραγωγή.
+-- **Τρέχον:** στάδιο **5B** (§9). Ολοκληρώθηκαν **5B.1** (κανόνες «χρυσής τομής») και **5B.2α** (build `2026-10-10.05`: κατάλογος σεζόν και id σεζόν, κληρονομιά κανόνων ανά διοργάνωση, «τρέχουσα σεζόν» = η παλαιότερη μη κλειδωμένη της διοργάνωσης, καμία πρόταση/προειδοποίηση σεζόν από ημερομηνία· το `seasonForDate` μένει μόνο ως εφεδρεία για παλιά τουρνουά χωρίς δηλωμένη σεζόν). Επόμενο: **5B.2β** (οθόνες: διοργάνωση → σεζόν στη Διαχείριση, «Νέα σεζόν» με όνομα, ονόματα σεζόν στα φίλτρα).
++- **Τρέχον:** στάδιο **5B** (§9). Ολοκληρώθηκαν **5B.1**, **5B.2α** (build `.05`) και **5B.2β** (build `2026-10-10.06`: Διαχείριση → «Διοργανώσεις, σεζόν & σύλλογοι» με επιλογή διοργάνωσης → σεζόν της· «Νέα σεζόν» με ελεύθερο όνομα και id από 100001 (`nextSeasonId`), εγγραφή στο `sysState.seasons`· επιλογή σεζόν ανά διοργάνωση στο νέο τουρνουά και στο «Στοιχεία»· ονόματα σεζόν (`seasonName`) σε όλες τις οθόνες· ρύθμιση `hasStandings` ανά διοργάνωση — `competitionHasStandings`, δεν επηρεάζει ακόμα τίποτα). Επόμενο: **5B.3** (Βαθμολογία ανά διοργάνωση και σεζόν).
+ - **Εκκρεμότητες εκτός κώδικα:** ο admin του bgfed.gr να επιβεβαιώσει την ανάκληση του WordPress Application Password (βλ. §8).
+ - **Μικρά υπόλοιπα (για μελλοντικό build):** η οριστική διαγραφή δεν ελέγχει το αποτέλεσμα του `deleteTournamentData`· η αναίρεση αντιστοίχισης δεν αναφέρει αποτυχία ανάγνωσης εισαγωγής ούτε αποτυχία του `saveSysState({ importMatching })`· το `eslint@9.39.5` δεν υποστηρίζεται πια (μόνο εργαλείο ελέγχου)· η επικεφαλίδα-σχόλιο «Storage helpers» στο `config/constants.js` δεν αντιστοιχεί σε κώδικα· οι αυτόματες εγγραφές της εκκίνησης σε **άδεια** βάση (αρχικό μητρώο, ιστορική σεζόν 2026) δεν γίνονται χωρίς σύνδεση διαχειριστή (δεν αφορά την παραγωγή).
+diff --git a/src/App.jsx b/src/App.jsx
+index 8868924..a20bb2b 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -88,7 +88,7 @@ import {
+   tournamentInScope,
+   scopeLabel,
+ } from "./lib/seasons.js";
+-import { seasonCompetitionId, seasonsOfCompetition, currentSeasonId } from "./lib/seasonRegistry.js";
++import { seasonCompetitionId, seasonsOfCompetition, currentSeasonId, seasonName, nextSeasonId } from "./lib/seasonRegistry.js";
+ import {
+   newCalendarEntryId,
+   todayYMD,
+@@ -110,6 +110,7 @@ import {
+   competitionLabel,
+   competitionName,
+   setRuntimeCompetitionState,
++  competitionHasStandings,
+ } from "./lib/competitions.js";
+ import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay } from "./lib/clubs.js";
+ import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
+@@ -235,6 +236,7 @@ export default function TournamentManager() {
+   const [metaBusy, setMetaBusy] = useState(false);
+   const [controlSeasons, setControlSeasons] = useState([]); // seasons listed on the admin page
+   const [controlTab, setControlTab] = useState("overview"); // admin page sub-menu
++  const [controlCompId, setControlCompId] = useState(DEFAULT_COMPETITION_ID); // 5B.2β: competition whose seasons are shown
+   const [lockOverrideId, setLockOverrideId] = useState(null); // tournament allowed to change although its season is locked (this session)
+   const [lockTyped, setLockTyped] = useState(""); // typed year for lock / unlock confirmations
+   const [lockAction, setLockAction] = useState(null); // { kind: "lock" | "unlock" | "tournament", year }
+@@ -398,6 +400,7 @@ export default function TournamentManager() {
+   setPersonLookup(registry);
+   const [trash, setTrash] = useState([]); // tournaments moved to the trash (restorable)
+   const [sysState, setSysState] = useState({}); // lastExportAt, purgedIds
++  const sn = (id) => seasonName(sysState, id); // 5B.2β: display name of a season id
+   setRuntimeCompetitionState(sysState);
+   const [health, setHealth] = useState(null); // result of buildConsistencyReport (admin only)
+   const [consistencyReport, setConsistencyReport] = useState(null);
+@@ -1081,7 +1084,7 @@ export default function TournamentManager() {
+ 
+   function startTournament() {
+     if (seasonLocked(sysState, seasonYear)) {
+-      showToast(`Η σεζόν ${seasonYear} είναι κλειδωμένη — διάλεξε άλλη σεζόν ή ημερομηνία.`);
++      showToast(`Η σεζόν ${sn(seasonYear)} είναι κλειδωμένη — διάλεξε άλλη σεζόν ή ημερομηνία.`);
+       return;
+     }
+     if (players.length < 3) return;
+@@ -1501,7 +1504,7 @@ export default function TournamentManager() {
+         if (!(await saveEloChecked(data.elo))) failed.push("ELO");
+         if (!(await saveIndexChecked(data.archiveIndex))) failed.push("κατάλογος τουρνουά");
+         for (const [year, season] of Object.entries(data.seasons || {})) {
+-          if (!(await saveSeason(Number(year), season))) failed.push(`σεζόν ${year}`);
++          if (!(await saveSeason(Number(year), season))) failed.push(`σεζόν ${sn(year)}`);
+         }
+         for (const [id, tData] of Object.entries(data.tournaments || {})) {
+           if (tData && !(await saveTournamentData(id, tData))) failed.push(`τουρνουά ${id}`);
+@@ -1954,7 +1957,7 @@ export default function TournamentManager() {
+     if (!metaEdit || !tournamentId) return;
+     if (!tournamentEditable()) return;
+     if (seasonLocked(sysState, Number(metaEdit.seasonYear)) && Number(metaEdit.seasonYear) !== seasonYear) {
+-      showToast(`Η σεζόν ${metaEdit.seasonYear} είναι κλειδωμένη — δεν μπορεί να μπει τουρνουά σε αυτήν.`);
++      showToast(`Η σεζόν ${sn(metaEdit.seasonYear)} είναι κλειδωμένη — δεν μπορεί να μπει τουρνουά σε αυτήν.`);
+       return;
+     }
+     const nextCreatedAt = withLocalDate(createdAt, metaEdit.date);
+@@ -2503,7 +2506,7 @@ export default function TournamentManager() {
+           current = await loadSeasonStrict(y);
+         } catch {
+           setNotice("");
+-          reportSaveFailure(`Recompute — η κλειδωμένη σεζόν ${y} δεν διαβάστηκε· ΔΕΝ γράφτηκε τίποτα. Δοκίμασε ξανά.`);
++          reportSaveFailure(`Recompute — η κλειδωμένη σεζόν ${sn(y)} δεν διαβάστηκε· ΔΕΝ γράφτηκε τίποτα. Δοκίμασε ξανά.`);
+           return;
+         }
+         if (seasonFingerprint(current) !== seasonFingerprint(seasonsBuilt[y] || { players: {} })) conflicts.push(y);
+@@ -3300,7 +3303,7 @@ export default function TournamentManager() {
+             <p style={{ fontSize: 12, color: "var(--muted)", margin: "4px 0 0 0" }}>
+               Τελευταίο Recompute: {formatDate(builtFrom.at)} — {builtFrom.tournaments} τουρνουά, {builtFrom.matches} αγώνες, {builtFrom.players} παίκτες.
+               {builtFrom.seasons && (
+-                  <> Ανά σεζόν: {Object.entries(builtFrom.seasons).map(([y, v]) => `${y}: ${v.tournaments} τουρνουά, ${v.players} παίκτες`).join(" · ")}.</>
++                  <> Ανά σεζόν: {Object.entries(builtFrom.seasons).map(([y, v]) => `${sn(y)}: ${v.tournaments} τουρνουά, ${v.players} παίκτες`).join(" · ")}.</>
+                 )}
+             </p>
+           )}
+@@ -4746,7 +4749,7 @@ export default function TournamentManager() {
+    * admin must first unlock changes for this one tournament (tab «Στοιχεία»). */
+   function tournamentEditable() {
+     if (!seasonLocked(sysState, seasonYear) || lockOverrideId === tournamentId) return true;
+-    showToast(`Η σεζόν ${seasonYear} είναι κλειδωμένη — ξεκλείδωσε τις αλλαγές από το tab «Στοιχεία».`);
++    showToast(`Η σεζόν ${sn(seasonYear)} είναι κλειδωμένη — ξεκλείδωσε τις αλλαγές από το tab «Στοιχεία».`);
+     return false;
+   }
+ 
+@@ -4770,9 +4773,9 @@ export default function TournamentManager() {
+       setSysState((st) => ({ ...st, seasonLocks: locks }));
+       setLockAction(null);
+       setLockTyped("");
+-      showToast(kind === "lock" ? `Η σεζόν ${year} έκλεισε και κλειδώθηκε.` : `Η σεζόν ${year} ξεκλειδώθηκε.`);
++      showToast(kind === "lock" ? `Η σεζόν ${sn(year)} έκλεισε και κλειδώθηκε.` : `Η σεζόν ${sn(year)} ξεκλειδώθηκε.`);
+     } else {
+-      reportSaveFailure(`Σεζόν ${year} — το ${kind === "lock" ? "κλείδωμα" : "ξεκλείδωμα"} δεν αποθηκεύτηκε`);
++      reportSaveFailure(`Σεζόν ${sn(year)} — το ${kind === "lock" ? "κλείδωμα" : "ξεκλείδωμα"} δεν αποθηκεύτηκε`);
+     }
+   }
+ 
+@@ -4804,7 +4807,7 @@ export default function TournamentManager() {
+     if (locked) {
+       return (
+         <div className="control-sub-card">
+-          <strong>Σεζόν {year} — κλειστή 🔒</strong>
++          <strong>Σεζόν {sn(year)} — κλειστή 🔒</strong>
+           <p style={{ margin: "6px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
+             Κλείδωσε στις {formatDate(sysState.seasonLocks[String(year)].lockedAt)}. Οι κανόνες και το ημερολόγιό της δεν αλλάζουν, κάθε αλλαγή σε τουρνουά της θέλει ξεχωριστό ξεκλείδωμα, και ένα Recompute που θα άλλαζε τη Βαθμολογία της σταματά και ρωτά.
+           </p>
+@@ -4813,13 +4816,13 @@ export default function TournamentManager() {
+               Ξεκλείδωμα σεζόν…
+             </button>
+           )}
+-          {renderLockPrompt("unlock", year, `Το ξεκλείδωμα επιτρέπει ξανά αλλαγές στη σεζόν ${year}. Χρησιμοποίησέ το μόνο για διόρθωση λάθους.`)}
++          {renderLockPrompt("unlock", year, `Το ξεκλείδωμα επιτρέπει ξανά αλλαγές στη σεζόν ${sn(year)}. Χρησιμοποίησέ το μόνο για διόρθωση λάθους.`)}
+         </div>
+       );
+     }
+     return (
+       <div className="control-sub-card">
+-        <strong>Σεζόν {year} — κλείσιμο</strong>
++        <strong>Σεζόν {sn(year)} — κλείσιμο</strong>
+         <p style={{ margin: "6px 0 8px 0", fontSize: 13, color: ended || calendarDone ? "var(--win)" : "var(--muted)" }}>
+           {ended || calendarDone
+             ? "✓ Η σεζόν έχει ολοκληρωθεί και μπορεί να κλείσει."
+@@ -4835,7 +4838,7 @@ export default function TournamentManager() {
+           <li>
+             Κλείδωμα:{" "}
+             <button className="btn-primary" disabled={!exportFresh || !excelDoneAt || !!lockAction} onClick={() => { setLockAction({ kind: "lock", year }); setLockTyped(""); }}>
+-              🔒 Κλείσιμο σεζόν {year}
++              🔒 Κλείσιμο σεζόν {sn(year)}
+             </button>
+             {(!exportFresh || !excelDoneAt) && (
+               <div className="cal-note" style={{ marginTop: 4 }}>
+@@ -4844,7 +4847,7 @@ export default function TournamentManager() {
+             )}
+           </li>
+         </ol>
+-        {renderLockPrompt("lock", year, `Μετά το κλείσιμο, οι κανόνες, το ημερολόγιο και τα αποτελέσματα της σεζόν ${year} προστατεύονται από αλλαγές.`)}
++        {renderLockPrompt("lock", year, `Μετά το κλείσιμο, οι κανόνες, το ημερολόγιο και τα αποτελέσματα της σεζόν ${sn(year)} προστατεύονται από αλλαγές.`)}
+       </div>
+     );
+   }
+@@ -4958,7 +4961,7 @@ export default function TournamentManager() {
+           Κάθε διοργάνωση ανήκει σε έναν σύλλογο· ο σύλλογος ορίζει την κατάταξη ELO όπου μετράει. Σήμερα ενεργή είναι η ELO του συλλόγου σου ({clubDisplay(sysState, sysState.homeClubId, "—")}). Ο σύλλογος μιας διοργάνωσης κλειδώνει μετά τη δημιουργία.
+         </p>
+         <table className="cal-table">
+-          <thead><tr><th>Διοργάνωση</th><th>Σύλλογος</th><th>ELO</th><th>Τουρνουά</th><th></th></tr></thead>
++          <thead><tr><th>Διοργάνωση</th><th>Σύλλογος</th><th>ELO</th><th title="Έχει πίνακα Βαθμολογίας σεζόν">Βαθμολογία</th><th>Τουρνουά</th><th></th></tr></thead>
+           <tbody>
+             {comps.map((c) => {
+               const count = archive.filter((t) => (t.competitionId || DEFAULT_COMPETITION_ID) === c.id).length;
+@@ -4968,6 +4971,7 @@ export default function TournamentManager() {
+                   <td>{editing ? <input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} /> : c.name}</td>
+                   <td>{clubDisplay(sysState, c.ownerClubId, "—")}</td>
+                   <td>{c.countsElo === false ? "δεν μετράει" : c.ownerClubId === sysState.homeClubId ? "ELO Ομοσπονδίας" : clubsFrom(sysState).find((x) => x.id === c.ownerClubId)?.organiserOnly ? "Πανελλήνια ELO" : "—"}</td>
++                  <td><input type="checkbox" checked={competitionHasStandings(c)} onChange={() => toggleCompetitionStandings(c)} title="Έχει Βαθμολογία σεζόν" /></td>
+                   <td>{count}</td>
+                   <td style={{ whiteSpace: "nowrap" }}>
+                     {editing ? (
+@@ -5276,7 +5280,7 @@ export default function TournamentManager() {
+         setSysState((st) => ({ ...st, seasonCalendars: all }));
+         return true;
+       }
+-      reportSaveFailure(`Ημερολόγιο σεζόν ${year} — δεν αποθηκεύτηκε`);
++      reportSaveFailure(`Ημερολόγιο σεζόν ${sn(year)} — δεν αποθηκεύτηκε`);
+       return false;
+     } finally {
+       setCalBusy(false);
+@@ -5324,37 +5328,63 @@ export default function TournamentManager() {
+   }
+ 
+   async function createSeason() {
+-    const year = Number(newSeasonYear);
+-    if (!Number.isInteger(year) || year < 2027 || year > 2100) {
+-      showToast("Δώσε έγκυρο έτος (από 2027).");
++    // 5B.2β: a season belongs to a competition and has a free name; it is
++    // not tied to dates. New seasons get ids from NEW_SEASON_ID_BASE up.
++    const name = String(newSeasonYear || "").trim();
++    const comp = controlCompId || DEFAULT_COMPETITION_ID;
++    if (!name) {
++      showToast("Δώσε όνομα σεζόν (π.χ. 2027 ή 2026–27).");
+       return;
+     }
+-    if (controlSeasons.includes(year) || (sysState.seasonCalendars && sysState.seasonCalendars[String(year)])) {
+-      showToast(`Η σεζόν ${year} υπάρχει ήδη.`);
++    const existing = seasonsOfCompetition(sysState, comp, controlSeasons);
++    if (existing.some((s) => s.name.trim().toLowerCase() === name.toLowerCase())) {
++      showToast(`Η σεζόν ${name} υπάρχει ήδη σε αυτή τη διοργάνωση.`);
+       return;
+     }
+-    // Pin the rules of earlier seasons that still inherit, then give the new
+-    // season a copy of the latest rules (adjust them to the announcement).
++    const id = nextSeasonId(sysState, controlSeasons);
++    const now = new Date().toISOString();
++    // Pin the rules of this competition's earlier seasons that still inherit,
++    // then give the new season a copy of the latest rules.
+     const rules = { ...(sysState.seasonRules || {}) };
+-    const newComp = seasonCompetitionId(sysState, year);
+-    controlSeasons.filter((y) => y < year && !rules[String(y)] && seasonCompetitionId(sysState, y) === newComp).forEach((y) => {
+-      const r = rulesForSeason({ ...sysState, seasonRules: rules }, y);
+-      rules[String(y)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: new Date().toISOString() };
++    existing.filter((s) => !rules[String(s.id)]).forEach((s) => {
++      const r = rulesForSeason({ ...sysState, seasonRules: rules }, s.id);
++      rules[String(s.id)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: now };
+     });
+-    const base = rulesForSeason({ ...sysState, seasonRules: rules }, year);
+-    rules[String(year)] = { bestOf: base.bestOf, cutoffR32: base.cutoffR32, cutoffR48: base.cutoffR48, setAt: new Date().toISOString() };
+-    const calendars = { ...(sysState.seasonCalendars || {}), [String(year)]: [] };
+-    const patch = { seasonRules: rules, seasonCalendars: calendars, seasonsOpened: { ...(sysState.seasonsOpened || {}), [String(year)]: new Date().toISOString() } };
++    const seasons = { ...(sysState.seasons || {}), [String(id)]: { competitionId: comp, name, createdAt: now } };
++    const base = rulesForSeason({ ...sysState, seasons, seasonRules: rules }, id);
++    rules[String(id)] = { bestOf: base.bestOf, cutoffR32: base.cutoffR32, cutoffR48: base.cutoffR48, setAt: now };
++    const calendars = { ...(sysState.seasonCalendars || {}), [String(id)]: [] };
++    const patch = { seasons, seasonRules: rules, seasonCalendars: calendars, seasonsOpened: { ...(sysState.seasonsOpened || {}), [String(id)]: now } };
+     if (await saveSysState(patch)) {
+       setSysState((st) => ({ ...st, ...patch }));
+       setNewSeasonYear(null);
+-      setControlSeasonYear(year);
+-      showToast(`Η σεζόν ${year} δημιουργήθηκε· έλεγξε τους κανόνες και πρόσθεσε τις αγωνιστικές.`);
++      setControlSeasonYear(id);
++      showToast(`Η σεζόν ${name} δημιουργήθηκε· έλεγξε τους κανόνες και πρόσθεσε τις αγωνιστικές.`);
+     } else {
+-      reportSaveFailure(`Νέα σεζόν ${year} — δεν δημιουργήθηκε`);
++      reportSaveFailure(`Νέα σεζόν ${name} — δεν δημιουργήθηκε`);
+     }
+   }
+ 
++  /** 5B.2β: «Έχει Βαθμολογία σεζόν» per competition. */
++  async function toggleCompetitionStandings(comp) {
++    const next = competitionsFrom(sysState).map((c) => (c.id === comp.id ? { ...c, hasStandings: !competitionHasStandings(c) } : c));
++    if (await saveSysState({ competitions: next })) setSysState((st) => ({ ...st, competitions: next }));
++    else reportSaveFailure("Διοργανώσεις — η αλλαγή δεν αποθηκεύτηκε");
++  }
++
++  /** 5B.2β: season picker limited to one competition's seasons. */
++  function renderSeasonSelect(compId, value, onChange) {
++    const list = seasonsOfCompetition(sysState, compId, controlSeasons).map((s) => s.id);
++    if (value && !list.includes(Number(value))) list.push(Number(value));
++    return (
++      <select value={value || ""} onChange={(e) => onChange(Number(e.target.value))} style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
++        {[...list].sort((a, b) => b - a).map((id) => (
++          <option key={id} value={id}>{sn(id)}{seasonLocked(sysState, id) ? " 🔒" : ""}</option>
++        ))}
++      </select>
++    );
++  }
++
+   /** Admin: calendar card of one season (inside the admin page). */
+   function renderCalendarCard(year) {
+     const comps = competitionsFrom(sysState);
+@@ -5367,7 +5397,7 @@ export default function TournamentManager() {
+     return (
+       <div className="control-sub-card">
+         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+-          <strong>Σεζόν {year} — ημερολόγιο</strong>
++          <strong>Σεζόν {sn(year)} — ημερολόγιο</strong>
+           <span style={{ fontSize: 13, color: "var(--muted)" }}>
+             {prog.total > 0 ? `Premier League: ${prog.done} από ${prog.total} αγωνιστικές` : "Χωρίς αγωνιστικές ακόμα"}
+           </span>
+@@ -5511,7 +5541,7 @@ export default function TournamentManager() {
+     return (
+       <div className="control-sub-card">
+         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+-          <strong>Σεζόν {year} — κανόνες Βαθμολογίας</strong>
++          <strong>Σεζόν {sn(year)} — κανόνες Βαθμολογίας</strong>
+           {!editing && !seasonLocked(sysState, year) && (
+             <button className="btn-ghost" onClick={() => setRulesDraft({ year, bestOf: rules.bestOf, cutoffR32: rules.cutoffR32, cutoffR48: rules.cutoffR48 })}>
+               <Pencil size={13} /> Αλλαγή
+@@ -5525,7 +5555,7 @@ export default function TournamentManager() {
+             </p>
+             {rules.inherited && (
+               <p style={{ margin: "4px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
+-                {rules.from ? `Δεν έχουν οριστεί ακόμα κανόνες για το ${year}· ισχύουν όσοι της σεζόν ${rules.from}.` : "Δεν έχουν οριστεί ακόμα κανόνες· ισχύουν οι αρχικοί."} Όρισέ τους όταν βγει η προκήρυξη.
++                {rules.from ? `Δεν έχουν οριστεί ακόμα κανόνες για το ${sn(year)}· ισχύουν όσοι της σεζόν ${sn(rules.from)}.` : "Δεν έχουν οριστεί ακόμα κανόνες· ισχύουν οι αρχικοί."} Όρισέ τους όταν βγει η προκήρυξη.
+               </p>
+             )}
+           </>
+@@ -5547,7 +5577,7 @@ export default function TournamentManager() {
+             </div>
+             {!valid && <p className="field-warning">Ακέραιοι ≥ 1, και η θέση για τους 48 όχι μικρότερη από τη θέση για τους 32.</p>}
+             <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0 0 0" }}>
+-              Αφορά μόνο τη σεζόν {year}. Οι άλλες σεζόν δεν αλλάζουν. Δεν χρειάζεται Recompute: η Βαθμολογία υπολογίζεται αμέσως με τους νέους κανόνες.
++              Αφορά μόνο τη σεζόν {sn(year)}. Οι άλλες σεζόν δεν αλλάζουν. Δεν χρειάζεται Recompute: η Βαθμολογία υπολογίζεται αμέσως με τους νέους κανόνες.
+             </p>
+             <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+               <button className="btn-secondary" onClick={() => setRulesDraft(null)}>Άκυρο</button>
+@@ -5587,9 +5617,9 @@ export default function TournamentManager() {
+     if (await saveSysState({ seasonRules: all })) {
+       setSysState((st) => ({ ...st, seasonRules: all }));
+       setRulesDraft(null);
+-      showToast(`Οι κανόνες της σεζόν ${year} αποθηκεύτηκαν.`);
++      showToast(`Οι κανόνες της σεζόν ${sn(year)} αποθηκεύτηκαν.`);
+     } else {
+-      reportSaveFailure(`Κανόνες σεζόν ${year} — δεν αποθηκεύτηκαν`);
++      reportSaveFailure(`Κανόνες σεζόν ${sn(year)} — δεν αποθηκεύτηκαν`);
+     }
+   }
+   // #endregion Σεζόν & ημερολόγιο
+@@ -5617,7 +5647,7 @@ export default function TournamentManager() {
+     const rows = [
+       ["Όνομα", tournamentName || "—"],
+       ["Ημερομηνία", createdAt ? formatDate(createdAt) : "—"],
+-      ["Σεζόν", `${seasonYear}`],
++      ["Σεζόν", sn(seasonYear)],
+       ["Διοργάνωση", comp ? `${comp.name} — ${COMPETITION_LEVEL_LABEL[comp.level] || comp.level}` : competitionName(comps, competitionId)],
+       ["Σύλλογος της διοργάνωσης", (() => { const c = competitionById(competitionId); return c && c.ownerClubId ? clubDisplay(sysState, c.ownerClubId, "—") : "—"; })()],
+       ["Κατάσταση", phase === "finished" ? "Ολοκληρώθηκε" : `Σε εξέλιξη — γύρος ${round} από ${totalRounds}`],
+@@ -5632,7 +5662,7 @@ export default function TournamentManager() {
+       <div className="details-tab">
+         {isAdmin && seasonLocked(sysState, seasonYear) && (
+           <div className="card details-card" style={{ borderLeft: "4px solid #9a5b00" }}>
+-            <strong>Η σεζόν {seasonYear} είναι κλειδωμένη 🔒</strong>
++            <strong>Η σεζόν {sn(seasonYear)} είναι κλειδωμένη 🔒</strong>
+             {lockOverrideId === tournamentId ? (
+               <p style={{ fontSize: 13, margin: "6px 0 0 0" }}>Επιτρέπονται αλλαγές σε αυτό το τουρνουά μέχρι να ανοίξεις άλλο. Μετά από αλλαγή, τρέξε Recompute.</p>
+             ) : (
+@@ -5684,15 +5714,15 @@ export default function TournamentManager() {
+                   }}
+                 />
+               </div>
+-              <div style={{ width: 110 }}>
++              <div style={{ width: 160 }}>
+                 <label>Σεζόν</label>
+-                <input type="number" value={metaEdit.seasonYear} onChange={(e) => setMetaEdit({ ...metaEdit, seasonYear: Number(e.target.value) || metaEdit.seasonYear })} />
++                {renderSeasonSelect(metaEdit.competitionId, metaEdit.seasonYear, (v) => setMetaEdit({ ...metaEdit, seasonYear: v }))}
+               </div>
+               <div style={{ width: 220 }}>
+                 <label>Διοργάνωση</label>
+                 <select
+                   value={metaEdit.competitionId}
+-                  onChange={(e) => setMetaEdit({ ...metaEdit, competitionId: e.target.value })}
++                  onChange={(e) => setMetaEdit({ ...metaEdit, competitionId: e.target.value, seasonYear: currentSeasonId(sysState, e.target.value, controlSeasons) })}
+                   style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+                 >
+                   {comps.map((c) => (
+@@ -6085,7 +6115,7 @@ export default function TournamentManager() {
+           <Lock size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+           <div style={{ flex: 1 }}>
+             <p style={{ margin: "0 0 8px 0" }}>
+-              <strong>Το Recompute θα άλλαζε τη Βαθμολογία της κλειδωμένης σεζόν {recomputeLockConflict.years.join(", ")}.</strong> Δεν γράφτηκε τίποτα ακόμα. Συνέχισε μόνο αν η αλλαγή οφείλεται σε διόρθωση που έκανες σκόπιμα.
++              <strong>Το Recompute θα άλλαζε τη Βαθμολογία της κλειδωμένης σεζόν {recomputeLockConflict.years.map(sn).join(", ")}.</strong> Δεν γράφτηκε τίποτα ακόμα. Συνέχισε μόνο αν η αλλαγή οφείλεται σε διόρθωση που έκανες σκόπιμα.
+             </p>
+             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+               <button className="btn-secondary" onClick={() => setRecomputeLockConflict(null)}>Ακύρωση</button>
+@@ -6376,7 +6406,7 @@ export default function TournamentManager() {
+                     else setH2hResult(null);
+                   }}
+                 >
+-                  {y === "all" ? "Όλα" : `Σεζόν ${y}`}
++                  {y === "all" ? "Όλα" : `Σεζόν ${sn(y)}`}
+                 </button>
+               ))}
+             </div>
+@@ -6583,7 +6613,7 @@ export default function TournamentManager() {
+                   <button className="btn-primary" disabled={seasonStatsLoading} onClick={() => computeSeasonOverview(statsScope)}>
+                     {seasonStatsLoading ? "Υπολογισμός…" : "Υπολόγισε"}
+                   </button>
+-                  {seasonStatsResult && <span className="cal-note">{scopeLabel(seasonStatsResult.scope)}</span>}
++                  {seasonStatsResult && <span className="cal-note">{seasonStatsResult.scope === "all" ? scopeLabel("all") : `Σεζόν ${sn(seasonStatsResult.scope)}`}</span>}
+                 </div>
+ 
+                 {seasonStatsResult && (
+@@ -6752,7 +6782,7 @@ export default function TournamentManager() {
+                 style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: "var(--accent)", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 10px", background: "var(--surface)" }}
+               >
+                 {seasonYearsAvailable.map((y) => (
+-                  <option key={y} value={y}>{y}</option>
++                  <option key={y} value={y}>{sn(y)}</option>
+                 ))}
+               </select>
+             </div>
+@@ -6766,7 +6796,7 @@ export default function TournamentManager() {
+             <div className="notice">
+               <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+               <span>
+-                Σεζόν {seasonBrowseYear}. Μετράνε τα {rulesForSeason(sysState, seasonBrowseYear).bestOf} καλύτερα αποτελέσματα κάθε παίκτη στη σεζόν.
++                Σεζόν {sn(seasonBrowseYear)}. Μετράνε τα {rulesForSeason(sysState, seasonBrowseYear).bestOf} καλύτερα αποτελέσματα κάθε παίκτη στη σεζόν.
+               </span>
+             </div>
+ 
+@@ -7612,8 +7642,7 @@ export default function TournamentManager() {
+ 
+             <div className="tabs control-tabs">
+               <button className={`tab ${controlTab === "overview" ? "active" : ""}`} onClick={() => setControlTab("overview")}>Επισκόπηση</button>
+-              <button className={`tab ${controlTab === "seasons" ? "active" : ""}`} onClick={() => setControlTab("seasons")}>Σεζόν & ημερολόγιο</button>
+-              <button className={`tab ${controlTab === "competitions" ? "active" : ""}`} onClick={() => setControlTab("competitions")}>Διοργανώσεις & σύλλογοι</button>
++              <button className={`tab ${controlTab === "competitions" ? "active" : ""}`} onClick={() => setControlTab("competitions")}>Διοργανώσεις, σεζόν & σύλλογοι</button>
+               <button className={`tab ${controlTab === "players" ? "active" : ""}`} onClick={() => setControlTab("players")}>Παίκτες</button>
+               <button className={`tab ${controlTab === "data" ? "active" : ""}`} onClick={() => setControlTab("data")}>Δεδομένα</button>
+               <button className={`tab ${controlTab === "backup" ? "active" : ""}`} onClick={() => setControlTab("backup")}>Backup</button>
+@@ -7637,15 +7666,15 @@ export default function TournamentManager() {
+                       .filter((y) => y < current && !seasonLocked(sysState, y))
+                       .map((y) => (
+                         <React.Fragment key={y}>
+-                          <dt>Σεζόν {y}</dt>
++                          <dt>Σεζόν {sn(y)}</dt>
+                           <dd style={{ color: "#9a5b00" }}>
+                             Έχει τελειώσει αλλά δεν έχει κλείσει —{" "}
+-                            <button className="history-link" onClick={() => { setControlSeasonYear(y); setControlTab("seasons"); }}>κλείσιμο σεζόν</button>
++                            <button className="history-link" onClick={() => { setControlCompId(seasonCompetitionId(sysState, y)); setControlSeasonYear(y); setControlTab("competitions"); }}>κλείσιμο σεζόν</button>
+                           </dd>
+                         </React.Fragment>
+                       ))}
+                     <dt>Τρέχουσα σεζόν</dt>
+-                    <dd>{current}{seasonLocked(sysState, current) ? " 🔒" : ""}</dd>
++                    <dd>{sn(current)}{seasonLocked(sysState, current) ? " 🔒" : ""}</dd>
+                     {(() => {
+                       const prog = calendarProgress(buildCalendarView(sysState, current, archive));
+                       return (
+@@ -7676,7 +7705,7 @@ export default function TournamentManager() {
+             })()}
+ 
+               <div className="dashboard-grid" style={{ marginTop: 4 }}>
+-                <button className="dashboard-card" onClick={() => setControlTab("seasons")}>
++                <button className="dashboard-card" onClick={() => setControlTab("competitions")}>
+                   <span className="dashboard-card-title">Σεζόν & ημερολόγιο</span>
+                   <span className="dashboard-card-desc">Νέα σεζόν, κανόνες Βαθμολογίας, αγωνιστικές</span>
+                 </button>
+@@ -7704,39 +7733,48 @@ export default function TournamentManager() {
+               </>
+             )}
+ 
+-            {controlTab === "seasons" && (
+-              <>
+-            {/* 2. Seasons */}
++            {controlTab === "competitions" && (() => {
++              // 5B.2β: seasons live inside their competition.
++              const compSeasons = seasonsOfCompetition(sysState, controlCompId, controlSeasons).slice().reverse();
++              const resetDrafts = () => { setCalDraft(null); setRulesDraft(null); setLockAction(null); };
++              return (
+             <div className="card control-section">
+-              <h2 className="control-h">Σεζόν</h2>
+-              <p className="control-sub">Διάλεξε σεζόν για τους κανόνες Βαθμολογίας, το ημερολόγιο και το κλείσιμό της.</p>
++              <h2 className="control-h">Σεζόν διοργάνωσης</h2>
++              <p className="control-sub">Διάλεξε διοργάνωση και σεζόν για τους κανόνες Βαθμολογίας, το ημερολόγιο και το κλείσιμό της. Η σεζόν δεν δένεται με ημερομηνίες: κάθε τουρνουά δηλώνει τη σεζόν του.</p>
++              <div className="round-pills" style={{ marginBottom: 10 }}>
++                {competitionsFrom(sysState).map((c) => (
++                  <button key={c.id} className={`round-pill ${controlCompId === c.id ? "active" : ""}`} onClick={() => { setControlCompId(c.id); setControlSeasonYear(currentSeasonId(sysState, c.id, controlSeasons)); setNewSeasonYear(null); resetDrafts(); }}>
++                    {c.name}
++                  </button>
++                ))}
++              </div>
+               {newSeasonYear === null ? (
+-                <button className="btn-secondary" onClick={() => setNewSeasonYear(String(Math.max(...controlSeasons, currentSeasonId(sysState, DEFAULT_COMPETITION_ID)) + 1))}>
++                <button className="btn-secondary" onClick={() => setNewSeasonYear("")}>
+                   <Plus size={14} /> Νέα σεζόν
+                 </button>
+               ) : (
+                 <div className="row" style={{ alignItems: "flex-end" }}>
+-                  <div style={{ width: 120 }}>
+-                    <label>Έτος</label>
+-                    <input type="number" value={newSeasonYear} onChange={(e) => setNewSeasonYear(e.target.value)} />
++                  <div style={{ width: 180 }}>
++                    <label>Όνομα σεζόν</label>
++                    <input type="text" value={newSeasonYear} placeholder="π.χ. 2027 ή 2026–27" onChange={(e) => setNewSeasonYear(e.target.value)} />
+                   </div>
+-                  <span style={{ fontSize: 13, color: "var(--muted)", paddingBottom: 10 }}>
+-                    {Number(newSeasonYear) >= 2027 ? "Οι κανόνες αντιγράφονται από την προηγούμενη σεζόν." : ""}
+-                  </span>
++                  <span style={{ fontSize: 13, color: "var(--muted)", paddingBottom: 10 }}>Οι κανόνες αντιγράφονται από την προηγούμενη σεζόν της διοργάνωσης.</span>
+                   <button className="btn-secondary" onClick={() => setNewSeasonYear(null)}>Άκυρο</button>
+-                  <button className="btn-primary" onClick={createSeason}>Δημιουργία</button>
++                  <button className="btn-primary" onClick={createSeason} disabled={!String(newSeasonYear).trim()}>Δημιουργία</button>
+                 </div>
+               )}
+-              {controlSeasons.length > 0 && (
++              {compSeasons.length > 0 ? (
+                 <div className="round-pills" style={{ marginTop: 12 }}>
+-                  {controlSeasons.map((y) => (
+-                    <button key={y} className={`round-pill ${controlSeasonYear === y ? "active" : ""}`} onClick={() => { setControlSeasonYear(y); setCalDraft(null); setRulesDraft(null); setLockAction(null); }}>
+-                      Σεζόν {y}{seasonLocked(sysState, y) ? " 🔒" : ""}
++                  {compSeasons.map((s) => (
++                    <button key={s.id} className={`round-pill ${controlSeasonYear === s.id ? "active" : ""}`} onClick={() => { setControlSeasonYear(s.id); resetDrafts(); }}>
++                      Σεζόν {s.name}{seasonLocked(sysState, s.id) ? " 🔒" : ""}
+                     </button>
+                   ))}
+                 </div>
++              ) : (
++                <p className="control-sub" style={{ marginTop: 10 }}>Η διοργάνωση δεν έχει ακόμα σεζόν.</p>
+               )}
+-              {controlSeasons.includes(controlSeasonYear) && (
++              {compSeasons.some((s) => s.id === controlSeasonYear) && (
+                 <div className="control-season">
+                   {renderSeasonRulesCard(controlSeasonYear)}
+                   {renderCalendarCard(controlSeasonYear)}
+@@ -7744,8 +7782,8 @@ export default function TournamentManager() {
+                 </div>
+               )}
+             </div>
+-              </>
+-            )}
++              );
++            })()}
+ 
+             {controlTab === "competitions" && (
+               <>
+@@ -8263,7 +8301,7 @@ export default function TournamentManager() {
+                 <label>Σεζόν</label>
+                 <select value={archiveSeason} onChange={(e) => setArchiveSeason(e.target.value)} style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
+                   <option value="">Όλες</option>
+-                  {archiveSeasonOptions.map((y) => <option key={y} value={y}>{y}</option>)}
++                  {archiveSeasonOptions.map((y) => <option key={y} value={y}>{sn(y)}</option>)}
+                 </select>
+               </div>
+               <div style={{ width: 180 }}>
+@@ -8291,7 +8329,7 @@ export default function TournamentManager() {
+                 </span>
+                 <span className="archive-meta">
+                   <span className="cal-note">
+-                    Σεζόν {Number(t.seasonYear) || seasonForDate(t.date) || "—"} · {competitionName(competitionsFrom(sysState), t.competitionId || DEFAULT_COMPETITION_ID)}
++                    Σεζόν {(Number(t.seasonYear) || seasonForDate(t.date)) ? sn(Number(t.seasonYear) || seasonForDate(t.date)) : "—"} · {competitionName(competitionsFrom(sysState), t.competitionId || DEFAULT_COMPETITION_ID)}
+                   </span>
+                   {formatDate(t.date)}
+                   <span className={`status-chip ${t.status === "Completed" ? "done" : "live"}`}>{t.status}</span>
+@@ -8421,7 +8459,7 @@ export default function TournamentManager() {
+                 if (view.length === 0) return null;
+                 return (
+                   <div style={{ marginBottom: 14 }}>
+-                    <label>Αγωνιστική ημερολογίου (σεζόν {seasonYear})</label>
++                    <label>Αγωνιστική ημερολογίου (σεζόν {sn(seasonYear)})</label>
+                     <select
+                       value={calendarEntryId || ""}
+                       onChange={(e) => applyCalendarEntry(view.find((x) => x.id === e.target.value) || null, seasonYear)}
+@@ -8463,9 +8501,9 @@ export default function TournamentManager() {
+                     }}
+                   />
+                 </div>
+-                <div style={{ width: 110 }}>
++                <div style={{ width: 160 }}>
+                   <label>Σεζόν</label>
+-                  <input type="number" value={seasonYear} onChange={(e) => setSeasonYear(Number(e.target.value) || seasonYear)} />
++                  {renderSeasonSelect(competitionId, seasonYear, setSeasonYear)}
+                 </div>
+               </div>
+               <div className="row" style={{ marginBottom: 14 }}>
+@@ -8473,7 +8511,7 @@ export default function TournamentManager() {
+                   <label>Διοργάνωση</label>
+                   <select
+                     value={competitionId}
+-                    onChange={(e) => setCompetitionId(e.target.value)}
++                    onChange={(e) => { setCompetitionId(e.target.value); setSeasonYear(currentSeasonId(sysState, e.target.value, controlSeasons)); }}
+                     style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+                   >
+                     {competitionsFrom(sysState).map((c) => (
+diff --git a/src/config/build.js b/src/config/build.js
+index 0b829ce..726230b 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-10-10.05";
++export const APP_BUILD_VERSION = "2026-10-10.06";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index 5ee571c..68e336d 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -7,6 +7,7 @@ export const CHANGELOG = [
+     { text: "Το Changelog έγινε πιο σύντομο: μία σύνοψη για κάθε ημέρα, και κάθε χρήστης βλέπει μόνο ό,τι τον αφορά.", audience: "all" },
+     { text: "Οι διαχειριστές συνδέονται με προσωπικό λογαριασμό (Google ή email). Τα στοιχεία επικοινωνίας των παικτών δεν είναι πλέον δημόσια προσβάσιμα.", audience: "all" },
+     { text: "Η σεζόν ενός τουρνουά ορίζεται μόνο από τον διαχειριστή και δεν εξαρτάται πια από την ημερομηνία· οι κανόνες μιας νέας σεζόν προέρχονται από την προηγούμενη σεζόν της ίδιας διοργάνωσης.", audience: "admin" },
++    { text: "Διαχείριση: οι σεζόν βρίσκονται πλέον μέσα σε κάθε διοργάνωση, και η «Νέα σεζόν» παίρνει ελεύθερο όνομα (π.χ. «2027» ή «2026–27»). Στο νέο τουρνουά η σεζόν επιλέγεται από τις σεζόν της διοργάνωσης. Νέα ρύθμιση «Βαθμολογία» ανά διοργάνωση.", audience: "admin" },
+   ]},
+   { date: "2026-10-09", items: [
+     { text: "Πανελλήνια Κατάταξη ELO από τις Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος, με δική της θέση στο μενού. Η «Βαθμολογία ELO» λέγεται πλέον «Κατάταξη ELO».", audience: "all" },
+diff --git a/src/lib/competitions.js b/src/lib/competitions.js
+index c395105..c86b872 100644
+--- a/src/lib/competitions.js
++++ b/src/lib/competitions.js
+@@ -69,3 +69,11 @@ export function competitionName(competitions, id) {
+   const c = (competitions || DEFAULT_COMPETITIONS).find((x) => x.id === id);
+   return c ? c.name : id || "—";
+ }
++
++/** 5B.2β: does this competition keep season standings (Βαθμολογία σεζόν)?
++ * Explicit setting, else only the home competition (Premier League). */
++export function competitionHasStandings(c) {
++  if (!c) return false;
++  if (typeof c.hasStandings === "boolean") return c.hasStandings;
++  return c.id === DEFAULT_COMPETITION_ID;
++}
