@@ -1,7 +1,7 @@
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-export const APP_BUILD_VERSION = "2026-10-10.03";
+export const APP_BUILD_VERSION = "2026-10-10.04";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -19,7 +19,7 @@ export const FEATURES_SUMMARY = [
   "Στατιστικά: παίκτης έναντι κάθε αντιπάλου, σερί, κατακτήσεις, πρωτοπορία, στατιστικά σεζόν, με φίλτρα περιόδου και διοργάνωσης.",
   "Ανακοινώσεις αποτελεσμάτων στο bgfed.gr μέσω RSS.",
   "Ελληνικά (προεπιλογή), με εναλλαγή σε Αγγλικά.",
-  "Ρόλοι Διαχειριστή και Επισκέπτη.",
+  "Ρόλοι Διαχειριστή (προσωπική σύνδεση με Google ή email) και Επισκέπτη.",
 ];
 
 // Plain-language description of how the app is built, for the "Τεχνικά
@@ -32,6 +32,10 @@ export const TECHNICAL_SUMMARY = [
   {
     title: "Πού αποθηκεύονται τα δεδομένα",
     body: "Όλα τα δεδομένα (παίκτες, τουρνουά, ELO, Season Standings) αποθηκεύονται στο Firebase / Firestore, μια υπηρεσία της Google. Οι αλλαγές αποθηκεύονται αμέσως, live, και είναι κοινές για όλους — δεν εξαρτώνται από τη συσκευή που χρησιμοποιεί κανείς.",
+  },
+  {
+    title: "Ποιος μπορεί να αλλάξει δεδομένα",
+    body: "Όλοι βλέπουν τα δημόσια στοιχεία (τουρνουά, βαθμολογίες, κατατάξεις). Αλλαγές κάνουν μόνο οι διαχειριστές, που συνδέονται με τον δικό τους λογαριασμό (Google ή email) μέσω του Firebase Authentication· ο έλεγχος γίνεται και από τους κανόνες της βάσης. Τα στοιχεία επικοινωνίας των παικτών φυλάσσονται χωριστά και τα βλέπουν μόνο οι διαχειριστές.",
   },
   {
     title: "Πού \"ζει\" online",

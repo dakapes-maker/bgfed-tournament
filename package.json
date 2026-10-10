@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint src api"
+    "lint": "eslint src api",
+    "test:rules": "node --test tests/firestore.rules.test.mjs"
   },
   "dependencies": {
     "firebase": "^10.13.2",
@@ -16,6 +17,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
     "@vitejs/plugin-react": "^4.3.1",
     "eslint": "^9.13.0",
     "eslint-plugin-react": "^7.37.2",

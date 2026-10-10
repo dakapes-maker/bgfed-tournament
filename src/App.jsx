@@ -13,7 +13,6 @@ import {
   Info,
   Check,
   Search,
-  Eye,
   Pencil,
   TrendingUp,
   ChevronDown,
@@ -22,7 +21,6 @@ import {
   Save,
   Award,
   Lock,
-  LogOut,
   Trash2,
   AlertTriangle,
   LayoutGrid,
@@ -30,8 +28,9 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import {
-  loadAdminPasswordStrict,
-  saveAdminPassword,
+  loadUserDocStrict,
+  loadContactsStrict,
+  saveContacts,
   saveRegistry,
   loadElo,
   saveElo,
@@ -54,7 +53,7 @@ import {
 
 import { APP_BUILD_VERSION, FEATURES_SUMMARY, TECHNICAL_SUMMARY } from "./config/build.js";
 import { changelogFor, changelogKey, formatChangelogDate } from "./config/changelog.js";
-import { ADMIN_UNLOCK_LOCALSTORAGE_KEY, WHATS_NEW_SEEN_KEY, LANG_STORAGE_KEY } from "./config/constants.js";
+import { WHATS_NEW_SEEN_KEY, LANG_STORAGE_KEY } from "./config/constants.js";
 import { TRANSLATIONS } from "./config/i18n.js";
 import { ELO_INITIAL, eloWinProbability, eloPointsAtStake, applyEloRoundBatch, buildEloRoundMatches, markEloApplied } from "./lib/elo.js";
 import {
@@ -125,6 +124,12 @@ import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
 import { PlayerTrendCharts } from "./components/charts.jsx";
 import { MoveToTrashControl, TrashRow } from "./components/trash.jsx";
 import { CalcuttaTab, FinanceTab } from "./components/finance.jsx";
+import { watchAuth, signOutUser, resendVerification, refreshVerification } from "./lib/auth.js";
+import { setPermissionUser } from "./lib/permissions.js";
+import { mergeContacts, stripPrivate, splitRegistry, contactsSummary, moveContacts } from "./lib/privateContacts.js";
+import { LoginDialog } from "./components/LoginDialog.jsx";
+import { AccountMenu, AccountNotice } from "./components/AccountMenu.jsx";
+import { ContactsMigrationCard } from "./components/ContactsMigrationCard.jsx";
 
 /* ---------------------------------------------------------------------- */
 /* Component                                                              */
@@ -141,17 +146,6 @@ export default function TournamentManager() {
   };
 
   const inIframe = useRef(isEmbeddedOnFederationSite()).current;
-  const initiallyUnlocked = useRef(
-    !inIframe &&
-      (() => {
-        try {
-          return window.localStorage.getItem(ADMIN_UNLOCK_LOCALSTORAGE_KEY) === "true";
-        } catch {
-          return false;
-        }
-      })()
-  ).current;
-  const [deviceUnlocked, setDeviceUnlocked] = useState(initiallyUnlocked);
   const [whatsNewSeen, setWhatsNewSeen] = useState(null); // last build whose changelog was opened ("" = never); null = unknown → no dot
   const [aboutTab, setAboutTab] = useState("features");
   const [expandedMatch, setExpandedMatch] = useState(null);
@@ -190,95 +184,28 @@ export default function TournamentManager() {
     }
   }
   // #endregion Κατάσταση: βασικά, γλώσσα, «Σχετικά», Στατιστικά
-  // #region Διαχειριστής / κωδικός
-  const [role, setRole] = useState(initiallyUnlocked ? "admin" : "visitor"); // admin | visitor
-  const isAdmin = role === "admin";
+  // #region Διαχειριστής / σύνδεση
+  // Sign-in with Firebase Authentication (5A). An administrator is a signed-in
+  // user with a verified email whose users/{uid} has role "admin" — the same
+  // test the Firestore rules make. While this is being worked out the app
+  // behaves as for a visitor, so no admin screen flashes up.
+  const [authUser, setAuthUser] = useState(null); // { uid, email, emailVerified } or null
+  const [authRights, setAuthRights] = useState("out"); // out | checking | unverified | none | admin | error
+  const [adminDataReady, setAdminDataReady] = useState(false); // private contacts joined into the registry
+  const [showLogin, setShowLogin] = useState(false);
+  const isAdmin = authRights === "admin" && adminDataReady;
   // Red dot on «Σχετικά»: only for changelog lines this user can see that are
   // newer than the last build whose changelog they opened.
   const hasUnseenUpdate = whatsNewSeen !== null && changelogFor(isAdmin).some((e) => changelogKey(e) > whatsNewSeen);
-  const [adminPasswordPrompt, setAdminPasswordPrompt] = useState(false);
-  const [adminPasswordInput, setAdminPasswordInput] = useState("");
-  const [adminPasswordError, setAdminPasswordError] = useState("");
-  const [showChangePassword, setShowChangePassword] = useState(false);
-  const [changePwCurrent, setChangePwCurrent] = useState("");
-  const [changePwNew, setChangePwNew] = useState("");
-  const [changePwError, setChangePwError] = useState("");
 
-  /** Reads the admin password strictly. A failed read or a missing password
-   * never lets anyone in — there is no built-in default any more. */
-  async function readAdminPassword() {
+  async function logoutAdmin() {
     try {
-      return { stored: await loadAdminPasswordStrict() };
+      await signOutUser();
     } catch {
-      return { error: "Η βάση δεν διαβάστηκε — δοκίμασε ξανά." };
+      /* the listener below still sees the result */
     }
   }
-
-  async function submitAdminPassword() {
-    const { stored, error } = await readAdminPassword();
-    if (error) {
-      setAdminPasswordError(error);
-      return;
-    }
-    if (!stored) {
-      setAdminPasswordError("Δεν έχει οριστεί κωδικός διαχειριστή.");
-      return;
-    }
-    if (adminPasswordInput === stored) {
-      setRole("admin");
-      setAdminPasswordPrompt(false);
-      setAdminPasswordInput("");
-      setAdminPasswordError("");
-      try {
-        window.localStorage.setItem(ADMIN_UNLOCK_LOCALSTORAGE_KEY, "true");
-      } catch {
-        /* best-effort */
-      }
-      setDeviceUnlocked(true);
-    } else {
-      setAdminPasswordError("Wrong password.");
-    }
-  }
-
-  function logoutAdmin() {
-    setRole("visitor");
-    setDeviceUnlocked(false);
-    try {
-      window.localStorage.removeItem(ADMIN_UNLOCK_LOCALSTORAGE_KEY);
-    } catch {
-      /* best-effort */
-    }
-  }
-
-  async function submitChangePassword() {
-    const { stored, error } = await readAdminPassword();
-    if (error) {
-      setChangePwError(error);
-      return;
-    }
-    if (!stored) {
-      setChangePwError("Δεν έχει οριστεί κωδικός διαχειριστή.");
-      return;
-    }
-    if (changePwCurrent !== stored) {
-      setChangePwError("Current password is wrong.");
-      return;
-    }
-    if (!changePwNew.trim()) {
-      setChangePwError("New password can't be empty.");
-      return;
-    }
-    if (writesBlockedRef.current || !(await saveAdminPassword(changePwNew.trim()))) {
-      setChangePwError("Ο κωδικός ΔΕΝ άλλαξε — η αποθήκευση απέτυχε. Δοκίμασε ξανά.");
-      return;
-    }
-    setShowChangePassword(false);
-    setChangePwCurrent("");
-    setChangePwNew("");
-    setChangePwError("");
-    showToast("Password changed.");
-  }
-  // #endregion Διαχειριστής / κωδικός
+  // #endregion Διαχειριστής / σύνδεση
 
   // #region Κατάσταση: τουρνουά, Διαχείριση, εισαγωγές, σεζόν & ημερολόγιο, σύλλογοι
   const [phase, setPhase] = useState("dashboard"); // dashboard | archive | setup | tournament | finished | season | players | elo
@@ -402,7 +329,31 @@ export default function TournamentManager() {
     if (!ok) reportSaveFailure(what);
     return !!ok;
   }
-  const saveRegistryChecked = (data) => guardedSave(saveRegistry, "Μητρώο παικτών", data);
+
+  // Players' private details (5A). contactsRef: what was read for this
+  // administrator (none | loaded | failed). registrySplitRef: the public
+  // registry no longer holds private fields (contactsVersion: 1).
+  const contactsRef = useRef({ status: "none", data: null });
+  const registrySplitRef = useRef(false);
+
+  /** Saves the registry. Once split, the public part goes to meta/registry
+   * and the private part to private/contacts — never from details that were
+   * not read successfully, which would wipe everybody's contacts. */
+  async function saveRegistryChecked(data) {
+    if (!(registrySplitRef.current || data.contactsVersion === 1)) {
+      return guardedSave(saveRegistry, "Μητρώο παικτών", data);
+    }
+    if (contactsRef.current.status !== "loaded") {
+      reportSaveFailure("Μητρώο παικτών — δεν επιχειρήθηκε, γιατί τα στοιχεία επικοινωνίας δεν διαβάστηκαν");
+      return false;
+    }
+    const { publicRegistry, contacts } = splitRegistry(data, contactsRef.current.data);
+    if (!(await guardedSave(saveContacts, "Στοιχεία επικοινωνίας", contacts))) return false;
+    contactsRef.current = { status: "loaded", data: contacts };
+    const ok = await guardedSave(saveRegistry, "Μητρώο παικτών", publicRegistry);
+    if (ok) registrySplitRef.current = true;
+    return ok;
+  }
   const saveEloChecked = (data) => guardedSave(saveElo, "Κατάταξη ELO", data);
   const saveIndexChecked = (list) => guardedSave(saveIndex, "Κατάλογος τουρνουά", list);
   const saveFeedItemsChecked = (items) => guardedSave(saveFeedItems, "RSS feed", items);
@@ -496,6 +447,85 @@ export default function TournamentManager() {
     }
   }
 
+  // Sign-in state (5A): who is signed in and whether users/{uid} makes them
+  // an administrator. Also clears the old shared-password flag that earlier
+  // builds left in this browser (best effort).
+  useEffect(() => {
+    try {
+      window.localStorage.removeItem("bgfed-admin-unlocked");
+    } catch {
+      /* ignore */
+    }
+    let seq = 0;
+    return watchAuth(async (user) => {
+      const mine = ++seq;
+      if (!user) {
+        setAuthUser(null);
+        setAuthRights("out");
+        return;
+      }
+      setAuthUser({ uid: user.uid, email: user.email, emailVerified: user.emailVerified });
+      if (!user.emailVerified) {
+        setAuthRights("unverified");
+        return;
+      }
+      // A token refresh re-checks the rights without hiding admin screens meanwhile.
+      setAuthRights((r) => (r === "admin" ? r : "checking"));
+      let rights;
+      try {
+        const d = await loadUserDocStrict(user.uid);
+        rights = d && d.role === "admin" ? "admin" : "none";
+      } catch {
+        rights = "error";
+      }
+      if (mine === seq) setAuthRights(rights);
+    });
+  }, []);
+
+  // Every database write asks can() with the current user (firebase.js).
+  useEffect(() => {
+    setPermissionUser(authUser ? { uid: authUser.uid, email: authUser.email, isAdmin } : null);
+  }, [authUser, isAdmin]);
+
+  // An administrator reads private/contacts (strictly) and works with the
+  // joined registry; a visitor never reads it. If the read FAILS, every
+  // write is blocked: saving the registry then would wipe everybody's
+  // details. Signing out forgets them again.
+  useEffect(() => {
+    if (authRights !== "admin") {
+      if (adminDataReady && authRights !== "checking") {
+        setAdminDataReady(false);
+        contactsRef.current = { status: "none", data: null };
+        setRegistry((r) => (registrySplitRef.current ? stripPrivate(r) : r));
+      }
+      return;
+    }
+    if (!registryLoaded || adminDataReady) return;
+    let cancelled = false;
+    (async () => {
+      let contacts = null;
+      try {
+        contacts = await loadContactsStrict();
+      } catch {
+        if (cancelled) return;
+        contactsRef.current = { status: "failed", data: null };
+        writesBlockedRef.current = true;
+        setStartupReadFailed(true);
+        reportSaveFailure("Στοιχεία επικοινωνίας — δεν διαβάστηκαν· όλες οι αποθηκεύσεις μπλοκαρίστηκαν. Ανανέωσε τη σελίδα.");
+        setRegistry((r) => mergeContacts(r, null));
+        setAdminDataReady(true);
+        return;
+      }
+      if (cancelled) return;
+      contactsRef.current = { status: "loaded", data: contacts };
+      setRegistry((r) => mergeContacts(r, registrySplitRef.current ? contacts : null));
+      setAdminDataReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authRights, registryLoaded, adminDataReady]);
+
   useEffect(() => {
     async function init() {
       // Every start-up read is STRICT: a read that fails (offline, timeout)
@@ -512,6 +542,7 @@ export default function TournamentManager() {
         const sysDoc = await fetchTournamentDataStrict(SYS_STATE_ID);
         sys = sysDoc && typeof sysDoc === "object" ? sysDoc : {};
         registryData = await loadRegistryStrict();
+        registrySplitRef.current = registryData.contactsVersion === 1;
         season2026 = await loadSeasonStrict(2026);
         eloStart = await loadEloStrict();
       } catch {
@@ -1286,9 +1317,11 @@ export default function TournamentManager() {
     // Every read is strict: a backup with a silently missing part is worse
     // than no backup, because it would also reset the "last export" clock
     // that the migrations rely on.
-    let registryData, eloData2, index, seasons, tournaments, trashList, trashedTournaments, sysNow, importsBackup;
+    let registryData, privateContacts, eloData2, index, seasons, tournaments, trashList, trashedTournaments, sysNow, importsBackup;
     try {
       registryData = await loadRegistryStrict();
+      // Players' private details (5A): null before the move.
+      privateContacts = await loadContactsStrict();
       eloData2 = await loadEloStrict();
       index = await loadIndexStrict();
       const years = await listSeasonYearsStrict();
@@ -1319,6 +1352,7 @@ export default function TournamentManager() {
     const fullBackup = {
       exportedAt: exportedAtIso,
       registry: registryData,
+      privateContacts,
       elo: eloData2,
       archiveIndex: index,
       seasons,
@@ -1454,7 +1488,14 @@ export default function TournamentManager() {
           return;
         }
         const failed = [];
-        if (!(await saveRegistryChecked(data.registry))) failed.push("μητρώο");
+        // A backup made after the move carries the private details apart
+        // (privateContacts); join them back so that the save below writes
+        // both parts. Older backups hold them inside the registry.
+        const restoredRegistry =
+          data.registry.contactsVersion === 1 && data.privateContacts && data.privateContacts.players
+            ? mergeContacts(data.registry, data.privateContacts)
+            : data.registry;
+        if (!(await saveRegistryChecked(restoredRegistry))) failed.push("μητρώο");
         if (!(await saveEloChecked(data.elo))) failed.push("ELO");
         if (!(await saveIndexChecked(data.archiveIndex))) failed.push("κατάλογος τουρνουά");
         for (const [year, season] of Object.entries(data.seasons || {})) {
@@ -1487,8 +1528,9 @@ export default function TournamentManager() {
             else reportSaveFailure("Επαναφορά backup — δεν γράφτηκαν οι ρυθμίσεις (σύλλογοι, διοργανώσεις, κανόνες, ημερολόγια, κλειδώματα)");
           }
         }
-        setPersonLookup(data.registry);
-        setRegistry(data.registry);
+        const restoredInMemory = mergeContacts(restoredRegistry, null);
+        setPersonLookup(restoredInMemory);
+        setRegistry(restoredInMemory);
         setEloData(data.elo);
         setArchive(data.archiveIndex);
         setEloTimeline(null);
@@ -1766,6 +1808,53 @@ export default function TournamentManager() {
       setIdentityDecisions({});
     } finally {
       setIdentityBusy(false);
+    }
+  }
+
+  // «Μεταφορά στοιχείων επικοινωνίας» (5A): preview, Export of the last
+  // 24 hours, then moveContacts (write, verify, and only then strip the
+  // public registry). Works from a fresh strict read of the registry.
+  const [contactsPreview, setContactsPreview] = useState(null);
+  const [contactsBusy, setContactsBusy] = useState(false);
+
+  async function applyContactsMigration() {
+    if (contactsBusy || registrySplitRef.current) return;
+    const last = sysState.lastExportAt ? new Date(sysState.lastExportAt).getTime() : 0;
+    if (Date.now() - last > 24 * 3600 * 1000) {
+      showToast("Κάνε πρώτα Export All Data (των τελευταίων 24 ωρών).");
+      return;
+    }
+    setContactsBusy(true);
+    try {
+      let fresh;
+      try {
+        fresh = await loadRegistryStrict();
+      } catch {
+        showToast("Το μητρώο δεν διαβάστηκε — δεν άλλαξε τίποτα. Δοκίμασε ξανά.");
+        return;
+      }
+      if (fresh.contactsVersion === 1) {
+        showToast("Η μεταφορά έχει ήδη γίνει.");
+        return;
+      }
+      const result = await moveContacts(mergeContacts(fresh, null), {
+        saveContacts: (doc) => guardedSave(saveContacts, "Στοιχεία επικοινωνίας", doc),
+        loadContactsStrict,
+        saveRegistry: (r) => guardedSave(saveRegistry, "Μητρώο παικτών", r),
+      });
+      if (!result.ok) {
+        reportSaveFailure(`Μεταφορά στοιχείων επικοινωνίας — ${result.message}`);
+        return;
+      }
+      registrySplitRef.current = true;
+      contactsRef.current = { status: "loaded", data: result.contacts };
+      const joined = mergeContacts(result.publicRegistry, result.contacts);
+      setPersonLookup(joined);
+      setRegistry(joined);
+      setContactsPreview(null);
+      showToast("Τα στοιχεία επικοινωνίας μεταφέρθηκαν σε ιδιωτικό έγγραφο.");
+    } finally {
+      setContactsBusy(false);
     }
   }
 
@@ -6176,63 +6265,27 @@ export default function TournamentManager() {
           <button className="btn-ghost" onClick={toggleLang} title="Switch language" style={{ fontWeight: 700, fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 20 }}>
             {lang === "el" ? "EN" : "ΕΛ"}
           </button>
-          {!inIframe && (
-            <div className="role-toggle">
-              <button
-                className={`role-btn ${isAdmin ? "active" : ""}`}
-                onClick={() => {
-                  if (deviceUnlocked) {
-                    setRole("admin");
-                  } else {
-                    setAdminPasswordPrompt(true);
-                    setAdminPasswordError("");
-                  }
-                }}
-              >
-                <Pencil size={12} style={{ marginRight: 4 }} /> Admin
-              </button>
-              <button className={`role-btn ${!isAdmin ? "active" : ""}`} onClick={() => setRole("visitor")}>
-                <Eye size={12} style={{ marginRight: 4 }} /> Visitor
-              </button>
-            </div>
+          {!inIframe && !authUser && (
+            <button className="btn-ghost" onClick={() => setShowLogin(true)} style={{ border: "1px solid var(--border)", borderRadius: 20 }}>
+              <Lock size={14} /> Σύνδεση
+            </button>
           )}
-          {!inIframe && isAdmin && (
-            <>
-              <button className="btn-ghost" onClick={() => setShowChangePassword(true)} title="Change admin password">
-                <Lock size={14} />
-              </button>
-              <button className="btn-ghost" onClick={logoutAdmin} title="Log out of Admin on this device">
-                <LogOut size={14} />
-              </button>
-            </>
-          )}
+          {!inIframe && authUser && <AccountMenu email={authUser.email || authUser.uid} onSignOut={logoutAdmin} />}
         </div>
       </div>
       {/* #endregion Πάνω μπάρα */}
 
-      {/* #region Διάλογος κωδικού διαχειριστή */}
-      {!inIframe && adminPasswordPrompt && (
-        <div className="modal-overlay" onClick={() => setAdminPasswordPrompt(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Admin password</p>
-            <input
-              type="password"
-              value={adminPasswordInput}
-              onChange={(e) => setAdminPasswordInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submitAdminPassword()}
-              placeholder="Password"
-              autoFocus
-              style={{ marginBottom: 10 }}
-            />
-            {adminPasswordError && <p style={{ color: "var(--accent)", fontSize: 13, margin: "0 0 10px 0" }}>{adminPasswordError}</p>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button className="btn-secondary" onClick={() => setAdminPasswordPrompt(false)}>Cancel</button>
-              <button className="btn-primary" onClick={submitAdminPassword}>Unlock</button>
-            </div>
-          </div>
-        </div>
+      {/* #region Σύνδεση: διάλογος και μηνύματα λογαριασμού */}
+      {!inIframe && showLogin && !authUser && <LoginDialog onClose={() => setShowLogin(false)} />}
+      {!inIframe && authUser && (
+        <AccountNotice
+          state={authRights}
+          uid={authUser.uid}
+          onResend={resendVerification}
+          onRefresh={refreshVerification}
+        />
       )}
-      {/* #endregion Διάλογος κωδικού διαχειριστή */}
+      {/* #endregion Σύνδεση: διάλογος και μηνύματα λογαριασμού */}
 
       {/* #region Οθόνη: Σχετικά (phase "about") */}
       {phase === "about" && (
@@ -6618,7 +6671,7 @@ export default function TournamentManager() {
       )}
       {/* #endregion Οθόνη: Στατιστικά (phase "h2h") */}
 
-      {/* #region Διάλογοι: σύνοψη ανακοίνωσης, ολοκλήρωση γύρου, αλλαγή κωδικού */}
+      {/* #region Διάλογοι: σύνοψη ανακοίνωσης, ολοκλήρωση γύρου */}
       {recapText !== null && (
         <div className="modal-overlay" onClick={() => setRecapText(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 680, width: "92vw", maxHeight: "85vh", overflowY: "auto", padding: "28px 32px" }}>
@@ -6693,24 +6746,7 @@ export default function TournamentManager() {
           </div>
         </div>
       )}
-
-      {!inIframe && showChangePassword && (
-        <div className="modal-overlay" onClick={() => setShowChangePassword(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
-            <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Change admin password</p>
-            <label>Current password</label>
-            <input type="password" value={changePwCurrent} onChange={(e) => setChangePwCurrent(e.target.value)} style={{ marginBottom: 10 }} />
-            <label>New password</label>
-            <input type="password" value={changePwNew} onChange={(e) => setChangePwNew(e.target.value)} style={{ marginBottom: 10 }} />
-            {changePwError && <p style={{ color: "var(--accent)", fontSize: 13, margin: "0 0 10px 0" }}>{changePwError}</p>}
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button className="btn-secondary" onClick={() => setShowChangePassword(false)}>Cancel</button>
-              <button className="btn-primary" onClick={submitChangePassword}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* #endregion Διάλογοι: σύνοψη ανακοίνωσης, ολοκλήρωση γύρου, αλλαγή κωδικού */}
+      {/* #endregion Διάλογοι: σύνοψη ανακοίνωσης, ολοκλήρωση γύρου */}
 
       {/* #region Οθόνη: Βαθμολογία (phase "season") */}
       {/* SEASON STANDINGS */}
@@ -7672,7 +7708,7 @@ export default function TournamentManager() {
                 </button>
                 <button className="dashboard-card" onClick={() => setControlTab("settings")}>
                   <span className="dashboard-card-title">Ρυθμίσεις</span>
-                  <span className="dashboard-card-desc">RSS feed, κωδικός admin</span>
+                  <span className="dashboard-card-desc">RSS feed, λογαριασμός</span>
                 </button>
               </div>
               </>
@@ -7978,6 +8014,15 @@ export default function TournamentManager() {
               <>
             <div className="card control-section">
               <h2 className="control-h">Παίκτες</h2>
+              <ContactsMigrationCard
+                moved={registry.contactsVersion === 1}
+                preview={contactsPreview}
+                busy={contactsBusy}
+                exportFresh={!!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000}
+                onPreview={() => setContactsPreview(contactsSummary(registry))}
+                onApply={applyContactsMigration}
+                onCancel={() => setContactsPreview(null)}
+              />
               {(() => {
                 const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
                 const sortedPersons = Object.entries(registry.players).sort((a, b) => a[1].name.localeCompare(b[1].name, "el"));
@@ -8168,9 +8213,10 @@ export default function TournamentManager() {
             {!inIframe && (
               <div className="card control-section">
                 <h2 className="control-h">Ασφάλεια</h2>
-                <button className="btn-secondary" onClick={() => setShowChangePassword(true)}>
-                  <Lock size={15} /> Αλλαγή κωδικού admin
-                </button>
+                <p className="control-sub" style={{ margin: 0 }}>
+                  Συνδεδεμένος ως <strong>{authUser ? authUser.email || authUser.uid : "—"}</strong>. Κάθε διαχειριστής μπαίνει με τον δικό του λογαριασμό (Google ή email).
+                  Η λίστα διαχειριστών αλλάζει μόνο από το Firebase console (συλλογή <code>users</code>).
+                </p>
               </div>
             )}
               </>
