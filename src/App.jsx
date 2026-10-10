@@ -237,6 +237,7 @@ export default function TournamentManager() {
   const [controlSeasons, setControlSeasons] = useState([]); // seasons listed on the admin page
   const [controlTab, setControlTab] = useState("overview"); // admin page sub-menu
   const [controlCompId, setControlCompId] = useState(DEFAULT_COMPETITION_ID); // 5B.2β: competition whose seasons are shown
+  const [compPageOpen, setCompPageOpen] = useState(false); // 5B.2γ: the competition page (Διαχείριση → Διοργανώσεις) is open
   const [lockOverrideId, setLockOverrideId] = useState(null); // tournament allowed to change although its season is locked (this session)
   const [lockTyped, setLockTyped] = useState(""); // typed year for lock / unlock confirmations
   const [lockAction, setLockAction] = useState(null); // { kind: "lock" | "unlock" | "tournament", year }
@@ -4936,6 +4937,18 @@ export default function TournamentManager() {
     if (await saveSysState({ clubs: next })) setSysState((st) => ({ ...st, clubs: next }));
   }
 
+  /** 5B.2γ: open a competition's page on its current season. */
+  function openCompetitionPage(compId, seasonId) {
+    setControlCompId(compId);
+    setControlSeasonYear(seasonId ?? currentSeasonId(sysState, compId, controlSeasons));
+    setNewSeasonYear(null);
+    setCalDraft(null);
+    setRulesDraft(null);
+    setLockAction(null);
+    setCompPageOpen(true);
+    setControlTab("competitions");
+  }
+
   function renderCompetitionsCard() {
     const comps = competitionsFrom(sysState);
     if (sysState.competitionsVersion !== 2) {
@@ -4968,7 +4981,7 @@ export default function TournamentManager() {
               const editing = compDraft && compDraft.id === c.id;
               return (
                 <tr key={c.id}>
-                  <td>{editing ? <input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} /> : c.name}</td>
+                  <td>{editing ? <input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} /> : <button className="history-link" title="Άνοιγμα διοργάνωσης: σεζόν, κανόνες, ημερολόγιο" onClick={() => openCompetitionPage(c.id)}>{c.name}</button>}</td>
                   <td>{clubDisplay(sysState, c.ownerClubId, "—")}</td>
                   <td>{c.countsElo === false ? "δεν μετράει" : c.ownerClubId === sysState.homeClubId ? "ELO Ομοσπονδίας" : clubsFrom(sysState).find((x) => x.id === c.ownerClubId)?.organiserOnly ? "Πανελλήνια ELO" : "—"}</td>
                   <td><input type="checkbox" checked={competitionHasStandings(c)} onChange={() => toggleCompetitionStandings(c)} title="Έχει Βαθμολογία σεζόν" /></td>
@@ -7642,7 +7655,7 @@ export default function TournamentManager() {
 
             <div className="tabs control-tabs">
               <button className={`tab ${controlTab === "overview" ? "active" : ""}`} onClick={() => setControlTab("overview")}>Επισκόπηση</button>
-              <button className={`tab ${controlTab === "competitions" ? "active" : ""}`} onClick={() => setControlTab("competitions")}>Διοργανώσεις, σεζόν & σύλλογοι</button>
+              <button className={`tab ${controlTab === "competitions" ? "active" : ""}`} onClick={() => { setControlTab("competitions"); setCompPageOpen(false); }}>Διοργανώσεις & σύλλογοι</button>
               <button className={`tab ${controlTab === "players" ? "active" : ""}`} onClick={() => setControlTab("players")}>Παίκτες</button>
               <button className={`tab ${controlTab === "data" ? "active" : ""}`} onClick={() => setControlTab("data")}>Δεδομένα</button>
               <button className={`tab ${controlTab === "backup" ? "active" : ""}`} onClick={() => setControlTab("backup")}>Backup</button>
@@ -7669,7 +7682,7 @@ export default function TournamentManager() {
                           <dt>Σεζόν {sn(y)}</dt>
                           <dd style={{ color: "#9a5b00" }}>
                             Έχει τελειώσει αλλά δεν έχει κλείσει —{" "}
-                            <button className="history-link" onClick={() => { setControlCompId(seasonCompetitionId(sysState, y)); setControlSeasonYear(y); setControlTab("competitions"); }}>κλείσιμο σεζόν</button>
+                            <button className="history-link" onClick={() => openCompetitionPage(seasonCompetitionId(sysState, y), y)}>κλείσιμο σεζόν</button>
                           </dd>
                         </React.Fragment>
                       ))}
@@ -7705,11 +7718,11 @@ export default function TournamentManager() {
             })()}
 
               <div className="dashboard-grid" style={{ marginTop: 4 }}>
-                <button className="dashboard-card" onClick={() => setControlTab("competitions")}>
+                <button className="dashboard-card" onClick={() => openCompetitionPage(DEFAULT_COMPETITION_ID)}>
                   <span className="dashboard-card-title">Σεζόν & ημερολόγιο</span>
-                  <span className="dashboard-card-desc">Νέα σεζόν, κανόνες Βαθμολογίας, αγωνιστικές</span>
+                  <span className="dashboard-card-desc">Premier League: σεζόν, κανόνες Βαθμολογίας, αγωνιστικές</span>
                 </button>
-                <button className="dashboard-card" onClick={() => setControlTab("competitions")}>
+                <button className="dashboard-card" onClick={() => { setControlTab("competitions"); setCompPageOpen(false); }}>
                   <span className="dashboard-card-title">Διοργανώσεις & σύλλογοι</span>
                   <span className="dashboard-card-desc">Διοργανώσεις, λίστα συλλόγων, ο σύλλογός σου</span>
                 </button>
@@ -7733,27 +7746,59 @@ export default function TournamentManager() {
               </>
             )}
 
-            {controlTab === "competitions" && (() => {
-              // 5B.2β: seasons live inside their competition.
-              const compSeasons = seasonsOfCompetition(sysState, controlCompId, controlSeasons).slice().reverse();
+            {controlTab === "competitions" && compPageOpen && (() => {
+              // 5B.2γ: the competition page — its details, its seasons and, for
+              // the chosen season, rules, calendar and closing.
+              const comp = competitionsFrom(sysState).find((c) => c.id === controlCompId);
+              if (!comp) return null;
+              const compSeasons = seasonsOfCompetition(sysState, comp.id, controlSeasons).slice().reverse();
               const resetDrafts = () => { setCalDraft(null); setRulesDraft(null); setLockAction(null); };
+              const inComp = (t) => (t.competitionId || DEFAULT_COMPETITION_ID) === comp.id;
+              const eloLabel = comp.countsElo === false ? "δεν μετράει" : comp.ownerClubId === sysState.homeClubId ? "ELO Ομοσπονδίας" : clubsFrom(sysState).find((x) => x.id === comp.ownerClubId)?.organiserOnly ? "Πανελλήνια ELO" : "—";
               return (
             <div className="card control-section">
-              <h2 className="control-h">Σεζόν διοργάνωσης</h2>
-              <p className="control-sub">Διάλεξε διοργάνωση και σεζόν για τους κανόνες Βαθμολογίας, το ημερολόγιο και το κλείσιμό της. Η σεζόν δεν δένεται με ημερομηνίες: κάθε τουρνουά δηλώνει τη σεζόν του.</p>
-              <div className="round-pills" style={{ marginBottom: 10 }}>
-                {competitionsFrom(sysState).map((c) => (
-                  <button key={c.id} className={`round-pill ${controlCompId === c.id ? "active" : ""}`} onClick={() => { setControlCompId(c.id); setControlSeasonYear(currentSeasonId(sysState, c.id, controlSeasons)); setNewSeasonYear(null); resetDrafts(); }}>
-                    {c.name}
-                  </button>
-                ))}
-              </div>
+              <button className="btn-ghost" style={{ padding: "2px 0", marginBottom: 6 }} onClick={() => { setCompPageOpen(false); setNewSeasonYear(null); resetDrafts(); }}>← Όλες οι διοργανώσεις</button>
+              <h2 className="control-h">{comp.name}</h2>
+              <dl className="details-list" style={{ marginTop: 8 }}>
+                <dt>Σύλλογος</dt><dd>{clubDisplay(sysState, comp.ownerClubId, "—")}</dd>
+                <dt>ELO</dt><dd>{eloLabel}</dd>
+                <dt>Βαθμολογία σεζόν</dt>
+                <dd>
+                  <label style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    <input type="checkbox" checked={competitionHasStandings(comp)} onChange={() => toggleCompetitionStandings(comp)} /> {competitionHasStandings(comp) ? "Ναι" : "Όχι"}
+                  </label>
+                </dd>
+                <dt>Τουρνουά</dt><dd>{archive.filter(inComp).length}</dd>
+              </dl>
+
+              <h3 style={{ margin: "18px 0 6px 0" }}>Σεζόν</h3>
+              {compSeasons.length > 0 ? (
+                <table className="cal-table">
+                  <thead><tr><th>Σεζόν</th><th>Κατάσταση</th><th>Τουρνουά</th><th></th></tr></thead>
+                  <tbody>
+                    {compSeasons.map((s) => (
+                      <tr key={s.id} style={controlSeasonYear === s.id ? { background: "var(--accent-soft, #f3efe6)" } : undefined}>
+                        <td><strong>{s.name}</strong></td>
+                        <td>{seasonLocked(sysState, s.id) ? "Κλειστή 🔒" : "Ανοιχτή"}</td>
+                        <td>{archive.filter((t) => inComp(t) && Number(t.seasonYear) === s.id).length}</td>
+                        <td>
+                          {controlSeasonYear === s.id ? <span className="cal-note">επιλεγμένη</span> : (
+                            <button className="btn-ghost" style={{ padding: "2px 6px" }} onClick={() => { setControlSeasonYear(s.id); resetDrafts(); }}>Άνοιγμα</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="control-sub">Η διοργάνωση δεν έχει ακόμα σεζόν.</p>
+              )}
               {newSeasonYear === null ? (
-                <button className="btn-secondary" onClick={() => setNewSeasonYear("")}>
+                <button className="btn-secondary" style={{ marginTop: 10 }} onClick={() => setNewSeasonYear("")}>
                   <Plus size={14} /> Νέα σεζόν
                 </button>
               ) : (
-                <div className="row" style={{ alignItems: "flex-end" }}>
+                <div className="row" style={{ alignItems: "flex-end", marginTop: 10 }}>
                   <div style={{ width: 180 }}>
                     <label>Όνομα σεζόν</label>
                     <input type="text" value={newSeasonYear} placeholder="π.χ. 2027 ή 2026–27" onChange={(e) => setNewSeasonYear(e.target.value)} />
@@ -7763,19 +7808,8 @@ export default function TournamentManager() {
                   <button className="btn-primary" onClick={createSeason} disabled={!String(newSeasonYear).trim()}>Δημιουργία</button>
                 </div>
               )}
-              {compSeasons.length > 0 ? (
-                <div className="round-pills" style={{ marginTop: 12 }}>
-                  {compSeasons.map((s) => (
-                    <button key={s.id} className={`round-pill ${controlSeasonYear === s.id ? "active" : ""}`} onClick={() => { setControlSeasonYear(s.id); resetDrafts(); }}>
-                      Σεζόν {s.name}{seasonLocked(sysState, s.id) ? " 🔒" : ""}
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="control-sub" style={{ marginTop: 10 }}>Η διοργάνωση δεν έχει ακόμα σεζόν.</p>
-              )}
               {compSeasons.some((s) => s.id === controlSeasonYear) && (
-                <div className="control-season">
+                <div className="control-season" style={{ marginTop: 16 }}>
                   {renderSeasonRulesCard(controlSeasonYear)}
                   {renderCalendarCard(controlSeasonYear)}
                   {renderSeasonCloseCard(controlSeasonYear)}
@@ -7785,7 +7819,7 @@ export default function TournamentManager() {
               );
             })()}
 
-            {controlTab === "competitions" && (
+            {controlTab === "competitions" && !compPageOpen && (
               <>
             <div className="card control-section">
               <h2 className="control-h">Διοργανώσεις & σύλλογοι</h2>
