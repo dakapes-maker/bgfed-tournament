@@ -4,7 +4,9 @@ rules_version = '2';
 // Δημοσιεύονται χειροκίνητα από το Firebase console (Firestore → Rules),
 // όχι με firebase deploy. Δημόσια ανάγνωση, εγγραφή μόνο από διαχειριστές.
 // Διαχειριστής = συνδεδεμένος, με επιβεβαιωμένο email, και users/{uid}
-// με role "admin" (η λίστα αλλάζει μόνο από το console).
+// με role "admin" (υπερ-διαχειριστής) ή "clubAdmin" (διαχειριστής συλλόγου,
+// 5C· οι περιορισμοί ανά σύλλογο επιβάλλονται στην εφαρμογή — «χρυσή τομή»).
+// Η λίστα αλλάζει μόνο από το console.
 // Ρητή απαρίθμηση διαδρομών: ό,τι δεν αναφέρεται εδώ απορρίπτεται.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -12,7 +14,7 @@ service cloud.firestore {
     function isAdmin() {
       return request.auth != null
         && request.auth.token.email_verified == true
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ["admin", "clubAdmin"];
     }
 
     // Μητρώο (δημόσιο μέρος), ELO, RSS feed (το διαβάζει και το /api/feed
