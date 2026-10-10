@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Plus, X, Info } from "lucide-react";
 
-import { BUYIN_FULL, RUNNER_UP_PRIZE, CUP_COST } from "../config/constants.js";
+import { DEFAULT_FINANCE } from "../lib/competitions.js";
 import { computeTournamentFinance, computeSideBetResult, computeCalcuttaResult } from "../lib/finance.js";
 
 export function CalcuttaTab({ players, totalRounds, entries, onAdd, onRemove }) {
@@ -98,8 +98,11 @@ export function CalcuttaTab({ players, totalRounds, entries, onAdd, onRemove }) 
 export function FinanceTab({
   players, totalRounds, isAdmin, onToggleDiscount, onChangeDiscountAmount, onToggleCup,
   sideBets, onAddSideBet, onRemoveSideBet, onToggleSideBetParticipant, onChangeSideBetAmount,
+  rules = DEFAULT_FINANCE, orgLabel = "Federation",
 }) {
-  const f = computeTournamentFinance(players, totalRounds);
+  const r = { ...DEFAULT_FINANCE, ...(rules || {}) };
+  const BUYIN_FULL = r.buyIn, RUNNER_UP_PRIZE = r.runnerUpPrize, CUP_COST = r.cupCost;
+  const f = computeTournamentFinance(players, totalRounds, r);
   const playersById = {};
   players.forEach((p) => (playersById[p.id] = p));
   const sideBetsTotal = sideBets.reduce((sum, bet) => sum + computeSideBetResult(bet, playersById).pool, 0);
@@ -111,7 +114,7 @@ export function FinanceTab({
           <span className="finance-stat-value">{f.totalCollected}€</span>
         </div>
         <div className="finance-stat">
-          <span className="finance-stat-label">Federation</span>
+          <span className="finance-stat-label">{orgLabel}</span>
           <span className="finance-stat-value">{f.federationTotal}€</span>
         </div>
         <div className="finance-stat">

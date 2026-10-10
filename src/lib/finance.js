@@ -1,18 +1,20 @@
-import { BUYIN_FULL, POT_SHARE_PER_PLAYER, FEDERATION_SHARE_PER_PLAYER, VENUE_SHARE_PER_PLAYER, RUNNER_UP_PRIZE } from "../config/constants.js";
+import { DEFAULT_FINANCE } from "./competitions.js";
 
-export function computeTournamentFinance(players, totalRounds) {
+/** 5B.4: amounts come from the tournament's finance copy (default: 2026 Federation amounts). */
+export function computeTournamentFinance(players, totalRounds, rules = DEFAULT_FINANCE) {
+  const r = { ...DEFAULT_FINANCE, ...(rules || {}) };
   const active = players; // withdrawn players still paid to enter; finance is per entrant
   const totalPlayers = active.length;
   const discounted = active.filter((p) => p.hasDiscount);
   const regular = active.filter((p) => !p.hasDiscount);
   const discountedTotal = discounted.reduce((s, p) => s + (p.discountAmount ?? 32), 0);
-  const totalCollected = discountedTotal + regular.length * BUYIN_FULL;
-  const federationTotal = regular.length * FEDERATION_SHARE_PER_PLAYER;
-  const venueTotal = regular.length * VENUE_SHARE_PER_PLAYER;
+  const totalCollected = discountedTotal + regular.length * r.buyIn;
+  const federationTotal = regular.length * r.orgShare;
+  const venueTotal = regular.length * r.venueShare;
   // A discounted entrant's whole payment goes to the pot (that's the point of
   // the discount — no Federation/venue share); a full-price entrant's pot
   // share is the fixed 32€ regardless of the 40€ they paid in total.
-  const prizePool = discountedTotal + regular.length * POT_SHARE_PER_PLAYER;
+  const prizePool = discountedTotal + regular.length * r.potShare;
 
   // A player only qualifies for a final prize once they've actually played
   // out all their matches — reaching "4 wins" with a round still to go
@@ -20,7 +22,7 @@ export function computeTournamentFinance(players, totalRounds) {
   const hasCompleted = (p) => p.matchLog.length >= totalRounds;
   const runnerUps = active.filter((p) => hasCompleted(p) && p.wins === totalRounds - 1);
   const perfects = active.filter((p) => hasCompleted(p) && p.wins === totalRounds);
-  const runnerUpTotal = runnerUps.length * RUNNER_UP_PRIZE;
+  const runnerUpTotal = runnerUps.length * r.runnerUpPrize;
   const remainingForPerfects = prizePool - runnerUpTotal;
   const perfectShare = perfects.length > 0 ? remainingForPerfects / perfects.length : 0;
   const shortfall = remainingForPerfects < 0;
