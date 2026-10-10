@@ -8,6 +8,7 @@ import {
   collection,
   getDocs,
 } from "firebase/firestore";
+import { can, currentPermissionUser } from "./lib/permissions.js";
 
 /* ---------------------------------------------------------------------- */
 /* Firebase project config — from the Federation's own Firebase project.  */
@@ -52,7 +53,15 @@ async function getDocDataStrict(collectionName, id) {
   return snap.exists() ? snap.data() : null;
 }
 
+/** Every write goes through the central permission check first — a defence
+ * before the Firestore rules: a write the current user may not make is
+ * reported as failed (false) without reaching the database. */
+function writeAllowed(collectionName, id) {
+  return can(currentPermissionUser(), "write", { collection: collectionName, id });
+}
+
 async function setDocData(collectionName, id, data) {
+  if (!writeAllowed(collectionName, id)) return false;
   try {
     await setDoc(doc(db, collectionName, id), data);
     return true;
@@ -62,6 +71,7 @@ async function setDocData(collectionName, id, data) {
 }
 
 async function deleteDocData(collectionName, id) {
+  if (!writeAllowed(collectionName, id)) return false;
   try {
     await deleteDoc(doc(db, collectionName, id));
     return true;
@@ -80,19 +90,31 @@ async function listDocIds(collectionName) {
 }
 
 /* ---------------------------------------------------------------------- */
-/* Admin password                                                         */
+/* Administrators (5A): users/{uid} = { email, role: "admin" }, edited only  */
+/* in the Firebase console.                                                */
 /* ---------------------------------------------------------------------- */
 
-/** Strict: returns the stored password, or null when none has been set;
- * THROWS when the read failed. There is no built-in default password —
- * a failed or missing read must never let anyone in. */
-export async function loadAdminPasswordStrict() {
-  const data = await getDocDataStrict("meta", "adminPassword");
-  return data && typeof data.password === "string" && data.password ? data.password : null;
+/** Strict: the user's own document in "users", or null when there is none;
+ * THROWS when the read failed. */
+export async function loadUserDocStrict(uid) {
+  return await getDocDataStrict("users", uid);
 }
 
-export async function saveAdminPassword(password) {
-  return await setDocData("meta", "adminPassword", { password });
+/* ---------------------------------------------------------------------- */
+/* Players' private contact details (5A): private/contacts =               */
+/* { version: 1, players: { <personId>: { email, phone, membership,        */
+/*   hasDiscount, discountAmount, needsInfo } } } — admins only.           */
+/* ---------------------------------------------------------------------- */
+
+/** Strict: the contacts document, or null when it does not exist yet;
+ * THROWS when the read failed. */
+export async function loadContactsStrict() {
+  return await getDocDataStrict("private", "contacts");
+}
+
+/** Returns true on success, false on failure. */
+export async function saveContacts(data) {
+  return await setDocData("private", "contacts", data);
 }
 
 /* ---------------------------------------------------------------------- */

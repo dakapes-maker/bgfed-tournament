@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// Κανόνες Firestore — Ομοσπονδία Backgammon (στάδιο 5A).
+// Δημοσιεύονται χειροκίνητα από το Firebase console (Firestore → Rules),
+// όχι με firebase deploy. Δημόσια ανάγνωση, εγγραφή μόνο από διαχειριστές.
+// Διαχειριστής = συνδεδεμένος, με επιβεβαιωμένο email, και users/{uid}
+// με role "admin" (η λίστα αλλάζει μόνο από το console).
+// Ρητή απαρίθμηση διαδρομών: ό,τι δεν αναφέρεται εδώ απορρίπτεται.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    // Μητρώο (δημόσιο μέρος), ELO, RSS feed (το διαβάζει και το /api/feed
+    // χωρίς σύνδεση), κατάλογος τουρνουά.
+    match /meta/{docId} {
+      allow read: if docId in ["registry", "elo", "rssFeed", "tournamentsIndex"];
+      allow write: if docId in ["registry", "elo", "rssFeed", "tournamentsIndex"] && isAdmin();
+      // meta/adminPassword (παλιός κοινός κωδικός) και κάθε άλλο: κανείς.
+    }
+
+    // Βαθμολογίες σεζόν (και λίστα σεζόν).
+    match /seasons/{seasonId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Τουρνουά, εισαγόμενα (imp-…) και έγγραφα συστήματος (sys-state,
+    // sys-trash, sys-imports).
+    match /tournaments/{tournamentId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Ιδιωτικά στοιχεία παικτών (private/contacts): μόνο διαχειριστές.
+    match /private/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Λίστα διαχειριστών: ο καθένας διαβάζει μόνο το δικό του έγγραφο·
+    // αλλάζει μόνο από το Firebase console.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+  }
+}
