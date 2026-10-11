@@ -121,11 +121,6 @@ export async function saveContacts(data) {
 /* Player registry                                                        */
 /* ---------------------------------------------------------------------- */
 
-export async function loadRegistry() {
-  const data = await getDocData("meta", "registry");
-  return data || { players: {} };
-}
-
 /** Same as loadRegistry, but throws if the read failed (see getDocDataStrict). */
 export async function loadRegistryStrict() {
   const data = await getDocDataStrict("meta", "registry");
@@ -174,11 +169,6 @@ export async function saveRankingElo(id, data) {
 /* Feedzy plugin (or any other RSS reader) to pick up automatically.      */
 /* ---------------------------------------------------------------------- */
 
-export async function loadFeedItems() {
-  const data = await getDocData("meta", "rssFeed");
-  return data?.items || [];
-}
-
 /** Same as loadFeedItems, but throws if the read failed (see getDocDataStrict). */
 export async function loadFeedItemsStrict() {
   const data = await getDocDataStrict("meta", "rssFeed");
@@ -193,11 +183,6 @@ export async function saveFeedItems(items) {
 /* ---------------------------------------------------------------------- */
 /* Tournament archive index                                               */
 /* ---------------------------------------------------------------------- */
-
-export async function loadIndex() {
-  const data = await getDocData("meta", "tournamentsIndex");
-  return data ? data.list : [];
-}
 
 /** Same as loadIndex, but throws if the read failed (see getDocDataStrict). */
 export async function loadIndexStrict() {

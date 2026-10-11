@@ -23,6 +23,7 @@ import {
   Lock,
   Trash2,
   RefreshCw,
+  Copy,
   AlertTriangle,
   LayoutGrid,
   List,
@@ -58,7 +59,7 @@ import { APP_BUILD_VERSION, FEATURES_SUMMARY, TECHNICAL_SUMMARY } from "./config
 import { changelogFor, changelogKey, formatChangelogDate } from "./config/changelog.js";
 import { WHATS_NEW_SEEN_KEY, LANG_STORAGE_KEY } from "./config/constants.js";
 import { TRANSLATIONS } from "./config/i18n.js";
-import { ELO_INITIAL, eloWinProbability, eloPointsAtStake, applyEloRoundBatch, buildEloRoundMatches, markEloApplied, setEloGuestKeys} from "./lib/elo.js";
+import { ELO_INITIAL, eloWinProbability, applyEloRoundBatch, buildEloRoundMatches, markEloApplied, setEloGuestKeys } from "./lib/elo.js";
 import {
   PERSON_DISPLAY,
   setPersonLookup,
@@ -67,15 +68,12 @@ import {
   displayNameFor,
   newPersonId,
   personSpellings,
-  editDistance,
   wordsOf,
   findLookalikePersons,
   formatNameForDisplay,
   stripAccents,
   nextRegNo,
   formatRegNo,
-  buildMigrationPlan,
-  buildMigratedRegistry,
 } from "./lib/persons.js";
 import { nameSkeletons, skeletonsMinDistance, sourceSurname, titleCaseName } from "./lib/nameSkeleton.js";
 import {
@@ -87,7 +85,6 @@ import {
   rulesForSeason,
   seasonLocked,
   seasonFingerprint,
-  seasonRangeLabel,
   tournamentInScope,
   scopeLabel,
 } from "./lib/seasons.js";
@@ -104,10 +101,7 @@ import {
 } from "./lib/calendar.js";
 import {
   DEFAULT_COMPETITION_ID,
-  DEFAULT_COMPETITIONS,
-  ELO_POOLS,
   competitionById,
-  eloPoolOf,
   COMPETITION_LEVEL_LABEL,
   competitionsFrom,
   countsTowardRatings,
@@ -131,7 +125,6 @@ import { buildConsistencyReport, describeStaleReasons, shortTournamentLabel } fr
 import { generatePairings, replayPlayersFromHistory, computeBuchholz, sortStandings } from "./lib/swiss.js";
 import { buildXlsx } from "./lib/xlsx.js";
 import { isEmbeddedOnFederationSite, formatDate } from "./lib/utils.js";
-import { SEED_PLAYERS, HISTORICAL_IMPORT_2026, HISTORICAL_ELO_ROUNDS_2026, HISTORICAL_TOURNAMENTS_2026 } from "./data/history2026.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { StandingsTable } from "./components/StandingsTable.jsx";
 import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
@@ -140,10 +133,9 @@ import { MoveToTrashControl, TrashRow } from "./components/trash.jsx";
 import { CalcuttaTab, FinanceTab } from "./components/finance.jsx";
 import { watchAuth, signOutUser, resendVerification, refreshVerification } from "./lib/auth.js";
 import { setPermissionUser } from "./lib/permissions.js";
-import { mergeContacts, stripPrivate, splitRegistry, contactsSummary, moveContacts } from "./lib/privateContacts.js";
+import { mergeContacts, stripPrivate, splitRegistry } from "./lib/privateContacts.js";
 import { LoginDialog } from "./components/LoginDialog.jsx";
 import { AccountMenu, AccountNotice } from "./components/AccountMenu.jsx";
-import { ContactsMigrationCard } from "./components/ContactsMigrationCard.jsx";
 
 /* ---------------------------------------------------------------------- */
 /* Component                                                              */
@@ -176,7 +168,6 @@ export default function TournamentManager() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [seasonStatsResult, setSeasonStatsResult] = useState(null);
   const [seasonStatsLoading, setSeasonStatsLoading] = useState(false);
-  const [seasonStatsYear, setSeasonStatsYear] = useState(seasonForDate(new Date().toISOString()) || new Date().getFullYear());
   const [confirmingClearFeed, setConfirmingClearFeed] = useState(false);
   const [playerDetailReturnPhase, setPlayerDetailReturnPhase] = useState("players");
   const [statsTab, setStatsTab] = useState("h2h");
@@ -253,9 +244,6 @@ export default function TournamentManager() {
   const [organisation, setOrganisation] = useState(""); // Build 2: organising club; new tournaments default to the home club
   const [tournamentReturnPlayer, setTournamentReturnPlayer] = useState(null); // player card to go back to, when opened from its history
   const [metaEdit, setMetaEdit] = useState(null); // admin edit of date/season/competition/club: { date, seasonYear, competitionId, organisation }
-  const [homeClubDraft, setHomeClubDraft] = useState(null);
-  const [metaPlan, setMetaPlan] = useState(null); // dry-run report of the competitions/club migration
-  const [metaBusy, setMetaBusy] = useState(false);
   const [controlSeasons, setControlSeasons] = useState([]); // seasons listed on the admin page
   const [controlTab, setControlTab] = useState("overview"); // admin page sub-menu
   const [controlCompId, setControlCompId] = useState(DEFAULT_COMPETITION_ID); // 5B.2β: competition whose seasons are shown
@@ -288,7 +276,6 @@ export default function TournamentManager() {
   const [statsCompetition, setStatsCompetition] = useState("all");
   const [eloPool, setEloPool] = useState(PRIMARY_RANKING_ID); // 5D: ELO page — id of the ranking shown
   const [rankingDocs, setRankingDocs] = useState({}); // 5D: stored additional rankings, loaded on demand
-  const [cardEloPool, setCardEloPool] = useState(null); // player card: chosen ranking (null = automatic) // Statistics competition filter
   const [matchPlan, setMatchPlan] = useState(null); // { rows, imports } — player matching of the imports
   const [matchBusy, setMatchBusy] = useState(false);
   const matchFileRef = useRef(null); // ELO page: player whose rating breakdown is open // final standings exported in this session
@@ -303,12 +290,7 @@ export default function TournamentManager() {
   const [calBusy, setCalBusy] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false); // visitors' schedule on the Season page
   const [organisationClubId, setOrganisationClubId] = useState(null); // Build 3B3: organising club of the open tournament
-  const [clubPlan, setClubPlan] = useState(null); // dry-run of the clubs migration
-  const [clubDecisions, setClubDecisions] = useState({}); // key -> "new" | other key
-  const [clubNames, setClubNames] = useState({}); // key -> name of the new club
-  const [clubBusy, setClubBusy] = useState(false);
   const [clubDraft, setClubDraft] = useState(null); // { id?, name } add / rename
-  const [regNoPlan, setRegNoPlan] = useState(null);
   const [compDraft, setCompDraft] = useState(null); // { id?, name, ownerClubId, countsElo } add / rename a competition
   const [registryClubFilter, setRegistryClubFilter] = useState(""); // "" = all, "none" = without club, or a club id
   const [showGuests, setShowGuests] = useState(false); // dry-run of the registry numbers
@@ -452,9 +434,6 @@ export default function TournamentManager() {
   const [consistencyLoading, setConsistencyLoading] = useState(false);
   const [consistencyError, setConsistencyError] = useState("");
   const [trashBusy, setTrashBusy] = useState(false);
-  const [identityPlan, setIdentityPlan] = useState(null); // dry-run report of the migration to permanent ids
-  const [identityDecisions, setIdentityDecisions] = useState({});
-  const [identityBusy, setIdentityBusy] = useState(false);
   const [identityPrompt, setIdentityPrompt] = useState(null); // "is it the same player?" question
   const [mergeFor, setMergeFor] = useState(null);
   const [mergeTarget, setMergeTarget] = useState("");
@@ -591,11 +570,10 @@ export default function TournamentManager() {
     async function init() {
       // Every start-up read is STRICT: a read that fails (offline, timeout)
       // throws instead of looking like "nothing stored yet". Without this, a
-      // single failed read would make the app re-seed the registry, rebuild
-      // the ELO from the 11 historical days, or rewrite the catalogue with
-      // only those days — overwriting real data. On failure nothing is
-      // written and every later registry/ELO/catalogue save is refused.
-      let index, trashList, sys, registryData, season2026, eloStart;
+      // single failed read would look like an empty database. On failure
+      // nothing is written and every later registry/ELO/catalogue save is
+      // refused.
+      let index, trashList, sys, registryData;
       try {
         index = await loadIndexStrict();
         const trashDoc = await fetchTournamentDataStrict(SYS_TRASH_ID);
@@ -604,8 +582,6 @@ export default function TournamentManager() {
         sys = sysDoc && typeof sysDoc === "object" ? sysDoc : {};
         registryData = await loadRegistryStrict();
         registrySplitRef.current = registryData.contactsVersion === 1;
-        season2026 = await loadSeasonStrict(2026);
-        eloStart = await loadEloStrict();
       } catch {
         writesBlockedRef.current = true;
         setStartupReadFailed(true);
@@ -613,102 +589,12 @@ export default function TournamentManager() {
       }
       setTrash(trashList);
       setSysState(sys);
-      // Days that were moved to the trash, or permanently removed on purpose,
-      // must never be re-created from the built-in copy.
-      const blockedIds = new Set([...trashList.map((t) => t.id), ...(sys.purgedIds || [])]);
-
-      if (Object.keys(registryData.players || {}).length === 0) {
-        const seeded = { players: {} };
-        SEED_PLAYERS.forEach((p) => {
-          seeded.players[normalizeName(p.name)] = {
-            name: p.name, club: p.club, email: p.email, phone: p.phone, membership: [], needsInfo: false, hasDiscount: false, discountAmount: 32,
-          };
-        });
-        setRegistry(seeded);
-        await saveRegistryChecked(seeded);
-      } else {
-        setRegistry(registryData);
-      }
+      // Build Σ1: the bootstrap of an EMPTY database (seed registry, historical
+      // season 2026, initial ELO, re-creation of the historical days) was
+      // removed — the production database has all of it, and the backups
+      // (Export All Data) cover a restore.
+      setRegistry(registryData);
       setRegistryLoaded(true);
-
-      const alreadyImported = Object.values(season2026.players || {}).some((p) =>
-        Object.keys(p.entries || {}).some((id) => id.startsWith("hist-day"))
-      );
-      if (!alreadyImported) {
-        await importHistoricalSeason2026(season2026);
-      }
-
-      const elo = eloStart;
-      if (!elo.initialized) {
-        HISTORICAL_ELO_ROUNDS_2026.forEach((roundMatches) => {
-          applyEloRoundBatch(elo, roundMatches, 7); // all 11 historical days used 7-point matches
-        });
-        elo.initialized = true;
-        await saveEloChecked(elo);
-      }
-
-      const days = Object.values(HISTORICAL_TOURNAMENTS_2026);
-      // Only (re)save days that are actually missing from the index — not
-      // all 11, every single time the app loads. A day already present is
-      // trusted as saved; this keeps the original per-day safety (no single
-      // boolean flag deciding for all 11) without the cost of rewriting
-      // static, unchanging data on every load.
-      const missingDays = days.filter((t) => !index.some((idx) => idx.id === t.tournamentId) && !blockedIds.has(t.tournamentId));
-      if (missingDays.length > 0) {
-        let allOk = true;
-        const newIndexEntries = [];
-        for (const t of missingDays) {
-          // If the document already exists in the database (e.g. only the
-          // catalogue entry was lost), keep it — it may hold corrections made
-          // in the app — and just restore its catalogue entry below. The read
-          // is strict: a failed read must not be taken as "missing".
-          let existing;
-          try {
-            existing = await fetchTournamentDataStrict(t.tournamentId);
-          } catch {
-            allOk = false;
-            continue;
-          }
-          if (!(existing && existing.players)) {
-            const result = await saveTournamentData(t.tournamentId, {
-              tournamentName: t.tournamentName,
-              totalRounds: t.totalRounds,
-              matchLength: t.matchLength,
-              seasonYear: t.seasonYear,
-              competitionId: DEFAULT_COMPETITION_ID,
-              liveStandingsEnabled: t.liveStandingsEnabled,
-              isOfficial: true,
-              phase: t.phase,
-              players: t.players,
-              round: t.round,
-              currentPairings: t.currentPairings,
-              history: t.history,
-              createdAt: t.createdAt,
-            });
-            if (!result) {
-              allOk = false;
-              continue;
-            }
-          }
-          newIndexEntries.push({
-            id: t.tournamentId,
-            name: existing?.tournamentName || t.tournamentName,
-            date: existing?.createdAt || t.createdAt,
-            status: "Completed",
-            totalRounds: existing?.totalRounds || t.totalRounds,
-            isOfficial: existing ? existing.isOfficial !== false : true,
-            seasonYear: existing?.seasonYear || t.seasonYear,
-            competitionId: existing?.competitionId || DEFAULT_COMPETITION_ID,
-          });
-        }
-        if (newIndexEntries.length > 0) {
-          index = [...index, ...newIndexEntries];
-          await saveIndexChecked(index);
-        }
-        if (!allOk) {
-          setNotice("Some historical tournaments failed to save — try reloading the app.");
-        }
-      }
 
       setArchive(index);
     }
@@ -737,7 +623,6 @@ export default function TournamentManager() {
       }
       if (cancelled) return;
       setSeasonBrowseYear(pick);
-      setSeasonStatsYear(pick);
     })();
     return () => {
       cancelled = true;
@@ -1018,17 +903,6 @@ export default function TournamentManager() {
     persistCurrent(phase, round, updated, currentPairings, history);
   }
 
-  function toggleIsOfficial() {
-    const next = !isOfficial;
-    setIsOfficial(next);
-    if (!tournamentId) return;
-    saveTournamentData(tournamentId, { ...currentSnapshot(), isOfficial: next });
-    setArchive((prev) => {
-      const updated = prev.map((t) => (t.id === tournamentId ? { ...t, isOfficial: next } : t));
-      saveIndexChecked(updated);
-      return updated;
-    });
-  }
 
   /* ---- side bets ---- */
 
@@ -1808,12 +1682,11 @@ export default function TournamentManager() {
     }
     setTrashBusy(true);
     try {
-      await deleteTournamentData(id);
-      // The built-in historical days would otherwise be re-created on the next load.
-      if (id.startsWith("hist-day")) {
-        const purgedIds = [...new Set([...(sysState.purgedIds || []), id])];
-        if (!(await saveSysState({ purgedIds }))) reportSaveFailure("Ρυθμίσεις — η λίστα οριστικά διαγραμμένων");
-        setSysState((s) => ({ ...s, purgedIds }));
+      // Σ1: if the document could not be deleted, stop — the entry stays in
+      // the trash so the deletion can be retried.
+      if (!(await deleteTournamentData(id))) {
+        reportSaveFailure(`Οριστική διαγραφή «${entry.name || id}» — δεν διαγράφηκε, παραμένει στον κάδο`);
+        return;
       }
       const nextTrash = trash.filter((t) => t.id !== id);
       if (!(await saveSysTrash(nextTrash))) reportSaveFailure("Κάδος");
@@ -1858,114 +1731,12 @@ export default function TournamentManager() {
     return !!h && (h.games > 0 || h.matches > 0);
   }
 
-  async function runIdentityPlan() {
-    setIdentityBusy(true);
-    try {
-      const names = new Map();
-      const ids = [...new Set([...archive.map((t) => t.id), ...trash.map((t) => t.id)])];
-      for (const id of ids) {
-        const d = await fetchTournamentData(id);
-        if (!d || !d.players) continue;
-        const seen = new Set();
-        d.players.forEach((p) => {
-          const b = baseName(p.name);
-          if (!b || seen.has(b)) return;
-          seen.add(b);
-          const cur = names.get(b) || { name: p.name, tournaments: 0 };
-          cur.tournaments += 1;
-          names.set(b, cur);
-        });
-      }
-      setIdentityPlan({ ...buildMigrationPlan({ registry, tournamentNames: names }), scanned: ids.length });
-      setIdentityDecisions({});
-    } finally {
-      setIdentityBusy(false);
-    }
-  }
 
   // «Μεταφορά στοιχείων επικοινωνίας» (5A): preview, Export of the last
   // 24 hours, then moveContacts (write, verify, and only then strip the
   // public registry). Works from a fresh strict read of the registry.
-  const [contactsPreview, setContactsPreview] = useState(null);
-  const [contactsBusy, setContactsBusy] = useState(false);
 
-  async function applyContactsMigration() {
-    if (contactsBusy || registrySplitRef.current) return;
-    const last = sysState.lastExportAt ? new Date(sysState.lastExportAt).getTime() : 0;
-    if (Date.now() - last > 24 * 3600 * 1000) {
-      showToast("Κάνε πρώτα Export All Data (των τελευταίων 24 ωρών).");
-      return;
-    }
-    setContactsBusy(true);
-    try {
-      let fresh;
-      try {
-        fresh = await loadRegistryStrict();
-      } catch {
-        showToast("Το μητρώο δεν διαβάστηκε — δεν άλλαξε τίποτα. Δοκίμασε ξανά.");
-        return;
-      }
-      if (fresh.contactsVersion === 1) {
-        showToast("Η μεταφορά έχει ήδη γίνει.");
-        return;
-      }
-      const result = await moveContacts(mergeContacts(fresh, null), {
-        saveContacts: (doc) => guardedSave(saveContacts, "Στοιχεία επικοινωνίας", doc),
-        loadContactsStrict,
-        saveRegistry: (r) => guardedSave(saveRegistry, "Μητρώο παικτών", r),
-      });
-      if (!result.ok) {
-        reportSaveFailure(`Μεταφορά στοιχείων επικοινωνίας — ${result.message}`);
-        return;
-      }
-      registrySplitRef.current = true;
-      contactsRef.current = { status: "loaded", data: result.contacts };
-      const joined = mergeContacts(result.publicRegistry, result.contacts);
-      setPersonLookup(joined);
-      setRegistry(joined);
-      setContactsPreview(null);
-      showToast("Τα στοιχεία επικοινωνίας μεταφέρθηκαν σε ιδιωτικό έγγραφο.");
-    } finally {
-      setContactsBusy(false);
-    }
-  }
 
-  async function applyIdentityMigration() {
-    if (!identityPlan || identityBusy) return;
-    const last = sysState.lastExportAt ? new Date(sysState.lastExportAt).getTime() : 0;
-    if (Date.now() - last > 24 * 3600 * 1000) {
-      showToast("Κάνε πρώτα Export All Data (των τελευταίων 24 ωρών).");
-      return;
-    }
-    setIdentityBusy(true);
-    try {
-      const migrated = buildMigratedRegistry(registry, identityPlan.unmatched, identityDecisions);
-      // Save, then verify by reading it back.
-      const saved = await saveRegistryChecked(migrated);
-      let check = null;
-      try {
-        check = saved ? await loadRegistryStrict() : null;
-      } catch {
-        check = null;
-      }
-      const written =
-        check && check.identityVersion === 2 && Object.keys(check.players || {}).length === Object.keys(migrated.players).length;
-      if (!written) {
-        showToast("Η αποθήκευση του μητρώου δεν επιβεβαιώθηκε — δεν συνεχίζω. Έλεγξε τη σύνδεση και δοκίμασε ξανά.");
-        return;
-      }
-      setPersonLookup(migrated);
-      setRegistry(migrated);
-      setIdentityPlan(null);
-      await recomputeEloAndSeasonFromScratch();
-      await runConsistencyCheck();
-      setControlTab("data");
-      setPhase("control"); // the consistency report is shown there
-      showToast("Η μετάβαση σε μόνιμα ID ολοκληρώθηκε.");
-    } finally {
-      setIdentityBusy(false);
-    }
-  }
 
   async function mergePersons(keepKey, absorbKey, runRecompute) {
     const keep = registry.players[keepKey];
@@ -2092,129 +1863,13 @@ export default function TournamentManager() {
     setPhase("playerDetail");
   }
 
-  async function saveHomeClub() {
-    const value = (homeClubDraft ?? "").trim();
-    if (!value) {
-      showToast("Γράψε το όνομα του συλλόγου.");
-      return;
-    }
-    const patch = { homeClub: value };
-    if (!Array.isArray(sysState.competitions)) patch.competitions = DEFAULT_COMPETITIONS;
-    if (await saveSysState(patch)) {
-      setSysState((s) => ({ ...s, ...patch }));
-      setHomeClubDraft(null);
-      showToast("Ο σύλλογος αποθηκεύτηκε.");
-    } else {
-      reportSaveFailure("Ρυθμίσεις — ο σύλλογος δεν αποθηκεύτηκε");
-    }
-  }
 
   /** Dry run of the Build 2 migration: reads every tournament (catalogue and
    * trash) and reports what would be filled in. Changes nothing. */
-  async function runMetaPlan() {
-    setMetaBusy(true);
-    try {
-      const all = [...archive.map((t) => ({ ...t, inTrash: false })), ...trash.map((t) => ({ ...t, inTrash: true }))];
-      const rows = [];
-      const unreadable = [];
-      for (const t of all) {
-        let d;
-        try {
-          d = await fetchTournamentDataStrict(t.id);
-        } catch {
-          unreadable.push(t.name || t.id);
-          continue;
-        }
-        if (!d) {
-          unreadable.push(t.name || t.id);
-          continue;
-        }
-        const expected = seasonForDate(d.createdAt);
-        rows.push({
-          id: t.id,
-          name: d.tournamentName || t.name || t.id,
-          inTrash: t.inTrash,
-          date: d.createdAt || null,
-          seasonYear: d.seasonYear ?? null,
-          expectedSeason: expected,
-          needsCompetition: !d.competitionId,
-          needsOrganisation: d.organisation === undefined || d.organisation === null || d.organisation === "",
-          needsSeason: !d.seasonYear,
-          seasonMismatch: !!d.seasonYear && !!expected && d.seasonYear !== expected,
-          noDate: !d.createdAt || !expected,
-          indexOutdated: !t.inTrash && (t.seasonYear !== (d.seasonYear || expected) || t.competitionId !== (d.competitionId || DEFAULT_COMPETITION_ID)),
-        });
-      }
-      setMetaPlan({ rows, unreadable, scannedAt: new Date().toISOString() });
-    } finally {
-      setMetaBusy(false);
-    }
-  }
 
   /** Applies the migration: fills competition (Premier League), organising
    * club (the home club) and, only where missing, the season. Season and
    * date that already exist are never changed. Stops at the first failure. */
-  async function applyMetaMigration() {
-    if (!metaPlan || metaBusy) return;
-    const last = sysState.lastExportAt ? new Date(sysState.lastExportAt).getTime() : 0;
-    if (Date.now() - last > 24 * 3600 * 1000) {
-      showToast("Κάνε πρώτα Export All Data (των τελευταίων 24 ωρών).");
-      return;
-    }
-    if (!sysState.homeClub) {
-      showToast("Συμπλήρωσε πρώτα τον σύλλογό σου.");
-      return;
-    }
-    if (metaPlan.unreadable.length > 0) {
-      showToast("Κάποια τουρνουά δεν διαβάστηκαν — ξανατρέξε την αναφορά.");
-      return;
-    }
-    setMetaBusy(true);
-    try {
-      const filled = {};
-      for (const r of metaPlan.rows) {
-        let d;
-        try {
-          d = await fetchTournamentDataStrict(r.id);
-        } catch {
-          d = null;
-        }
-        if (!d) {
-          reportSaveFailure(`Μετάπτωση διοργανώσεων — το «${r.name}» δεν διαβάστηκε· η μετάπτωση σταμάτησε (ό,τι γράφτηκε ως εδώ είναι σωστό, ξανατρέξε την)`);
-          return;
-        }
-        const next = {
-          ...d,
-          competitionId: d.competitionId || DEFAULT_COMPETITION_ID,
-          organisation: d.organisation || sysState.homeClub,
-          seasonYear: d.seasonYear || seasonForDate(d.createdAt) || 2026,
-        };
-        filled[r.id] = { seasonYear: next.seasonYear, competitionId: next.competitionId };
-        const changed = next.competitionId !== d.competitionId || next.organisation !== d.organisation || next.seasonYear !== d.seasonYear;
-        if (changed && !(await saveTournamentData(r.id, next))) {
-          reportSaveFailure(`Μετάπτωση διοργανώσεων — το «${r.name}» δεν αποθηκεύτηκε· η μετάπτωση σταμάτησε (ό,τι γράφτηκε ως εδώ είναι σωστό, ξανατρέξε την)`);
-          return;
-        }
-      }
-      const nextIndex = archive.map((t) => (filled[t.id] ? { ...t, ...filled[t.id] } : t));
-      if (!(await saveIndexChecked(nextIndex))) return;
-      setArchive(nextIndex);
-      const nextTrash = trash.map((t) => (filled[t.id] ? { ...t, ...filled[t.id] } : t));
-      if (!(await saveSysTrash(nextTrash))) {
-        reportSaveFailure("Μετάπτωση διοργανώσεων — ο κάδος δεν ενημερώθηκε (τα τουρνουά του ενημερώθηκαν κανονικά)");
-      } else {
-        setTrash(nextTrash);
-      }
-      const patch = { tournamentMetaVersion: 1, tournamentMetaMigratedAt: new Date().toISOString() };
-      if (!Array.isArray(sysState.competitions)) patch.competitions = DEFAULT_COMPETITIONS;
-      if (await saveSysState(patch)) setSysState((s) => ({ ...s, ...patch }));
-      else reportSaveFailure("Μετάπτωση διοργανώσεων — ολοκληρώθηκε, αλλά δεν καταγράφηκε ως ολοκληρωμένη");
-      setMetaPlan(null);
-      showToast("Η μετάπτωση διοργανώσεων ολοκληρώθηκε.");
-    } finally {
-      setMetaBusy(false);
-    }
-  }
   // #endregion Επίσημο τουρνουά, στοιχεία τουρνουά, μετάπτωση διοργανώσεων
 
   /* ---- data health: does the stored ELO / season match the catalogue? ---- */
@@ -3255,7 +2910,6 @@ export default function TournamentManager() {
   }
 
   function openPlayerDetail(key) {
-    setCardEloPool(null);
     setNotice("");
     setConfirmingDeletePlayer(null);
     setPlayerDetailTab(isAdmin ? "contact" : "stats");
@@ -3273,45 +2927,6 @@ export default function TournamentManager() {
     }
   }
   // #endregion Στατιστικά & καρτέλα παίκτη
-
-  // #region Ιστορική σεζόν 2026
-  async function importHistoricalSeason2026(seasonAlreadyRead) {
-    // Called at start-up with the season it has just read strictly.
-    const season = seasonAlreadyRead || (await loadSeasonStrict(2026));
-    const realDates = {
-      1: "2025-09-27", 2: "2025-10-18", 3: "2025-11-08", 4: "2025-11-29",
-      5: "2026-01-10", 6: "2026-02-14", 7: "2026-03-14", 8: "2026-03-28",
-      9: "2026-04-25", 10: "2026-05-17", 11: "2026-06-13",
-    };
-    HISTORICAL_IMPORT_2026.forEach((player) => {
-      const key = normalizeName(player.name);
-      if (!season.players[key]) season.players[key] = { name: player.name, entries: {} };
-      season.players[key].name = player.name;
-      Object.entries(player.days).forEach(([dayNum, d]) => {
-        const tournamentId = `hist-day${dayNum}`;
-        const date = new Date(realDates[dayNum] + "T00:00:00Z").toISOString();
-        season.players[key].entries[tournamentId] = {
-          tournamentName: `Backgammon Premier League 2026 - Ημέρα ${dayNum}`,
-          date,
-          points: d.points,
-          wins: d.wins,
-          bye: d.bye,
-          aa: d.aa,
-          matches: d.matches,
-          // This pre-aggregated historical source doesn't track retirement
-          // losses separately, so this is an approximation (only excludes
-          // A.A. wins, not retirement losses). Running "Recompute ELO &
-          // Season Standings from scratch" replaces it with the exact
-          // figure, derived from each day's real match log.
-          normalMatches: Math.max(d.matches - (d.aa || 0), 0),
-        };
-      });
-    });
-    if (!(await saveSeason(2026, season))) reportSaveFailure("Σεζόν 2026 — ιστορική εισαγωγή");
-    if (seasonBrowseYear === 2026) setSeasonData(season);
-    setNotice(`Imported ${HISTORICAL_IMPORT_2026.length} players across 11 days into the 2026 season.`);
-  }
-  // #endregion Ιστορική σεζόν 2026
 
   /* ---------------------------------------------------------------------- */
   /* Derived data                                                           */
@@ -4583,6 +4198,7 @@ export default function TournamentManager() {
           d = await fetchTournamentDataStrict(id);
         } catch {
           d = null;
+          reportSaveFailure(`Εισαγωγή «${id}» — δεν διαβάστηκε· η αντιστοίχισή της δεν αναιρέθηκε`); // Σ1
         }
         if (d && d.personMap) {
           const { personMap: _drop, ...rest } = d;
@@ -4591,6 +4207,7 @@ export default function TournamentManager() {
       }
       const patch = { importMatching: all.slice(0, -1) };
       if (await saveSysState(patch)) setSysState((st) => ({ ...st, ...patch }));
+      else reportSaveFailure("Ρυθμίσεις — το ιστορικό αντιστοιχίσεων δεν ενημερώθηκε"); // Σ1
       showToast(kept.length ? `Αναιρέθηκε. Κρατήθηκαν (έχουν παίξει από τότε): ${kept.join(", ")}` : "Η αντιστοίχιση αναιρέθηκε.");
       refreshImports();
     } finally {
@@ -4847,31 +4464,6 @@ export default function TournamentManager() {
   /** One-off upgrade: every competition gets the club it belongs to. The
    * finals go to a new organiser-only club «Πανελλήνιες Διοργανώσεις» and are
    * renamed. Numbers do not change: the home club's ranking is today's ELO. */
-  async function upgradeCompetitions() {
-    if (!clubsActive(sysState) || !sysState.homeClubId) {
-      showToast("Χρειάζεται πρώτα η λίστα συλλόγων με επιλεγμένο «ο σύλλογός μου».");
-      return;
-    }
-    const clubs = [...clubsFrom(sysState)];
-    let national = clubs.find((c) => c.organiserOnly && normClubKey(c.name) === normClubKey("Πανελλήνιες Διοργανώσεις"));
-    if (!national) {
-      national = { id: newClubId(), name: "Πανελλήνιες Διοργανώσεις", aliases: [], organiserOnly: true };
-      clubs.push(national);
-    }
-    const competitions = competitionsFrom(sysState).map((c) => {
-      if (c.id === DEFAULT_COMPETITION_ID) return { ...c, ownerClubId: sysState.homeClubId, countsElo: true };
-      if (c.id === "final-phase") return { ...c, name: "Τελική Φάση Πρωταθλήματος", ownerClubId: national.id, countsElo: true };
-      if (c.id === "cup") return { ...c, name: "Τελική Φάση Κυπέλλου", ownerClubId: national.id, countsElo: true };
-      return c.ownerClubId ? c : { ...c, ownerClubId: national.id, countsElo: c.countsElo !== false };
-    });
-    const patch = { clubs, competitions, competitionsVersion: 2 };
-    if (await saveSysState(patch)) {
-      setSysState((st) => ({ ...st, ...patch }));
-      showToast("Οι διοργανώσεις συνδέθηκαν με συλλόγους.");
-    } else {
-      reportSaveFailure("Διοργανώσεις — η αναβάθμιση δεν αποθηκεύτηκε");
-    }
-  }
 
   async function saveCompDraft() {
     const name = (compDraft?.name || "").trim();
@@ -4938,21 +4530,6 @@ export default function TournamentManager() {
 
   function renderCompetitionsCard() {
     const comps = competitionsFrom(sysState);
-    if (sysState.competitionsVersion !== 2) {
-      return (
-        <div className="control-sub-card">
-          <strong>Διοργανώσεις — σύνδεση με συλλόγους</strong>
-          <p className="control-sub" style={{ marginTop: 6 }}>
-            Κάθε διοργάνωση θα ανήκει σε έναν σύλλογο, και κάθε σύλλογος έχει τη δική του κατάταξη ELO. Η αναβάθμιση: Premier League → {clubDisplay(sysState, sysState.homeClubId, "ο σύλλογός σου")}·
-            «Κύπελλο» → «Τελική Φάση Κυπέλλου» και «Τελική φάση» → «Τελική Φάση Πρωταθλήματος», και οι δύο στον νέο φορέα «Πανελλήνιες Διοργανώσεις». Η ELO και η Βαθμολογία δεν αλλάζουν.
-          </p>
-          <button className="btn-primary" onClick={upgradeCompetitions} disabled={!clubsActive(sysState) || !sysState.homeClubId}>
-            Σύνδεση διοργανώσεων με συλλόγους
-          </button>
-          {(!clubsActive(sysState) || !sysState.homeClubId) && <p className="field-warning">Χρειάζεται πρώτα η λίστα συλλόγων, με επιλεγμένο «ο σύλλογός μου».</p>}
-        </div>
-      );
-    }
     const clubsSorted = [...clubsFrom(sysState)].sort((a, b) => a.name.localeCompare(b.name, "el"));
     return (
       <div className="control-sub-card">
@@ -5020,150 +4597,9 @@ export default function TournamentManager() {
   // #region Σύλλογοι
   /** Dry run of the clubs migration: every club name in use today (players,
    * tournaments, the home club), grouped by spelling. Changes nothing. */
-  async function runClubPlan() {
-    setClubBusy(true);
-    try {
-      const groups = {}; // key -> { variants: {raw: n}, players, tournaments, home }
-      const add = (raw, kind) => {
-        const name = String(raw || "").trim();
-        if (!name) return;
-        const key = normClubKey(name);
-        if (!key) return;
-        if (!groups[key]) groups[key] = { key, variants: {}, players: 0, tournaments: 0, home: false };
-        groups[key].variants[name] = (groups[key].variants[name] || 0) + 1;
-        if (kind === "player") groups[key].players += 1;
-        if (kind === "tournament") groups[key].tournaments += 1;
-        if (kind === "home") groups[key].home = true;
-      };
-      Object.values(registry.players || {}).forEach((p) => add(p.club, "player"));
-      add(sysState.homeClub, "home");
-      const unreadable = [];
-      const ids = [...new Set([...archive.map((t) => t.id), ...trash.map((t) => t.id)])];
-      for (const id of ids) {
-        try {
-          const d = await fetchTournamentDataStrict(id);
-          if (d) add(d.organisation, "tournament");
-        } catch {
-          unreadable.push(id);
-        }
-      }
-      const list = Object.values(groups).map((g) => {
-        const variants = Object.entries(g.variants).sort((a, b) => b[1] - a[1] || b[0].length - a[0].length);
-        return { ...g, variants: variants.map(([v]) => v), name: variants[0][0] };
-      });
-      list.sort((a, b) => b.players + b.tournaments - (a.players + a.tournaments) || a.name.localeCompare(b.name, "el"));
-      // Suggest "probably the same club" for close spellings (never applied on its own).
-      list.forEach((g) => {
-        const tg = g.key.split(" ").filter((w) => w.length >= 3);
-        const other = list.find((o) => {
-          if (o.key === g.key) return false;
-          const to = o.key.split(" ").filter((w) => w.length >= 3);
-          const subset = tg.length > 0 && to.length > tg.length && tg.every((w) => to.includes(w));
-          return subset || (g.key.length >= 5 && editDistance(g.key, o.key) <= 2 && list.indexOf(o) < list.indexOf(g));
-        });
-        g.suggestion = other ? other.key : null;
-      });
-      setClubPlan({ list, unreadable, scanned: ids.length });
-      setClubDecisions({});
-      setClubNames(Object.fromEntries(list.map((g) => [g.key, g.name])));
-    } finally {
-      setClubBusy(false);
-    }
-  }
 
   /** The key a club name ends up under, following "same as" choices. */
-  function resolveClubKey(key, decisions) {
-    const seen = new Set();
-    let k = key;
-    while (decisions[k] && decisions[k] !== "new" && !seen.has(k)) {
-      seen.add(k);
-      k = decisions[k];
-    }
-    return k;
-  }
 
-  async function applyClubMigration() {
-    if (!clubPlan || clubBusy) return;
-    const last = sysState.lastExportAt ? new Date(sysState.lastExportAt).getTime() : 0;
-    if (Date.now() - last > 24 * 3600 * 1000) {
-      showToast("Κάνε πρώτα Export All Data (των τελευταίων 24 ωρών).");
-      return;
-    }
-    if (clubPlan.unreadable.length > 0) {
-      showToast("Κάποια τουρνουά δεν διαβάστηκαν — ξανατρέξε την αναφορά.");
-      return;
-    }
-    setClubBusy(true);
-    try {
-      // 1. the club list
-      const roots = clubPlan.list.filter((g) => resolveClubKey(g.key, clubDecisions) === g.key);
-      const clubs = roots.map((g) => ({
-        id: newClubId() + g.key.replace(/\s/g, "").slice(0, 3),
-        name: (clubNames[g.key] || g.name).trim(),
-        aliases: [],
-      }));
-      const idByRoot = Object.fromEntries(roots.map((g, i) => [g.key, clubs[i].id]));
-      clubPlan.list.forEach((g) => {
-        const root = resolveClubKey(g.key, clubDecisions);
-        const c = clubs.find((x) => x.id === idByRoot[root]);
-        if (c) c.aliases = [...new Set([...c.aliases, ...g.variants])];
-      });
-      const idFor = (raw) => {
-        const k = normClubKey(raw);
-        if (!k) return null;
-        return idByRoot[resolveClubKey(k, clubDecisions)] || null;
-      };
-      const nameOf = (id) => clubs.find((c) => c.id === id)?.name || "";
-      // 2. players
-      const players = Object.fromEntries(
-        Object.entries(registry.players).map(([k, p]) => {
-          const id = idFor(p.club);
-          return [k, id ? { ...p, clubId: id, club: nameOf(id) } : p];
-        })
-      );
-      const nextRegistry = { ...registry, players };
-      if (!(await saveRegistryChecked(nextRegistry))) return;
-      setPersonLookup(nextRegistry);
-      setRegistry(nextRegistry);
-      // 3. tournaments (catalogue and trash)
-      const ids = [...new Set([...archive.map((t) => t.id), ...trash.map((t) => t.id)])];
-      for (const tid of ids) {
-        let d;
-        try {
-          d = await fetchTournamentDataStrict(tid);
-        } catch {
-          d = undefined;
-        }
-        if (d === undefined) {
-          reportSaveFailure("Μετάπτωση συλλόγων — ένα τουρνουά δεν διαβάστηκε· η μετάπτωση σταμάτησε (ό,τι γράφτηκε ως εδώ είναι σωστό, ξανατρέξε την)");
-          return;
-        }
-        if (!d || !d.organisation) continue;
-        const id = idFor(d.organisation);
-        if (!id || (d.organisationClubId === id && d.organisation === nameOf(id))) continue;
-        if (!(await saveTournamentData(tid, { ...d, organisationClubId: id, organisation: nameOf(id) }))) {
-          reportSaveFailure(`Μετάπτωση συλλόγων — το «${d.tournamentName || tid}» δεν αποθηκεύτηκε· η μετάπτωση σταμάτησε (ξανατρέξε την)`);
-          return;
-        }
-        if (tid === tournamentId) {
-          setOrganisationClubId(id);
-          setOrganisation(nameOf(id));
-        }
-      }
-      // 4. the list itself, last: until it is saved the app keeps working with text
-      const homeClubId = idFor(sysState.homeClub);
-      const patch = { clubs, homeClubId, homeClub: homeClubId ? nameOf(homeClubId) : sysState.homeClub || "", clubsVersion: 1, clubsMigratedAt: new Date().toISOString() };
-      if (await saveSysState(patch)) {
-        setSysState((st) => ({ ...st, ...patch }));
-        setClubPlan(null);
-        showToast(`Η μετάπτωση συλλόγων ολοκληρώθηκε: ${clubs.length} σύλλογοι.`);
-      } else {
-        reportSaveFailure("Μετάπτωση συλλόγων — η λίστα συλλόγων δεν αποθηκεύτηκε· ξανατρέξε τη μετάπτωση");
-      }
-    } finally {
-      setClubBusy(false);
-    }
-  }
 
   async function saveClubDraft() {
     const name = (clubDraft?.name || "").trim();
@@ -5206,52 +4642,7 @@ export default function TournamentManager() {
 
   // #region Αριθμός Μητρώου
   /** Dry run of the registry numbers: order of first participation. */
-  async function runRegNoPlan() {
-    setClubBusy(true);
-    try {
-      const order = [];
-      const seen = new Set();
-      const chronological = [...archive].sort((a, b) => new Date(a.date) - new Date(b.date));
-      for (const t of chronological) {
-        let d;
-        try {
-          d = await fetchTournamentDataStrict(t.id);
-        } catch {
-          showToast("Κάποιο τουρνουά δεν διαβάστηκε — δοκίμασε ξανά.");
-          return;
-        }
-        (d?.players || []).forEach((p) => {
-          const key = normalizeName(p.name);
-          if (registry.players[key] && !seen.has(key)) {
-            seen.add(key);
-            order.push(key);
-          }
-        });
-      }
-      const rest = Object.keys(registry.players)
-        .filter((k) => !seen.has(k))
-        .sort((a, b) => registry.players[a].name.localeCompare(registry.players[b].name, "el"));
-      const all = [...order, ...rest];
-      setRegNoPlan({ order: all, played: order.length });
-    } finally {
-      setClubBusy(false);
-    }
-  }
 
-  async function applyRegNos() {
-    if (!regNoPlan) return;
-    const players = { ...registry.players };
-    regNoPlan.order.forEach((k, i) => {
-      if (players[k]) players[k] = { ...players[k], regNo: i + 1 };
-    });
-    const next = { ...registry, players, regNoVersion: 1, regNoMax: regNoPlan.order.length };
-    if (await saveRegistryChecked(next)) {
-      setPersonLookup(next);
-      setRegistry(next);
-      setRegNoPlan(null);
-      showToast(`Δόθηκαν ${regNoPlan.order.length} αριθμοί μητρώου.`);
-    }
-  }
   // #endregion Αριθμός Μητρώου
 
   /* ---- Build 3B2: calendar ---- */
@@ -7261,7 +6652,6 @@ export default function TournamentManager() {
 
             {(() => {
               const allPlayers = Object.entries(registry.players || {})
-                .filter(([, p]) => isSuper || adminClubIds.includes(String(p.clubId || ""))) // 5C: a club administrator sees only their clubs' players
                 .filter(([, p]) => showGuests || !p.guest)
                 .filter(([, p]) => !registryClubFilter || (registryClubFilter === "none" ? !p.clubId : p.clubId === registryClubFilter))
                 .filter(([, p]) => {
@@ -7296,14 +6686,18 @@ export default function TournamentManager() {
                     </thead>
                     <tbody>
                       {allPlayers.map(([key, p]) => {
-                        const thisYear = p.membership.find((m) => m.year === currentYear);
+                        // 5C: a club administrator sees every player (to find someone before
+                        // adding them again) but the private details, and editing on the
+                        // player's card, only for the players of their clubs.
+                        const mine = isSuper || adminClubIds.includes(String(p.clubId || ""));
+                        const thisYear = mine ? (p.membership || []).find((m) => m.year === currentYear) : null;
                         return (
                           <tr key={key} style={{ cursor: "pointer" }} onClick={() => openPlayerDetail(key)}>
                             <td style={{ color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>{formatRegNo(p.regNo) || "—"}</td>
                             <td>
                               {formatNameForDisplay(p.name, nameDisplayMode)}
                               {p.guest && <span className="cal-note"> · φιλοξενούμενος</span>}
-                              {p.needsInfo && <span className="needs-info-badge"> ⚠ Needs info</span>}
+                              {mine && p.needsInfo && <span className="needs-info-badge"> ⚠ Needs info</span>}
                             </td>
                             <td>{clubDisplay(sysState, p.clubId, p.club) || "—"}</td>
                             <td>
@@ -8016,6 +7410,10 @@ export default function TournamentManager() {
                                 ) : (
                                   c.name
                                 )}
+                                <div className="cal-note" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                  id: <code>{c.id}</code>
+                                  <button className="btn-ghost" style={{ padding: "0 4px" }} title="Αντιγραφή id (για το clubIds ενός διαχειριστή συλλόγου)" onClick={() => { navigator.clipboard?.writeText(c.id).then(() => showToast("Το id αντιγράφηκε."), () => showToast(c.id)); }}><Copy size={12} /></button>
+                                </div>
                               </td>
                               <td>{Object.values(registry.players).filter((p) => p.clubId === c.id).length}</td>
                               <td>

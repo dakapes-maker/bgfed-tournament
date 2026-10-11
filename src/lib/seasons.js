@@ -144,8 +144,3 @@ export function scopeLabel(scope) {
   return scope === "all" ? "Όλες οι σεζόν" : `Σεζόν ${scope}`;
 }
 
-/** Human-readable range of a season, for warnings. */
-export function seasonRangeLabel(year) {
-  if (year === 2026) return "27/9/2025 – 31/12/2026";
-  return `1/1/${year} – 31/12/${year}`;
-}
