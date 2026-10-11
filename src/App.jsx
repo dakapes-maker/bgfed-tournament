@@ -6506,7 +6506,8 @@ export default function TournamentManager() {
 
             {(() => {
               const source = eloPool === PRIMARY_RANKING_ID ? eloData.players : rankingDocs[eloPool]?.players;
-              const standings = Object.values(source || {}).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, "en"));
+              // Σ1: current registry names (the stored copy may be older after a rename).
+                const standings = Object.entries(source || {}).map(([k, p]) => ({ ...p, name: displayNameFor(k, p.name) })).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, "en"));
               if (standings.length === 0) {
                 return (
                   <div className="empty-state">
