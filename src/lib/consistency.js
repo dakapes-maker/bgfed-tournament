@@ -107,7 +107,8 @@ export function buildConsistencyReport({ elo, seasons, index, display }) {
   }
 
   report.needsRecompute =
-    report.unknownKeys.length > 0 || report.nameStale.length > 0 ||
+    report.unknownKeys.length > 0 || // Σ1: a renamed person (nameStale) is shown with the current name everywhere — no Recompute needed
+
     report.trackingMissing || report.eloExtra.length > 0 || report.eloMissing.length > 0 ||
     report.seasonExtra.length > 0 || report.seasonMissing.length > 0 ||
     report.winsMismatch.length > 0 || report.eloOnly.length > 0;
@@ -120,7 +121,6 @@ export function describeStaleReasons(report) {
   if (!report) return out;
   if (report.trackingMissing) out.push("Χρειάζεται ένα Recompute για να ξεκινήσει η καταγραφή προέλευσης (δεν είναι σφάλμα).");
   if (report.unknownKeys.length) out.push(`Το ELO ή η Βαθμολογία έχουν ονόματα που δεν αντιστοιχούν σε πρόσωπο του μητρώου (${report.unknownKeys.length}).`);
-  if (report.nameStale.length) out.push(`Το όνομα ${report.nameStale.length === 1 ? "ενός παίκτη" : "κάποιων παικτών"} στο ELO/Βαθμολογία διαφέρει από το μητρώο (${report.nameStale.slice(0, 3).map((x) => `${x.from} → ${x.to}`).join(", ")}).`);
   const label = (x) => `"${x.name}"`;
   const uo = report.eloExtra.filter((x) => x.reason === "unofficial");
   const miss = report.eloExtra.filter((x) => x.reason === "missing");

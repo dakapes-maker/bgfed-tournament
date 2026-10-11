@@ -36,8 +36,10 @@ export async function pushSeasonUpdate(year, tournamentId, tournamentName, date,
 }
 
 export function computeSeasonStandings(season, bestOf) {
-  return Object.values(season.players)
-    .map((p) => {
+  // Σ1: the name shown is the person's CURRENT name in the registry (the
+  // stored copy may be older, e.g. after a rename) — no Recompute needed.
+  return Object.entries(season.players)
+    .map(([key, p]) => {
       const entries = Object.entries(p.entries).map(([tid, e]) => ({ tournamentId: tid, ...e }));
       const sorted = [...entries].sort((a, b) => b.points - a.points);
       const counted = sorted.slice(0, bestOf);
@@ -51,7 +53,7 @@ export function computeSeasonStandings(season, bestOf) {
       // match counted against them in Matches, so it drags their % down —
       // deliberately, so retiring isn't "free" for the percentage.
       const pct = totalMatches > 0 ? Math.round((normalWinsOnly / totalMatches) * 1000) / 10 : null;
-      return { name: p.name, entries: sorted, countedIds, total, sumAll, totalWins: normalWinsOnly, totalMatches, pct, eventsPlayed: entries.length };
+      return { name: displayNameFor(key, p.name), entries: sorted, countedIds, total, sumAll, totalWins: normalWinsOnly, totalMatches, pct, eventsPlayed: entries.length };
     })
     .sort((a, b) => b.total - a.total || (b.pct ?? -1) - (a.pct ?? -1) || a.name.localeCompare(b.name, "el"));
 }

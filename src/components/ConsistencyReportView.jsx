@@ -6,7 +6,7 @@ export function ConsistencyReportView({ report, onClose }) {
   const findings = [];
   if (report.trackingMissing) findings.push({ level: "info", title: "Χρειάζεται ένα Recompute για να ξεκινήσει η καταγραφή προέλευσης", items: ["Δεν είναι σφάλμα."] });
   if (report.unknownKeys.length) findings.push({ level: "warn", title: "Ονόματα στο ELO / Βαθμολογία χωρίς πρόσωπο στο μητρώο", items: cap(report.unknownKeys, (x) => x.name) });
-  if (report.nameStale.length) findings.push({ level: "warn", title: "Όνομα στο ELO / Βαθμολογία διαφορετικό από το μητρώο (θα διορθωθεί με Recompute)", items: cap(report.nameStale, (x) => `${x.from} → ${x.to}`) });
+  if (report.nameStale.length) findings.push({ level: "info", title: "Μετονομασμένοι παίκτες (ενημερωτικό: οι σελίδες δείχνουν ήδη το νέο όνομα· το αποθηκευμένο αντίγραφο ανανεώνεται με το επόμενο Recompute)", items: cap(report.nameStale, (x) => `${x.from} → ${x.to}`) });
   const eloUnofficial = report.eloExtra.filter((x) => x.reason === "unofficial");
   const eloGone = report.eloExtra.filter((x) => x.reason === "missing");
   if (eloUnofficial.length) findings.push({ level: "warn", title: "Το ELO περιλαμβάνει δοκιμαστικά ή εκτός Premier League τουρνουά", items: cap(eloUnofficial, (x) => x.name) });
