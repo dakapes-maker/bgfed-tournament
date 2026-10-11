@@ -400,7 +400,6 @@ export default function TournamentManager() {
   const [playerDetailTab, setPlayerDetailTab] = useState("contact"); // contact | stats
   const [eloTimeline, setEloTimeline] = useState(null); // null = not computed yet
   const [eloTimelineLoading, setEloTimelineLoading] = useState(false);
-  const [confirmingRecompute, setConfirmingRecompute] = useState(false);
   const [newMembershipYear, setNewMembershipYear] = useState(new Date().getFullYear());
   const [nameDisplayMode, setNameDisplayMode] = useState("normal"); // normal | upper | greeklish
   const [eloData, setEloData] = useState({ players: {} });
@@ -1263,6 +1262,7 @@ export default function TournamentManager() {
 
   // #region Export / Import / Excel
   async function exportAllData() {
+    if (!isSuper) return; // Σ2: the full backup holds everyone's private details — super administrator only
     // Every read is strict: a backup with a silently missing part is worse
     // than no backup, because it would also reset the "last export" clock
     // that the migrations rely on.
@@ -2400,6 +2400,7 @@ export default function TournamentManager() {
    * so Cloudflare's bot protection never sees an incoming request from us. */
   const [addingToFeed, setAddingToFeed] = useState(false);
   async function addRecapToFeed() {
+    if (!isSuper) return; // Σ2: the feed feeds the Federation's site
     if (!recapText) return;
     setAddingToFeed(true);
     try {
@@ -2972,8 +2973,40 @@ export default function TournamentManager() {
     </div>
   ) : null;
 
-  const recomputePanel = isAdmin && (
-    !confirmingRecompute ? (
+  /* Σ2: sizes of the stored documents (the database allows 1 MiB per
+   * document) — read on demand, super administrator only. */
+  const [dataSizes, setDataSizes] = useState(null);
+  async function computeDataSizes() {
+    setDataSizes({ loading: true });
+    const size = (x) => new Blob([JSON.stringify(x || {})]).size;
+    const rows = [];
+    const add = (label, data) => rows.push({ label, bytes: size(data) });
+    try {
+      add("Μητρώο (meta/registry)", await loadRegistryStrict());
+      add("Στοιχεία επικοινωνίας (private/contacts)", await loadContactsStrict());
+      add("Πανελλήνια ELO (meta/elo)", await loadEloStrict());
+      add("Κατάλογος τουρνουά (meta/tournamentsIndex)", await loadIndexStrict());
+      add("RSS feed (meta/rssFeed)", await loadFeedItemsStrict());
+      add("Ρυθμίσεις (sys-state)", await fetchTournamentDataStrict(SYS_STATE_ID));
+      add("Κάδος (sys-trash)", await fetchTournamentDataStrict("sys-trash"));
+      for (const y of await listSeasonYearsStrict()) add(`Βαθμολογία σεζόν ${sn(y)}`, await loadSeasonStrict(y));
+      const imports = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
+      for (const it of (imports && imports.list) || []) {
+        const d = await fetchTournamentDataStrict(it.id);
+        rows.push({ label: `Εισαγωγή: ${it.name || it.id}`, bytes: size(d), extra: d && (d.sourceSheetsJson || d.sourceSheets) ? `εκ των οποίων αρχικό Excel ${Math.round(size(d.sourceSheetsJson || d.sourceSheets) / 1024)} KB` : "" });
+      }
+      const tour = [];
+      for (const it of archive) tour.push({ label: `Τουρνουά: ${it.name || it.id}`, bytes: size(await fetchTournamentData(it.id)) });
+      tour.sort((a, b) => b.bytes - a.bytes);
+      rows.push(...tour.slice(0, 5));
+      rows.sort((a, b) => b.bytes - a.bytes);
+      setDataSizes({ rows, tournaments: tour.length, total: [...rows, ...tour.slice(5)].reduce((s, r) => s + r.bytes, 0) });
+    } catch {
+      setDataSizes({ error: "Κάποιο έγγραφο δεν διαβάστηκε· δοκίμασε ξανά." });
+    }
+  }
+
+  const recomputePanel = isSuper && (
       <>
       {staleBlock}
       <div className="recompute-panel">
@@ -2996,29 +3029,36 @@ export default function TournamentManager() {
           <button className="btn-secondary" onClick={runConsistencyCheck} disabled={consistencyLoading}>
             <Check size={15} /> {consistencyLoading ? "Έλεγχος…" : "Έλεγχος συνέπειας"}
           </button>
-        </div>
-      </div>
-      {consistencyError && <p className="field-warning">{consistencyError}</p>}
-      {consistencyReport && <ConsistencyReportView report={consistencyReport} onClose={() => setConsistencyReport(null)} />}
-      </>
-    ) : (
-      <div className="delete-confirm">
-        <span>Rebuild ELO and the Season Standings of every season from scratch (each tournament goes to its own season), using only tournaments marked "Official League day" — any test tournament is ignored automatically, whether or not you've deleted it. This can't be undone.</span>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button className="btn-secondary" onClick={() => setConfirmingRecompute(false)}>Cancel</button>
-          <button
-            className="btn-primary"
-            style={{ background: "var(--accent)" }}
-            onClick={() => {
-              recomputeEloAndSeasonFromScratch();
-              setConfirmingRecompute(false);
-            }}
-          >
-            Yes, recompute
+          <button className="btn-secondary" onClick={computeDataSizes} disabled={dataSizes?.loading}>
+            <Info size={15} /> {dataSizes?.loading ? "Μέτρηση…" : "Μεγέθη δεδομένων"}
           </button>
         </div>
       </div>
-    )
+      {dataSizes && !dataSizes.loading && (
+        <div className="card" style={{ marginTop: 10 }}>
+          {dataSizes.error ? <p className="field-warning">{dataSizes.error}</p> : (
+            <>
+              <p className="control-sub">Όριο της βάσης: 1.024 KB ανά έγγραφο. Σύνολο ~{Math.round(dataSizes.total / 1024)} KB ({dataSizes.tournaments} τουρνουά· φαίνονται τα 5 μεγαλύτερα).</p>
+              <table className="cal-table">
+                <thead><tr><th>Έγγραφο</th><th style={{ textAlign: "right" }}>KB</th><th style={{ textAlign: "right" }}>% ορίου</th></tr></thead>
+                <tbody>
+                  {dataSizes.rows.map((r) => (
+                    <tr key={r.label}>
+                      <td>{r.label}{r.extra ? <span className="cal-note"> · {r.extra}</span> : null}</td>
+                      <td style={{ textAlign: "right" }}>{(r.bytes / 1024).toFixed(1)}</td>
+                      <td style={{ textAlign: "right", color: r.bytes > 700 * 1024 ? "var(--accent)" : undefined, fontWeight: r.bytes > 700 * 1024 ? 700 : undefined }}>{Math.round((r.bytes / (1024 * 1024)) * 100)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button className="btn-ghost" onClick={() => setDataSizes(null)}>Κλείσιμο</button>
+            </>
+          )}
+        </div>
+      )}
+      {consistencyError && <p className="field-warning">{consistencyError}</p>}
+      {consistencyReport && <ConsistencyReportView report={consistencyReport} onClose={() => setConsistencyReport(null)} />}
+      </>
   );
   const standings = sortStandings(players, buchholz);
   const byId = {};
@@ -4440,7 +4480,7 @@ export default function TournamentManager() {
         </p>
         <ol className="close-steps">
           <li className={exportFresh ? "done" : ""}>
-            Πλήρες backup: {exportFresh ? `✓ ${formatDate(sysState.lastExportAt)}` : <button className="btn-secondary" onClick={exportAllData}><Download size={14} /> Export All Data</button>}
+            Πλήρες backup: {exportFresh ? `✓ ${formatDate(sysState.lastExportAt)}` : isSuper ? <button className="btn-secondary" onClick={exportAllData}><Download size={14} /> Export All Data</button> : <span className="cal-note">ζήτησε από τον υπερ-διαχειριστή να κάνει Export (ισχύει 24 ώρες)</span>}
           </li>
           <li className={excelDoneAt ? "done" : ""}>
             Τελική Βαθμολογία σε Excel: {excelDoneAt ? "✓ κατέβηκε" : <button className="btn-secondary" onClick={async () => { await exportBaselineExcel(); setExcelDoneAt(new Date().toISOString()); }}><Download size={14} /> Εξαγωγή Excel</button>}
@@ -4540,7 +4580,7 @@ export default function TournamentManager() {
       <div className="control-sub-card">
         <strong>Διοργανώσεις</strong>
         <p className="control-sub" style={{ marginTop: 6 }}>
-          Κάθε διοργάνωση ανήκει σε έναν σύλλογο· ο σύλλογος ορίζει την κατάταξη ELO όπου μετράει. Σήμερα ενεργή είναι η ELO του συλλόγου σου ({clubDisplay(sysState, sysState.homeClubId, "—")}). Ο σύλλογος μιας διοργάνωσης κλειδώνει μετά τη δημιουργία.
+          Κάθε διοργάνωση ανήκει σε έναν σύλλογο (κλειδώνει μετά τη δημιουργία). Σε ποια κατάταξη ELO μετράει ορίζεται στο «Κατατάξεις ELO»· Βαθμολογία σεζόν και οικονομικά ορίζονται στη σελίδα της διοργάνωσης.
         </p>
         <table className="cal-table">
           <thead><tr><th>Διοργάνωση</th><th>Σύλλογος</th><th>ELO</th><th title="Έχει πίνακα Βαθμολογίας σεζόν">Βαθμολογία</th><th>Τουρνουά</th><th></th></tr></thead>
@@ -4690,7 +4730,7 @@ export default function TournamentManager() {
     if (!calDraft || !calDraft.date) return;
     const { year } = calDraft;
     const entries = calendarOf(year);
-    const clean = { date: calDraft.date, competitionId: calDraft.competitionId || DEFAULT_COMPETITION_ID, note: (calDraft.note || "").trim() };
+    const clean = { date: calDraft.date, competitionId: calDraft.competitionId || seasonCompetitionId(sysState, year), note: (calDraft.note || "").trim() };
     let next;
     if (calDraft.id) next = entries.map((e) => (e.id === calDraft.id ? { ...e, ...clean } : e));
     else next = [...entries, { id: newCalendarEntryId(), ...clean, tournamentId: null }];
@@ -4971,7 +5011,7 @@ export default function TournamentManager() {
                 onChange={(ev) => setCalDraft({ ...calDraft, competitionId: ev.target.value })}
                 style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
               >
-                {comps.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {comps.filter((c) => canEditCompetition(c.id) || c.id === calDraft.competitionId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
             <div className="field">
@@ -4983,7 +5023,7 @@ export default function TournamentManager() {
           </div>
         ) : (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-            <button className="btn-secondary" onClick={() => setCalDraft({ year, date: "", competitionId: DEFAULT_COMPETITION_ID, note: "" })}>
+            <button className="btn-secondary" onClick={() => setCalDraft({ year, date: "", competitionId: seasonCompetitionId(sysState, year), note: "" })}>
               <Plus size={14} /> Προσθήκη αγωνιστικής
             </button>
             {unlinkedOfficial.length > 0 && (
@@ -6223,6 +6263,7 @@ export default function TournamentManager() {
             />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
               <button className="btn-secondary" onClick={() => setRecapText(null)}>Κλείσιμο</button>
+              {isSuper && ( // the RSS feed is the Federation's site (bgfed.gr)
               <button
                 className="btn-secondary"
                 disabled={addingToFeed}
@@ -6231,6 +6272,7 @@ export default function TournamentManager() {
               >
                 {addingToFeed ? "Προσθήκη…" : "Προσθήκη στο RSS feed"}
               </button>
+              )}
               <button
                 className="btn-primary"
                 onClick={async () => {
@@ -6254,11 +6296,14 @@ export default function TournamentManager() {
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Ολοκλήρωση τουρνουά</p>
             <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 16px 0" }}>
-              {competitionId !== DEFAULT_COMPETITION_ID
-                ? "Το τουρνουά δεν είναι Premier League, οπότε δεν θα μετρήσει σε ELO και Βαθμολογία, ό,τι κι αν απαντήσεις."
-                : liveStandingsEnabled
-                ? "Ενημέρωση της Βαθμολογίας με το τελικό αποτέλεσμα; (Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο, λόγω live ενημέρωσης.)"
-                : "Ενημέρωση ELO και Βαθμολογίας με τα αποτελέσματα αυτού του τουρνουά;"}
+              {(() => {
+                // Σ2: per competition (ELO ranking membership, season standings) — not «only the Premier League».
+                const elo = competitionInMainRanking(competitionId);
+                const st = competitionHasStandings(competitionById(competitionId));
+                if (!elo && !st) return "Η διοργάνωση δεν μετράει στην Πανελλήνια ELO ούτε έχει Βαθμολογία σεζόν· το τουρνουά απλώς ολοκληρώνεται, ό,τι κι αν απαντήσεις.";
+                if (liveStandingsEnabled) return st ? "Ενημέρωση της Βαθμολογίας με το τελικό αποτέλεσμα; (Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο, λόγω live ενημέρωσης.)" : "Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο (live ενημέρωση). Ολοκλήρωση;";
+                return `Ενημέρωση ${[elo && "της Πανελλήνιας ELO", st && "της Βαθμολογίας"].filter(Boolean).join(" και ")} με τα αποτελέσματα αυτού του τουρνουά;`;
+              })()}
             </p>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button
@@ -7844,7 +7889,7 @@ export default function TournamentManager() {
               {(!countsTowardRatings({ isOfficial: true, competitionId }) || !countsTowardStandings({ isOfficial: true, competitionId })) && (
                 <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
                   Αυτή η διοργάνωση {[
-                    !countsTowardRatings({ isOfficial: true, competitionId }) && `δεν μετράει στην ELO της ${clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}`,
+                    !countsTowardRatings({ isOfficial: true, competitionId }) && "δεν μετράει στην Πανελλήνια Κατάταξη ELO",
                     !countsTowardStandings({ isOfficial: true, competitionId }) && "δεν έχει Βαθμολογία σεζόν",
                   ].filter(Boolean).join(" και ")}· το τουρνουά καταγράφεται κανονικά.
                 </p>
