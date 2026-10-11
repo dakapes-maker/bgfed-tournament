@@ -1,5 +1,4 @@
-import { ELO_INITIAL, eloWinProbability } from "../lib/elo.js";
-import { normalizeName } from "../lib/persons.js";
+import { ELO_INITIAL } from "../lib/elo.js";
 import { formatDate } from "../lib/utils.js";
 
 export function formatMonthLabel(iso) {
@@ -101,26 +100,3 @@ export function PlayerTrendCharts({ eloRows, winRows, eloSwitch }) {
   );
 }
 
-export function WinProbabilityBar({ p1Name, p2Name, eloData, matchLength }) {
-  const r1 = eloData.players?.[normalizeName(p1Name)]?.rating ?? ELO_INITIAL;
-  const r2 = eloData.players?.[normalizeName(p2Name)]?.rating ?? ELO_INITIAL;
-  const p1Prob = Math.round(eloWinProbability(r1, r2, matchLength || 7) * 100);
-  const p2Prob = 100 - p1Prob;
-  const p1Favored = p1Prob >= p2Prob;
-  const favorite = p1Favored ? p1Name : p2Name;
-  const favoriteProb = Math.max(p1Prob, p2Prob);
-  return (
-    <div className="win-prob">
-      <p className="win-prob-headline" style={{ textAlign: p1Favored ? "left" : "right" }}>
-        Predicted winner (ELO): <strong>{favorite}</strong> <span className="win-prob-pct">{favoriteProb}%</span>
-      </p>
-      <div className="win-prob-bar">
-        <div className="win-prob-fill" style={{ width: `${p1Prob}%` }} />
-      </div>
-      <div className="win-prob-labels">
-        <span>{p1Prob}%</span>
-        <span>{p2Prob}%</span>
-      </div>
-    </div>
-  );
-}

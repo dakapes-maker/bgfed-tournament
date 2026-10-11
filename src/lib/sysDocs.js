@@ -1,4 +1,4 @@
-import { saveTournamentData, fetchTournamentData, fetchTournamentDataStrict } from "../firebase.js";
+import { saveTournamentData, fetchTournamentDataStrict } from "../firebase.js";
 
 /* ---------------------------------------------------------------------- */
 /* System documents + consistency checks (Build 1A)                        */
@@ -10,18 +10,8 @@ import { saveTournamentData, fetchTournamentData, fetchTournamentDataStrict } fr
 export const SYS_TRASH_ID = "sys-trash";
 export const SYS_STATE_ID = "sys-state";
 
-export async function loadSysTrash() {
-  const d = await fetchTournamentData(SYS_TRASH_ID);
-  return d && Array.isArray(d.list) ? d.list : [];
-}
-
 export async function saveSysTrash(list) {
   return await saveTournamentData(SYS_TRASH_ID, { list });
-}
-
-export async function loadSysState() {
-  const d = await fetchTournamentData(SYS_STATE_ID);
-  return d && typeof d === "object" ? d : {};
 }
 
 export async function saveSysState(patch) {

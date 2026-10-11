@@ -15,11 +15,6 @@ export const DEFAULT_COMPETITIONS = [
  * Each competition feeds one ELO pool. Only the club pool (Premier League)
  * is active today and it is the existing ELO, unchanged; the national pool
  * (Τελική φάση, Κύπελλο) gets its own ranking when the final phase arrives. */
-export const ELO_POOLS = {
-  club: { label: "Κατάταξη συλλόγων (Premier League)", active: true },
-  national: { label: "Πανελλήνια ELO (Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος)", active: true },
-};
-
 /* Competitions belong to a club (Build 4A). Each owner club is one ELO
  * ranking; the existing ELO is the ranking of the home club (Ομοσπονδία
  * Backgammon). The component keeps these two in step with the settings on
@@ -67,13 +62,6 @@ export function competitionById(id) {
   return list.find((c) => c.id === (id || DEFAULT_COMPETITION_ID)) || DEFAULT_COMPETITIONS.find((c) => c.id === (id || DEFAULT_COMPETITION_ID)) || null;
 }
 
-export function eloPoolOf(competitionId) {
-  const comp = competitionById(competitionId);
-  if (comp && comp.countsElo === false) return "none";
-  if (comp && comp.ownerClubId) return comp.ownerClubId === RUNTIME_HOME_CLUB ? "club" : "national";
-  const c = DEFAULT_COMPETITIONS.find((x) => x.id === (competitionId || DEFAULT_COMPETITION_ID));
-  return c ? c.pool : "club";
-}
 export const COMPETITION_LEVEL_LABEL = { club: "επίπεδο συλλόγου", national: "εθνικό επίπεδο" };
 
 export function competitionsFrom(sys) {

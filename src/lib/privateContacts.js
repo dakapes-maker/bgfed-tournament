@@ -64,18 +64,6 @@ export function splitRegistry(registry, currentContacts) {
   };
 }
 
-/** Preview of the move: how many players and what is stored for them. */
-export function contactsSummary(registry) {
-  const ps = Object.values(registry.players || {});
-  return {
-    players: ps.length,
-    withEmail: ps.filter((p) => (p.email || "").trim()).length,
-    withPhone: ps.filter((p) => (p.phone || "").trim()).length,
-    withMembership: ps.filter((p) => Array.isArray(p.membership) && p.membership.length > 0).length,
-    withDiscount: ps.filter((p) => p.hasDiscount).length,
-  };
-}
-
 /** Verification after the move: every person's private fields in the
  * document read back are exactly those of the registry they came from.
  * Returns the ids that do not match (empty = all good). */
