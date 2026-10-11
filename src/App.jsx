@@ -441,9 +441,9 @@ export default function TournamentManager() {
     ? canEditCompetition(competitionId)
     : phase === "playerDetail" && !isSuper
       ? isAdminAny && !!expandedRegistryPlayer && adminClubIds.includes(String(registry.players?.[expandedRegistryPlayer]?.clubId || ""))
-      : ["players", "trash"].includes(phase)
-        ? isSuper // registry with everyone's contacts, trash: super administrator only
-        : isAdminAny;
+      : phase === "trash"
+        ? isSuper // trash: super administrator only
+        : isAdminAny; // registry («players»): a club administrator sees only the players of their clubs
   const tOrgLabel = clubDisplay(sysState, (competitionsFrom(sysState).find((c) => c.id === competitionId) || {}).ownerClubId, "Φορέας");
   setRuntimeCompetitionState(sysState);
   setEloGuestKeys(Object.keys(registry.players || {}).filter((k) => registry.players[k]?.guest)); // 5D: guests play at a fresh 1500
@@ -525,7 +525,9 @@ export default function TournamentManager() {
       try {
         const d = await loadUserDocStrict(user.uid);
         rights = d && d.role === "admin" ? "admin" : d && d.role === "clubAdmin" ? "clubAdmin" : "none";
-        if (rights === "clubAdmin") clubIds = Array.isArray(d.clubIds) ? d.clubIds.map(String) : [];
+        // clubIds: an array of club ids; a single string (typed as string in the
+        // console instead of array) is accepted too. Spaces are ignored.
+        if (rights === "clubAdmin") clubIds = (Array.isArray(d.clubIds) ? d.clubIds : typeof d.clubIds === "string" ? [d.clubIds] : []).map((x) => String(x).trim()).filter(Boolean);
       } catch {
         rights = "error";
       }
@@ -2275,6 +2277,13 @@ export default function TournamentManager() {
   /** A fresh registry entry. After the migration it gets a permanent id and
    * remembers the spelling it was created with; before it, the old name key. */
   function registryWithNewPerson(name, extra = {}) {
+    // 5C: a person added by a club administrator belongs to their club (the
+    // club of the open competition when it is theirs), so they can manage it.
+    if (!isSuper && adminClubIds.length > 0 && !extra.clubId) {
+      const owner = String((competitionsFrom(sysState).find((c) => c.id === competitionId) || {}).ownerClubId || "");
+      const clubId = adminClubIds.includes(owner) ? owner : adminClubIds[0];
+      extra = { ...extra, clubId, club: clubDisplay(sysState, clubId, "") };
+    }
     const migrated = registry.identityVersion === 2;
     const key = migrated ? newPersonId(registry.players) : normalizeName(name);
     const entry = {
@@ -7252,6 +7261,7 @@ export default function TournamentManager() {
 
             {(() => {
               const allPlayers = Object.entries(registry.players || {})
+                .filter(([, p]) => isSuper || adminClubIds.includes(String(p.clubId || ""))) // 5C: a club administrator sees only their clubs' players
                 .filter(([, p]) => showGuests || !p.guest)
                 .filter(([, p]) => !registryClubFilter || (registryClubFilter === "none" ? !p.clubId : p.clubId === registryClubFilter))
                 .filter(([, p]) => {
@@ -7759,7 +7769,6 @@ export default function TournamentManager() {
               {isSuper && <button className={`tab ${controlTab === "overview" ? "active" : ""}`} onClick={() => setControlTab("overview")}>Επισκόπηση</button>}
               <button className={`tab ${controlTab === "competitions" ? "active" : ""}`} onClick={() => { setControlTab("competitions"); setCompPageOpen(false); }}>Διοργανώσεις & σύλλογοι</button>
               {isSuper && <button className={`tab ${controlTab === "rankings" ? "active" : ""}`} onClick={() => { setControlTab("rankings"); setRankingDraft(null); }}>Κατατάξεις ELO</button>}
-              {isSuper && <button className={`tab ${controlTab === "players" ? "active" : ""}`} onClick={() => setControlTab("players")}>Παίκτες</button>}
               {isSuper && <button className={`tab ${controlTab === "data" ? "active" : ""}`} onClick={() => setControlTab("data")}>Δεδομένα</button>}
               {isSuper && <button className={`tab ${controlTab === "backup" ? "active" : ""}`} onClick={() => setControlTab("backup")}>Backup</button>}
               {isSuper && <button className={`tab ${controlTab === "settings" ? "active" : ""}`} onClick={() => setControlTab("settings")}>Ρυθμίσεις</button>}
@@ -7985,190 +7994,9 @@ export default function TournamentManager() {
             <div className="card control-section">
               <h2 className="control-h">Διοργανώσεις & σύλλογοι</h2>
               {renderCompetitionsCard()}
-              {isSuper && (() => {
-                const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
-                const comps = competitionsFrom(sysState);
-                const migrated = sysState.tournamentMetaVersion === 1;
-                const rows = metaPlan ? metaPlan.rows : [];
-                const toFill = rows.filter((r) => r.needsCompetition || r.needsOrganisation || r.needsSeason);
-                const mismatches = rows.filter((r) => r.seasonMismatch);
-                const noDate = rows.filter((r) => r.noDate);
-                return (
-                  <div className="control-sub-card">
-                    <strong>Διοργανώσεις</strong>
-
-                    {!clubsActive(sysState) && (
-                    <div className="row" style={{ marginTop: 10, alignItems: "flex-end" }}>
-                      <div className="field">
-                        <label>Ο σύλλογός σου (προεπιλογή σε κάθε νέο τουρνουά)</label>
-                        <input
-                          type="text"
-                          value={homeClubDraft ?? (sysState.homeClub || "")}
-                          onChange={(e) => setHomeClubDraft(e.target.value)}
-                          placeholder="Όνομα συλλόγου"
-                        />
-                      </div>
-                      <button className="btn-secondary" onClick={saveHomeClub} disabled={homeClubDraft === null || homeClubDraft.trim() === (sysState.homeClub || "")}>
-                        <Save size={15} /> Αποθήκευση
-                      </button>
-                    </div>
-                    )}
-
-                    <p style={{ margin: "10px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
-                      Διοργανώσεις: {comps.map((c) => `${c.name} (${COMPETITION_LEVEL_LABEL[c.level] || c.level}, ELO: ${rankingsOfCompetition(c.id)})`).join("; ")}.
-                    </p>
-
-                    <div style={{ marginTop: 12 }}>
-                      {migrated && !metaPlan ? (
-                        <p style={{ margin: 0, fontSize: 13, color: "var(--win)" }}>
-                          ✓ Όλα τα τουρνουά έχουν διοργάνωση και σύλλογο{sysState.tournamentMetaMigratedAt ? ` (μετάπτωση ${formatDate(sysState.tournamentMetaMigratedAt)})` : ""}.{" "}
-                          <button className="btn-ghost" onClick={runMetaPlan} disabled={metaBusy} style={{ padding: "2px 8px" }}>
-                            {metaBusy ? "Έλεγχος…" : "Έλεγχος ξανά"}
-                          </button>
-                        </p>
-                      ) : !metaPlan ? (
-                        <>
-                          <p style={{ margin: "0 0 8px 0", fontSize: 13 }}>
-                            Τα υπάρχοντα τουρνουά δεν έχουν ακόμα διοργάνωση και σύλλογο. Η μετάπτωση τους δίνει Premier League και τον σύλλογό σου· σεζόν και ημερομηνία που ήδη υπάρχουν δεν αλλάζουν. Πρώτα βλέπεις αναφορά.
-                          </p>
-                          <button className="btn-secondary" onClick={runMetaPlan} disabled={metaBusy}>
-                            {metaBusy ? "Έλεγχος…" : "Αναφορά μετάπτωσης (δεν αλλάζει τίποτα)"}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <p style={{ margin: "0 0 6px 0", fontSize: 13 }}>
-                            Ελέγχθηκαν <strong>{rows.length}</strong> τουρνουά ({rows.filter((r) => r.inTrash).length} στον κάδο).{" "}
-                            {toFill.length === 0 ? "Κανένα δεν χρειάζεται συμπλήρωση." : <>Θα συμπληρωθούν <strong>{toFill.length}</strong>: διοργάνωση Premier League, σύλλογος «{sysState.homeClub || "—"}».</>}
-                          </p>
-                          {metaPlan.unreadable.length > 0 && (
-                            <p className="field-warning">⚠ Δεν διαβάστηκαν: {metaPlan.unreadable.join(", ")}. Ξανατρέξε την αναφορά πριν την εφαρμογή.</p>
-                          )}
-                          {mismatches.length > 0 && (
-                            <div className="field-warning">
-                              ⚠ Σεζόν που δεν ταιριάζει με την ημερομηνία (δεν αλλάζει αυτόματα· διόρθωσέ τη μέσα στο τουρνουά αν χρειάζεται):
-                              <ul style={{ margin: "4px 0 0 0", paddingLeft: 18 }}>
-                                {mismatches.map((r) => (
-                                  <li key={r.id}>{r.name} — {formatDate(r.date)}, σεζόν {r.seasonYear} (η ημερομηνία ανήκει στη {r.expectedSeason})</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {noDate.length > 0 && (
-                            <p className="field-warning">⚠ Χωρίς έγκυρη ημερομηνία ή πριν από τις 27/9/2025: {noDate.map((r) => r.name).join(", ")}.</p>
-                          )}
-                          {mismatches.length === 0 && noDate.length === 0 && metaPlan.unreadable.length === 0 && (
-                            <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 6px 0" }}>✓ Όλες οι σεζόν ταιριάζουν με τις ημερομηνίες.</p>
-                          )}
-                          {!sysState.homeClub && (
-                            <p className="field-warning">Συμπλήρωσε και αποθήκευσε πρώτα τον σύλλογό σου.</p>
-                          )}
-                          {!exportFresh && (
-                            <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                              <span>Για να εφαρμόσεις τη μετάπτωση χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
-                              <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
-                            </div>
-                          )}
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                            <button className="btn-secondary" onClick={() => setMetaPlan(null)} disabled={metaBusy}>Άκυρο</button>
-                            <button
-                              className="btn-primary"
-                              onClick={applyMetaMigration}
-                              disabled={metaBusy || !exportFresh || !sysState.homeClub || metaPlan.unreadable.length > 0}
-                            >
-                              {metaBusy ? "Μετάπτωση… (περίμενε)" : "Εφαρμογή μετάπτωσης"}
-                            </button>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
-
+              {isSuper && (
               <div className="control-sub-card">
                 <strong>Σύλλογοι</strong>
-                {!clubsActive(sysState) ? (
-                  <>
-                    <p className="control-sub" style={{ marginTop: 6 }}>
-                      Σήμερα ο σύλλογος γράφεται ελεύθερα, σε παίκτες και τουρνουά. Η μετάπτωση φτιάχνει μία λίστα συλλόγων από ό,τι υπάρχει και αντιστοιχίζει παίκτες και τουρνουά. Πρώτα βλέπεις αναφορά· εσύ αποφασίζεις ποιες γραφές είναι ο ίδιος σύλλογος.
-                    </p>
-                    {!clubPlan ? (
-                      <button className="btn-secondary" onClick={runClubPlan} disabled={clubBusy}>
-                        {clubBusy ? "Έλεγχος…" : "Αναφορά μετάπτωσης συλλόγων (δεν αλλάζει τίποτα)"}
-                      </button>
-                    ) : (
-                      (() => {
-                        const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
-                        const roots = clubPlan.list.filter((g) => resolveClubKey(g.key, clubDecisions) === g.key);
-                        return (
-                          <>
-                            <p style={{ fontSize: 13, margin: "6px 0 8px 0" }}>
-                              Βρέθηκαν <strong>{clubPlan.list.length}</strong> διαφορετικές γραφές συλλόγων (ελέγχθηκαν {clubPlan.scanned} τουρνουά). Θα δημιουργηθούν <strong>{roots.length}</strong> σύλλογοι.
-                            </p>
-                            {clubPlan.list.length === 0 && <p className="control-sub">Δεν υπάρχει κανένας σύλλογος γραμμένος· η λίστα θα ξεκινήσει κενή.</p>}
-                            {clubPlan.list.length > 0 && (
-                              <div style={{ overflowX: "auto" }}>
-                                <table className="cal-table">
-                                  <thead>
-                                    <tr><th>Γραφή/ές</th><th>Παίκτες</th><th>Τουρνουά</th><th>Τι είναι</th><th>Όνομα συλλόγου</th></tr>
-                                  </thead>
-                                  <tbody>
-                                    {clubPlan.list.map((g) => {
-                                      const decision = clubDecisions[g.key] || "new";
-                                      const sug = g.suggestion ? clubPlan.list.find((o) => o.key === g.suggestion) : null;
-                                      return (
-                                        <tr key={g.key}>
-                                          <td>
-                                            {g.variants.join(" / ")}
-                                            {g.home && <span className="cal-note"> · ο σύλλογός σου</span>}
-                                            {sug && decision === "new" && <div className="field-warning" style={{ margin: "2px 0 0 0" }}>Μήπως είναι ο «{sug.name}»;</div>}
-                                          </td>
-                                          <td>{g.players}</td>
-                                          <td>{g.tournaments}</td>
-                                          <td>
-                                            <select value={decision} onChange={(e) => setClubDecisions({ ...clubDecisions, [g.key]: e.target.value })}>
-                                              <option value="new">Νέος σύλλογος</option>
-                                              {clubPlan.list
-                                                .filter((o) => o.key !== g.key && resolveClubKey(o.key, clubDecisions) === o.key)
-                                                .map((o) => (
-                                                  <option key={o.key} value={o.key}>Ίδιος με «{clubNames[o.key] || o.name}»</option>
-                                                ))}
-                                            </select>
-                                          </td>
-                                          <td>
-                                            {decision === "new" ? (
-                                              <input type="text" value={clubNames[g.key] ?? g.name} onChange={(e) => setClubNames({ ...clubNames, [g.key]: e.target.value })} />
-                                            ) : (
-                                              <span className="cal-note">→ {clubNames[resolveClubKey(g.key, clubDecisions)] || ""}</span>
-                                            )}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                            {clubPlan.unreadable.length > 0 && <p className="field-warning">⚠ Δεν διαβάστηκαν {clubPlan.unreadable.length} τουρνουά· ξανατρέξε την αναφορά.</p>}
-                            {!exportFresh && (
-                              <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                                <span>Για να εφαρμόσεις τη μετάπτωση χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
-                                <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
-                              </div>
-                            )}
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                              <button className="btn-secondary" onClick={() => setClubPlan(null)} disabled={clubBusy}>Άκυρο</button>
-                              <button className="btn-primary" onClick={applyClubMigration} disabled={clubBusy || !exportFresh || clubPlan.unreadable.length > 0}>
-                                {clubBusy ? "Μετάπτωση… (περίμενε)" : "Εφαρμογή μετάπτωσης"}
-                              </button>
-                            </div>
-                          </>
-                        );
-                      })()
-                    )}
-                  </>
-                ) : (
                   <>
                     <p className="control-sub" style={{ marginTop: 6 }}>
                       Η λίστα συλλόγων που χρησιμοποιούν παίκτες και τουρνουά. Ο σύλλογός σου είναι η προεπιλογή σε κάθε νέο τουρνουά.
@@ -8227,128 +8055,8 @@ export default function TournamentManager() {
                       </button>
                     )}
                   </>
-                )}
               </div>
-            </div>
-              </>
-            )}
-
-            {controlTab === "players" && (
-              <>
-            <div className="card control-section">
-              <h2 className="control-h">Παίκτες</h2>
-              <ContactsMigrationCard
-                moved={registry.contactsVersion === 1}
-                preview={contactsPreview}
-                busy={contactsBusy}
-                exportFresh={!!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000}
-                onPreview={() => setContactsPreview(contactsSummary(registry))}
-                onApply={applyContactsMigration}
-                onCancel={() => setContactsPreview(null)}
-              />
-              {(() => {
-                const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
-                const sortedPersons = Object.entries(registry.players).sort((a, b) => a[1].name.localeCompare(b[1].name, "el"));
-                return (
-                  <div className="control-sub-card">
-                    <strong>Μόνιμα ID παικτών</strong>
-                    {registry.identityVersion === 2 ? (
-                      <p style={{ margin: "6px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
-                        ✓ Ενεργά{registry.migratedAt ? ` (μετάβαση ${formatDate(registry.migratedAt)})` : ""}. Κάθε παίκτης έχει μόνιμο ID και όλες οι γραφές του ονόματός του οδηγούν στο ίδιο πρόσωπο.
-                      </p>
-                    ) : (
-                      <>
-                        <p style={{ margin: "6px 0 10px 0", fontSize: 13, color: "var(--muted)" }}>
-                          Σήμερα ο παίκτης αναγνωρίζεται από το όνομά του. Η μετάβαση δίνει σε κάθε παίκτη μόνιμο ID, ώστε μια μετονομασία ή διόρθωση γραφής να μη χάνει ιστορικό. Πρώτα βλέπεις αναφορά, χωρίς καμία αλλαγή.
-                        </p>
-                        {!identityPlan ? (
-                          <button className="btn-secondary" onClick={runIdentityPlan} disabled={identityBusy}>
-                            {identityBusy ? "Έλεγχος…" : "Αναφορά μετάβασης (δεν αλλάζει τίποτα)"}
-                          </button>
-                        ) : (
-                          <>
-                            <p style={{ margin: "0 0 8px 0", fontSize: 13 }}>
-                              Ελέγχθηκαν {identityPlan.scanned} τουρνουά. Θα δημιουργηθούν <strong>{identityPlan.persons}</strong> μόνιμα ID από το μητρώο.
-                            </p>
-                            {identityPlan.unmatched.length === 0 ? (
-                              <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 8px 0" }}>✓ Όλα τα ονόματα των τουρνουά υπάρχουν στο μητρώο.</p>
-                            ) : (
-                              <div style={{ margin: "0 0 10px 0" }}>
-                                <p style={{ fontSize: 13, margin: "0 0 6px 0" }}>
-                                  <strong>{identityPlan.unmatched.length}</strong> {identityPlan.unmatched.length === 1 ? "όνομα" : "ονόματα"} στα τουρνουά δεν υπάρχουν στο μητρώο. Για καθένα, διάλεξε αν είναι ήδη κάποιος παίκτης ή νέο πρόσωπο:
-                                </p>
-                                {identityPlan.unmatched.map((u) => (
-                                  <div key={u.base} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6, fontSize: 13 }}>
-                                    <span style={{ minWidth: 190 }}><strong>{u.name}</strong> ({u.tournaments} τουρνουά)</span>
-                                    <select value={identityDecisions[u.base] ?? u.defaultChoice} onChange={(e) => setIdentityDecisions({ ...identityDecisions, [u.base]: e.target.value })}>
-                                      <option value="new">Νέο πρόσωπο</option>
-                                      {u.candidates.map((c) => (
-                                        <option key={c.key} value={c.key}>Είναι ο/η {c.name}</option>
-                                      ))}
-                                      <optgroup label="Άλλος παίκτης του μητρώου">
-                                        {sortedPersons.filter(([k]) => !u.candidates.some((c) => c.key === k)).map(([k, q]) => (
-                                          <option key={k} value={k}>{q.name}</option>
-                                        ))}
-                                      </optgroup>
-                                    </select>
-                                    {u.reason && <span style={{ color: "var(--muted)" }}>{u.reason}</span>}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {identityPlan.duplicates.length > 0 && (
-                              <p style={{ fontSize: 13, margin: "0 0 10px 0" }}>
-                                Πιθανά διπλά πρόσωπα στο μητρώο (θα μπορείς να τα ενώσεις μετά): {identityPlan.duplicates.map((g) => g.join(" ↔ ")).join(" · ")}
-                              </p>
-                            )}
-                            {!exportFresh && (
-                              <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-                                <span>Για να εφαρμόσεις τη μετάβαση χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
-                                <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
-                              </div>
-                            )}
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <button className="btn-secondary" onClick={() => setIdentityPlan(null)} disabled={identityBusy}>Άκυρο</button>
-                              <button className="btn-primary" onClick={applyIdentityMigration} disabled={identityBusy || !exportFresh}>
-                                {identityBusy ? "Μετάβαση… (περίμενε)" : "Εφαρμογή μετάβασης"}
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                );
-              })()}
-
-              <div className="control-sub-card">
-                <strong>Αριθμός Μητρώου</strong>
-                {registry.regNoVersion === 1 ? (
-                  <p style={{ margin: "6px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
-                    ✓ Ενεργός. Κάθε παίκτης έχει αριθμό (#001, #002…) με σειρά πρώτης συμμετοχής· οι νέοι παίρνουν τον επόμενο ({formatRegNo(nextRegNo(registry))}). Αριθμός δεν ξαναδίνεται, ούτε μετά από διαγραφή ή ένωση.
-                  </p>
-                ) : !regNoPlan ? (
-                  <>
-                    <p className="control-sub" style={{ marginTop: 6 }}>
-                      Δίνει σε κάθε παίκτη έναν ευανάγνωστο αριθμό, με σειρά πρώτης συμμετοχής σε τουρνουά· όσοι δεν έχουν παίξει ακόμα παίρνουν τους επόμενους, αλφαβητικά. Το εσωτερικό ID δεν αλλάζει.
-                    </p>
-                    <button className="btn-secondary" onClick={runRegNoPlan} disabled={clubBusy}>
-                      {clubBusy ? "Υπολογισμός…" : "Προεπισκόπηση αριθμών (δεν αλλάζει τίποτα)"}
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <p style={{ fontSize: 13, margin: "6px 0" }}>
-                      <strong>{regNoPlan.order.length}</strong> παίκτες ({regNoPlan.played} με συμμετοχή). Πρώτοι:{" "}
-                      {regNoPlan.order.slice(0, 5).map((k, i) => `${formatRegNo(i + 1)} ${registry.players[k]?.name}`).join(" · ")}
-                    </p>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <button className="btn-secondary" onClick={() => setRegNoPlan(null)}>Άκυρο</button>
-                      <button className="btn-primary" onClick={applyRegNos}>Απόδοση αριθμών</button>
-                    </div>
-                  </>
-                )}
-              </div>
+              )}
             </div>
               </>
             )}
