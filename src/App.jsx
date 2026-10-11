@@ -758,8 +758,11 @@ export default function TournamentManager() {
     const startComp = isSuper ? DEFAULT_COMPETITION_ID : (competitionsFrom(sysState).find((c) => canEditCompetition(c.id)) || {}).id || DEFAULT_COMPETITION_ID;
     setSeasonYear(currentSeasonId(sysState, startComp));
     setCompetitionId(startComp);
-    setOrganisation(clubsActive(sysState) ? clubDisplay(sysState, sysState.homeClubId, sysState.homeClub) : sysState.homeClub || "");
-    setOrganisationClubId(clubsActive(sysState) ? sysState.homeClubId || null : null);
+    // The organiser is the club that owns the competition (for a club
+    // administrator, their own club — not the Federation).
+    const startOwner = (competitionsFrom(sysState).find((c) => c.id === startComp) || {}).ownerClubId || sysState.homeClubId || null;
+    setOrganisation(clubsActive(sysState) ? clubDisplay(sysState, startOwner, sysState.homeClub) : sysState.homeClub || "");
+    setOrganisationClubId(clubsActive(sysState) ? startOwner : null);
     setCalendarEntryId(null);
     setLiveStandingsEnabled(false);
     setIsOfficial(true);
@@ -7733,7 +7736,11 @@ export default function TournamentManager() {
       {/* SETUP */}
       {phase === "setup" && !isAdmin && (
         <div className="content">
-          <div className="empty-state">Creating a tournament is only available in Admin mode.</div>
+          <div className="empty-state">
+            {isAdminAny && !isSuper
+              ? "Δεν υπάρχει ακόμη διοργάνωση του συλλόγου σου. Φτιάξε πρώτα μία στη Διαχείριση → Διοργανώσεις & σύλλογοι → «Νέα διοργάνωση», και μετά ξαναπάτησε «Νέο τουρνουά»."
+              : "Creating a tournament is only available in Admin mode."}
+          </div>
         </div>
       )}
       {phase === "setup" && isAdmin && (
