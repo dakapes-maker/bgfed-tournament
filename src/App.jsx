@@ -767,9 +767,11 @@ export default function TournamentManager() {
     setLiveStandingsEnabled(false);
     setIsOfficial(true);
     setPlayers([]);
-    // Prefill from the next open calendar day (current season, then next).
-    const cur = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
-    const later = seasonsOfCompetition(sysState, DEFAULT_COMPETITION_ID).map((s) => s.id).filter((id) => id > cur);
+    // Prefill from the next open calendar day (current season, then next) of
+    // the competition the new tournament starts on — for a club administrator
+    // their own, never the Premier League's calendar.
+    const cur = currentSeasonId(sysState, startComp);
+    const later = seasonsOfCompetition(sysState, startComp).map((s) => s.id).filter((id) => id > cur);
     for (const y of [cur, ...later]) {
       const view = buildCalendarView(sysState, y, archive);
       const open = view.find((e) => !e.tournament && e.status === "scheduled");
@@ -4661,7 +4663,8 @@ export default function TournamentManager() {
     setTournamentName(calendarEntryTitle(entry, year, competitionsFrom(sysState)));
     setCreatedAt((prev) => withLocalDate(prev || new Date().toISOString(), entry.date));
     setSeasonYear(year);
-    setCompetitionId(entry.competitionId || DEFAULT_COMPETITION_ID);
+    // The calendar belongs to a season, and the season to a competition.
+    setCompetitionId(entry.competitionId || seasonCompetitionId(sysState, year));
   }
 
   async function saveCalendar(year, entries) {
