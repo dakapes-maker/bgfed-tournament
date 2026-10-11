@@ -1,0 +1,300 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index e9e16cc..52e17cb 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -200,6 +200,6 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ 
+ - **Τελευταίο ολοκληρωμένο:** στάδιο **5A** (build `2026-10-10.04`, PR #7) — εφαρμόστηκε πλήρως στην παραγωγή στις 2026-10-10 (βήματα 0–5 του `docs/plan-5A.md` §6). Πριν από αυτό: σχέδιο R (builds `.01`–`.03`, PR #3, #4, #6).
+ - **Δοκιμές 5A:** κανόνες 6/6 (`npm run test:rules`)· εφαρμογή 29/29 σε Emulator Firestore + Auth με τους πραγματικούς κανόνες· Excel πανομοιότυπο πριν/μετά τη μετάπτωση· Google ελέγχθηκε από τον Γιάννη στο preview και στην παραγωγή.
+-- **Τρέχον:** ολοκληρώθηκε το **5B** (builds `.05`–`.09`: σεζόν διοργάνωσης, σελίδα διοργάνωσης, Βαθμολογία ανά διοργάνωση και σεζόν, οικονομικά ανά διοργάνωση — βλ. §9). Το 5B.6 (καθαρισμός) **δεν χρειάζεται**: τα ids σεζόν είναι τα έτη, δεν έμειναν παλιά πεδία. Τα 5B.4β / 5B.5 «όταν χρειαστεί». **5C** (build `2026-10-10.10`): διαχειριστές συλλόγων (§9.3) — απαιτεί δημοσίευση του νέου `firestore.rules` στο console μετά το merge. **5D** (build `2026-10-10.11`): κατατάξεις ELO (§9.4) — μετά το merge: δημοσίευση `firestore.rules` (νέο `eloRankings/{id}`) και **Recompute** στην παραγωγή. **5D.3** (`2026-10-10.12`): χωριστά Recompute ELO / Βαθμολογίας (§9.4). **Σ1 — καθαρισμός** (build `2026-10-10.13`): αφαιρέθηκαν η αρχικοποίηση άδειας βάσης (αρχικό μητρώο, ιστορική σεζόν 2026, αρχικό ELO, αναδημιουργία ιστορικών ημερών) και το `data/history2026.js` (−450 KB κώδικα· **η εφαρμογή δεν στήνει πια μόνη της άδεια βάση** — επαναφορά μόνο από Export), όλες οι μεταπτώσεις μιας χρήσης (μόνιμα ID, Build 2 διοργανώσεις/σεζόν, σύλλογοι, σύνδεση διοργανώσεων με συλλόγους, Αριθμός Μητρώου, στοιχεία επικοινωνίας — και η καρτέλα «Παίκτες» της Διαχείρισης), νεκρός κώδικας (ELO_POOLS/eloPoolOf, παλιές σταθερές ποσών, αχρησιμοποίητες συναρτήσεις/κείμενα). Οι έλεγχοι `identityVersion`/`regNoVersion`/`contactsVersion`/`clubsActive` στη λογική έμειναν (είναι αληθείς στην παραγωγή). Διορθώσεις 5C: η κάρτα «Σύλλογοι» μόνο για υπερ-διαχειριστή· ο διαχειριστής συλλόγου βλέπει **όλους** τους παίκτες στο μητρώο (για να μη διπλοεγγράφει), ιδιωτικά στοιχεία και επεξεργασία μόνο για τους δικούς του· νέος παίκτης από διαχειριστή συλλόγου παίρνει αυτόματα τον σύλλογό του· `clubIds` γίνεται δεκτό και ως string. Στον πίνακα συλλόγων φαίνεται το id με κουμπί αντιγραφής — **τα ids των συλλόγων της παλιάς μετάπτωσης τελειώνουν σε ελληνικά γράμματα** (π.χ. `…ομο`, `…σακ`) και δεν πρέπει να πληκτρολογούνται. Το tab ELO λέγεται «Πανελλήνια Κατάταξη ELO». **Σ1.1** (`.14`): μετονομασία παίκτη δεν χρειάζεται Recompute — η Βαθμολογία (`computeSeasonStandings`) και η σελίδα ELO δείχνουν το **τρέχον** όνομα του μητρώου (`displayNameFor`)· το `nameStale` του ελέγχου συνέπειας είναι πλέον ενημερωτικό (δεν θέτει `needsRecompute`). Το ELO και η Βαθμολογία είναι δεμένα με το id προσώπου (μέσω `normalizeName` → `PERSON_LOOKUP`, που αναγνωρίζει και τα aliases)· τα ονόματα που αποθηκεύονται μέσα τους είναι μόνο αντίγραφα εμφάνισης. Επόμενο: **Σ2 — απόδοση** (κοινή μνήμη τουρνουά ανά επίσκεψη για τα στατιστικά, πίνακας μεγεθών δεδομένων, διπλές αναγνώσεις εκκίνησης, ίσως το αρχικό Excel των εισαγωγών σε χωριστό έγγραφο)· ένταξη Τρικάλων σε εξέλιξη· δημόσιες σελίδες ανά πρωτάθλημα μετά.
++- **Τρέχον:** ολοκληρώθηκε το **5B** (builds `.05`–`.09`: σεζόν διοργάνωσης, σελίδα διοργάνωσης, Βαθμολογία ανά διοργάνωση και σεζόν, οικονομικά ανά διοργάνωση — βλ. §9). Το 5B.6 (καθαρισμός) **δεν χρειάζεται**: τα ids σεζόν είναι τα έτη, δεν έμειναν παλιά πεδία. Τα 5B.4β / 5B.5 «όταν χρειαστεί». **5C** (build `2026-10-10.10`): διαχειριστές συλλόγων (§9.3) — απαιτεί δημοσίευση του νέου `firestore.rules` στο console μετά το merge. **5D** (build `2026-10-10.11`): κατατάξεις ELO (§9.4) — μετά το merge: δημοσίευση `firestore.rules` (νέο `eloRankings/{id}`) και **Recompute** στην παραγωγή. **5D.3** (`2026-10-10.12`): χωριστά Recompute ELO / Βαθμολογίας (§9.4). **Σ1 — καθαρισμός** (build `2026-10-10.13`): αφαιρέθηκαν η αρχικοποίηση άδειας βάσης (αρχικό μητρώο, ιστορική σεζόν 2026, αρχικό ELO, αναδημιουργία ιστορικών ημερών) και το `data/history2026.js` (−450 KB κώδικα· **η εφαρμογή δεν στήνει πια μόνη της άδεια βάση** — επαναφορά μόνο από Export), όλες οι μεταπτώσεις μιας χρήσης (μόνιμα ID, Build 2 διοργανώσεις/σεζόν, σύλλογοι, σύνδεση διοργανώσεων με συλλόγους, Αριθμός Μητρώου, στοιχεία επικοινωνίας — και η καρτέλα «Παίκτες» της Διαχείρισης), νεκρός κώδικας (ELO_POOLS/eloPoolOf, παλιές σταθερές ποσών, αχρησιμοποίητες συναρτήσεις/κείμενα). Οι έλεγχοι `identityVersion`/`regNoVersion`/`contactsVersion`/`clubsActive` στη λογική έμειναν (είναι αληθείς στην παραγωγή). Διορθώσεις 5C: η κάρτα «Σύλλογοι» μόνο για υπερ-διαχειριστή· ο διαχειριστής συλλόγου βλέπει **όλους** τους παίκτες στο μητρώο (για να μη διπλοεγγράφει), ιδιωτικά στοιχεία και επεξεργασία μόνο για τους δικούς του· νέος παίκτης από διαχειριστή συλλόγου παίρνει αυτόματα τον σύλλογό του· `clubIds` γίνεται δεκτό και ως string. Στον πίνακα συλλόγων φαίνεται το id με κουμπί αντιγραφής — **τα ids των συλλόγων της παλιάς μετάπτωσης τελειώνουν σε ελληνικά γράμματα** (π.χ. `…ομο`, `…σακ`) και δεν πρέπει να πληκτρολογούνται. Το tab ELO λέγεται «Πανελλήνια Κατάταξη ELO». **Σ1.1** (`.14`): μετονομασία παίκτη δεν χρειάζεται Recompute — η Βαθμολογία (`computeSeasonStandings`) και η σελίδα ELO δείχνουν το **τρέχον** όνομα του μητρώου (`displayNameFor`)· το `nameStale` του ελέγχου συνέπειας είναι πλέον ενημερωτικό (δεν θέτει `needsRecompute`). Το ELO και η Βαθμολογία είναι δεμένα με το id προσώπου (μέσω `normalizeName` → `PERSON_LOOKUP`, που αναγνωρίζει και τα aliases)· τα ονόματα που αποθηκεύονται μέσα τους είναι μόνο αντίγραφα εμφάνισης. Μετά (απευθείας στο main, ένα αρχείο): διαχειριστής συλλόγου — το «Νέο τουρνουά» παίρνει το ημερολόγιο **της διοργάνωσης του χρήστη** (όχι πάντα της Premier League), η αγωνιστική ημερολογίου ορίζει διοργάνωση από τη σεζόν της (`seasonCompetitionId`), διοργανωτής = ο σύλλογος της διοργάνωσης, σαφές μήνυμα όταν δεν έχει διοργάνωση. **Σ2** (`2026-10-10.15`): (α) **έλεγχος των ροών διαχειριστή συλλόγου** για σιωπηρές υποθέσεις «Premier League / Ομοσπονδία»: διάλογος ολοκλήρωσης τουρνουά ανά διοργάνωση (ELO/Βαθμολογία), «Προσθήκη στο RSS feed» και `exportAllData` μόνο υπερ-διαχειριστής (το RSS είναι του bgfed.gr· το Export περιέχει όλα τα ιδιωτικά στοιχεία), στο κλείσιμο σεζόν ο διαχειριστής συλλόγου ζητά Export από τον υπερ-διαχειριστή, νέα αγωνιστική ημερολογίου → διοργάνωση της σεζόν, επιλογή διοργάνωσης στο ημερολόγιο μόνο από όσες επεξεργάζεται· (β) **cache τουρνουά ανά επίσκεψη** στο `firebase.js` (ολοκληρωμένα + εισαγωγές, αντίγραφα με `structuredClone`· κάθε save/delete μέσω `firebase.js` το ακυρώνει· οι strict αναγνώσεις πάνε πάντα στη βάση)· (γ) Διαχείριση → Δεδομένα → **«Μεγέθη δεδομένων»** (μέγεθος κάθε εγγράφου ως % του ορίου 1 MiB)· (δ) αφαιρέθηκε το νεκρό παράθυρο του συνδυασμένου Recompute. Οι αναγνώσεις εκκίνησης ελέγχθηκαν: λίγες και εύλογες, χωρίς αλλαγή. Επόμενο: απόφαση για το αρχικό Excel των εισαγωγών (χωριστό έγγραφο;) με βάση τα «Μεγέθη δεδομένων»· ένταξη Τρικάλων σε εξέλιξη· δημόσιες σελίδες ανά πρωτάθλημα μετά.
+ - **Εκκρεμότητες εκτός κώδικα:** ο admin του bgfed.gr να επιβεβαιώσει την ανάκληση του WordPress Application Password (βλ. §8).
+ - **Μικρά υπόλοιπα:** τα περισσότερα διορθώθηκαν στο Σ1 (`.13`). Μένει: το `eslint@9.39.5` δεν υποστηρίζεται πια (μόνο εργαλείο ελέγχου).
+diff --git a/src/App.jsx b/src/App.jsx
+index ee3756b..fa2b43c 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -400,7 +400,6 @@ export default function TournamentManager() {
+   const [playerDetailTab, setPlayerDetailTab] = useState("contact"); // contact | stats
+   const [eloTimeline, setEloTimeline] = useState(null); // null = not computed yet
+   const [eloTimelineLoading, setEloTimelineLoading] = useState(false);
+-  const [confirmingRecompute, setConfirmingRecompute] = useState(false);
+   const [newMembershipYear, setNewMembershipYear] = useState(new Date().getFullYear());
+   const [nameDisplayMode, setNameDisplayMode] = useState("normal"); // normal | upper | greeklish
+   const [eloData, setEloData] = useState({ players: {} });
+@@ -1263,6 +1262,7 @@ export default function TournamentManager() {
+ 
+   // #region Export / Import / Excel
+   async function exportAllData() {
++    if (!isSuper) return; // Σ2: the full backup holds everyone's private details — super administrator only
+     // Every read is strict: a backup with a silently missing part is worse
+     // than no backup, because it would also reset the "last export" clock
+     // that the migrations rely on.
+@@ -2400,6 +2400,7 @@ export default function TournamentManager() {
+    * so Cloudflare's bot protection never sees an incoming request from us. */
+   const [addingToFeed, setAddingToFeed] = useState(false);
+   async function addRecapToFeed() {
++    if (!isSuper) return; // Σ2: the feed feeds the Federation's site
+     if (!recapText) return;
+     setAddingToFeed(true);
+     try {
+@@ -2972,8 +2973,40 @@ export default function TournamentManager() {
+     </div>
+   ) : null;
+ 
+-  const recomputePanel = isAdmin && (
+-    !confirmingRecompute ? (
++  /* Σ2: sizes of the stored documents (the database allows 1 MiB per
++   * document) — read on demand, super administrator only. */
++  const [dataSizes, setDataSizes] = useState(null);
++  async function computeDataSizes() {
++    setDataSizes({ loading: true });
++    const size = (x) => new Blob([JSON.stringify(x || {})]).size;
++    const rows = [];
++    const add = (label, data) => rows.push({ label, bytes: size(data) });
++    try {
++      add("Μητρώο (meta/registry)", await loadRegistryStrict());
++      add("Στοιχεία επικοινωνίας (private/contacts)", await loadContactsStrict());
++      add("Πανελλήνια ELO (meta/elo)", await loadEloStrict());
++      add("Κατάλογος τουρνουά (meta/tournamentsIndex)", await loadIndexStrict());
++      add("RSS feed (meta/rssFeed)", await loadFeedItemsStrict());
++      add("Ρυθμίσεις (sys-state)", await fetchTournamentDataStrict(SYS_STATE_ID));
++      add("Κάδος (sys-trash)", await fetchTournamentDataStrict("sys-trash"));
++      for (const y of await listSeasonYearsStrict()) add(`Βαθμολογία σεζόν ${sn(y)}`, await loadSeasonStrict(y));
++      const imports = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
++      for (const it of (imports && imports.list) || []) {
++        const d = await fetchTournamentDataStrict(it.id);
++        rows.push({ label: `Εισαγωγή: ${it.name || it.id}`, bytes: size(d), extra: d && (d.sourceSheetsJson || d.sourceSheets) ? `εκ των οποίων αρχικό Excel ${Math.round(size(d.sourceSheetsJson || d.sourceSheets) / 1024)} KB` : "" });
++      }
++      const tour = [];
++      for (const it of archive) tour.push({ label: `Τουρνουά: ${it.name || it.id}`, bytes: size(await fetchTournamentData(it.id)) });
++      tour.sort((a, b) => b.bytes - a.bytes);
++      rows.push(...tour.slice(0, 5));
++      rows.sort((a, b) => b.bytes - a.bytes);
++      setDataSizes({ rows, tournaments: tour.length, total: [...rows, ...tour.slice(5)].reduce((s, r) => s + r.bytes, 0) });
++    } catch {
++      setDataSizes({ error: "Κάποιο έγγραφο δεν διαβάστηκε· δοκίμασε ξανά." });
++    }
++  }
++
++  const recomputePanel = isSuper && (
+       <>
+       {staleBlock}
+       <div className="recompute-panel">
+@@ -2996,29 +3029,36 @@ export default function TournamentManager() {
+           <button className="btn-secondary" onClick={runConsistencyCheck} disabled={consistencyLoading}>
+             <Check size={15} /> {consistencyLoading ? "Έλεγχος…" : "Έλεγχος συνέπειας"}
+           </button>
++          <button className="btn-secondary" onClick={computeDataSizes} disabled={dataSizes?.loading}>
++            <Info size={15} /> {dataSizes?.loading ? "Μέτρηση…" : "Μεγέθη δεδομένων"}
++          </button>
+         </div>
+       </div>
++      {dataSizes && !dataSizes.loading && (
++        <div className="card" style={{ marginTop: 10 }}>
++          {dataSizes.error ? <p className="field-warning">{dataSizes.error}</p> : (
++            <>
++              <p className="control-sub">Όριο της βάσης: 1.024 KB ανά έγγραφο. Σύνολο ~{Math.round(dataSizes.total / 1024)} KB ({dataSizes.tournaments} τουρνουά· φαίνονται τα 5 μεγαλύτερα).</p>
++              <table className="cal-table">
++                <thead><tr><th>Έγγραφο</th><th style={{ textAlign: "right" }}>KB</th><th style={{ textAlign: "right" }}>% ορίου</th></tr></thead>
++                <tbody>
++                  {dataSizes.rows.map((r) => (
++                    <tr key={r.label}>
++                      <td>{r.label}{r.extra ? <span className="cal-note"> · {r.extra}</span> : null}</td>
++                      <td style={{ textAlign: "right" }}>{(r.bytes / 1024).toFixed(1)}</td>
++                      <td style={{ textAlign: "right", color: r.bytes > 700 * 1024 ? "var(--accent)" : undefined, fontWeight: r.bytes > 700 * 1024 ? 700 : undefined }}>{Math.round((r.bytes / (1024 * 1024)) * 100)}%</td>
++                    </tr>
++                  ))}
++                </tbody>
++              </table>
++              <button className="btn-ghost" onClick={() => setDataSizes(null)}>Κλείσιμο</button>
++            </>
++          )}
++        </div>
++      )}
+       {consistencyError && <p className="field-warning">{consistencyError}</p>}
+       {consistencyReport && <ConsistencyReportView report={consistencyReport} onClose={() => setConsistencyReport(null)} />}
+       </>
+-    ) : (
+-      <div className="delete-confirm">
+-        <span>Rebuild ELO and the Season Standings of every season from scratch (each tournament goes to its own season), using only tournaments marked "Official League day" — any test tournament is ignored automatically, whether or not you've deleted it. This can't be undone.</span>
+-        <div style={{ display: "flex", gap: 8 }}>
+-          <button className="btn-secondary" onClick={() => setConfirmingRecompute(false)}>Cancel</button>
+-          <button
+-            className="btn-primary"
+-            style={{ background: "var(--accent)" }}
+-            onClick={() => {
+-              recomputeEloAndSeasonFromScratch();
+-              setConfirmingRecompute(false);
+-            }}
+-          >
+-            Yes, recompute
+-          </button>
+-        </div>
+-      </div>
+-    )
+   );
+   const standings = sortStandings(players, buchholz);
+   const byId = {};
+@@ -4440,7 +4480,7 @@ export default function TournamentManager() {
+         </p>
+         <ol className="close-steps">
+           <li className={exportFresh ? "done" : ""}>
+-            Πλήρες backup: {exportFresh ? `✓ ${formatDate(sysState.lastExportAt)}` : <button className="btn-secondary" onClick={exportAllData}><Download size={14} /> Export All Data</button>}
++            Πλήρες backup: {exportFresh ? `✓ ${formatDate(sysState.lastExportAt)}` : isSuper ? <button className="btn-secondary" onClick={exportAllData}><Download size={14} /> Export All Data</button> : <span className="cal-note">ζήτησε από τον υπερ-διαχειριστή να κάνει Export (ισχύει 24 ώρες)</span>}
+           </li>
+           <li className={excelDoneAt ? "done" : ""}>
+             Τελική Βαθμολογία σε Excel: {excelDoneAt ? "✓ κατέβηκε" : <button className="btn-secondary" onClick={async () => { await exportBaselineExcel(); setExcelDoneAt(new Date().toISOString()); }}><Download size={14} /> Εξαγωγή Excel</button>}
+@@ -4540,7 +4580,7 @@ export default function TournamentManager() {
+       <div className="control-sub-card">
+         <strong>Διοργανώσεις</strong>
+         <p className="control-sub" style={{ marginTop: 6 }}>
+-          Κάθε διοργάνωση ανήκει σε έναν σύλλογο· ο σύλλογος ορίζει την κατάταξη ELO όπου μετράει. Σήμερα ενεργή είναι η ELO του συλλόγου σου ({clubDisplay(sysState, sysState.homeClubId, "—")}). Ο σύλλογος μιας διοργάνωσης κλειδώνει μετά τη δημιουργία.
++          Κάθε διοργάνωση ανήκει σε έναν σύλλογο (κλειδώνει μετά τη δημιουργία). Σε ποια κατάταξη ELO μετράει ορίζεται στο «Κατατάξεις ELO»· Βαθμολογία σεζόν και οικονομικά ορίζονται στη σελίδα της διοργάνωσης.
+         </p>
+         <table className="cal-table">
+           <thead><tr><th>Διοργάνωση</th><th>Σύλλογος</th><th>ELO</th><th title="Έχει πίνακα Βαθμολογίας σεζόν">Βαθμολογία</th><th>Τουρνουά</th><th></th></tr></thead>
+@@ -4690,7 +4730,7 @@ export default function TournamentManager() {
+     if (!calDraft || !calDraft.date) return;
+     const { year } = calDraft;
+     const entries = calendarOf(year);
+-    const clean = { date: calDraft.date, competitionId: calDraft.competitionId || DEFAULT_COMPETITION_ID, note: (calDraft.note || "").trim() };
++    const clean = { date: calDraft.date, competitionId: calDraft.competitionId || seasonCompetitionId(sysState, year), note: (calDraft.note || "").trim() };
+     let next;
+     if (calDraft.id) next = entries.map((e) => (e.id === calDraft.id ? { ...e, ...clean } : e));
+     else next = [...entries, { id: newCalendarEntryId(), ...clean, tournamentId: null }];
+@@ -4971,7 +5011,7 @@ export default function TournamentManager() {
+                 onChange={(ev) => setCalDraft({ ...calDraft, competitionId: ev.target.value })}
+                 style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+               >
+-                {comps.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
++                {comps.filter((c) => canEditCompetition(c.id) || c.id === calDraft.competitionId).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+               </select>
+             </div>
+             <div className="field">
+@@ -4983,7 +5023,7 @@ export default function TournamentManager() {
+           </div>
+         ) : (
+           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+-            <button className="btn-secondary" onClick={() => setCalDraft({ year, date: "", competitionId: DEFAULT_COMPETITION_ID, note: "" })}>
++            <button className="btn-secondary" onClick={() => setCalDraft({ year, date: "", competitionId: seasonCompetitionId(sysState, year), note: "" })}>
+               <Plus size={14} /> Προσθήκη αγωνιστικής
+             </button>
+             {unlinkedOfficial.length > 0 && (
+@@ -6223,6 +6263,7 @@ export default function TournamentManager() {
+             />
+             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+               <button className="btn-secondary" onClick={() => setRecapText(null)}>Κλείσιμο</button>
++              {isSuper && ( // the RSS feed is the Federation's site (bgfed.gr)
+               <button
+                 className="btn-secondary"
+                 disabled={addingToFeed}
+@@ -6231,6 +6272,7 @@ export default function TournamentManager() {
+               >
+                 {addingToFeed ? "Προσθήκη…" : "Προσθήκη στο RSS feed"}
+               </button>
++              )}
+               <button
+                 className="btn-primary"
+                 onClick={async () => {
+@@ -6254,11 +6296,14 @@ export default function TournamentManager() {
+           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+             <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Ολοκλήρωση τουρνουά</p>
+             <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 16px 0" }}>
+-              {competitionId !== DEFAULT_COMPETITION_ID
+-                ? "Το τουρνουά δεν είναι Premier League, οπότε δεν θα μετρήσει σε ELO και Βαθμολογία, ό,τι κι αν απαντήσεις."
+-                : liveStandingsEnabled
+-                ? "Ενημέρωση της Βαθμολογίας με το τελικό αποτέλεσμα; (Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο, λόγω live ενημέρωσης.)"
+-                : "Ενημέρωση ELO και Βαθμολογίας με τα αποτελέσματα αυτού του τουρνουά;"}
++              {(() => {
++                // Σ2: per competition (ELO ranking membership, season standings) — not «only the Premier League».
++                const elo = competitionInMainRanking(competitionId);
++                const st = competitionHasStandings(competitionById(competitionId));
++                if (!elo && !st) return "Η διοργάνωση δεν μετράει στην Πανελλήνια ELO ούτε έχει Βαθμολογία σεζόν· το τουρνουά απλώς ολοκληρώνεται, ό,τι κι αν απαντήσεις.";
++                if (liveStandingsEnabled) return st ? "Ενημέρωση της Βαθμολογίας με το τελικό αποτέλεσμα; (Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο, λόγω live ενημέρωσης.)" : "Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο (live ενημέρωση). Ολοκλήρωση;";
++                return `Ενημέρωση ${[elo && "της Πανελλήνιας ELO", st && "της Βαθμολογίας"].filter(Boolean).join(" και ")} με τα αποτελέσματα αυτού του τουρνουά;`;
++              })()}
+             </p>
+             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+               <button
+@@ -7844,7 +7889,7 @@ export default function TournamentManager() {
+               {(!countsTowardRatings({ isOfficial: true, competitionId }) || !countsTowardStandings({ isOfficial: true, competitionId })) && (
+                 <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
+                   Αυτή η διοργάνωση {[
+-                    !countsTowardRatings({ isOfficial: true, competitionId }) && `δεν μετράει στην ELO της ${clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}`,
++                    !countsTowardRatings({ isOfficial: true, competitionId }) && "δεν μετράει στην Πανελλήνια Κατάταξη ELO",
+                     !countsTowardStandings({ isOfficial: true, competitionId }) && "δεν έχει Βαθμολογία σεζόν",
+                   ].filter(Boolean).join(" και ")}· το τουρνουά καταγράφεται κανονικά.
+                 </p>
+diff --git a/src/config/build.js b/src/config/build.js
+index 2cf9d5f..b2750cf 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-10-10.14";
++export const APP_BUILD_VERSION = "2026-10-10.15";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index 7abb41f..d9321c1 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -17,6 +17,8 @@ export const CHANGELOG = [
+     { text: "Η εφαρμογή φορτώνει γρηγορότερα: αφαιρέθηκαν παλιά δεδομένα και κώδικας που δεν χρειάζονται πια.", audience: "all" },
+     { text: "Διαχειριστές συλλόγων: βλέπουν όλους τους παίκτες του μητρώου και επεξεργάζονται μόνο τους δικούς τους· κάθε νέος παίκτης τους ανήκει αυτόματα στον σύλλογό τους. Στη λίστα συλλόγων φαίνεται το id κάθε συλλόγου με κουμπί αντιγραφής.", audience: "admin" },
+     { text: "Μετονομασία παίκτη: η Βαθμολογία και η Κατάταξη ELO δείχνουν αμέσως το νέο όνομα, χωρίς Recompute.", audience: "admin" },
++    { text: "Τα Στατιστικά διαβάζουν κάθε ολοκληρωμένο τουρνουά μία φορά ανά επίσκεψη (λιγότερες αναγνώσεις, πιο γρήγορα).", audience: "all" },
++    { text: "Διαχειριστές συλλόγων: το νέο τουρνουά ξεκινά από το ημερολόγιο της δικής τους διοργάνωσης, με διοργανωτή τον σύλλογό τους· σωστά μηνύματα για ELO/Βαθμολογία ανά διοργάνωση. Το RSS του bgfed.gr και το πλήρες Export μένουν στον υπερ-διαχειριστή. Νέο: «Μεγέθη δεδομένων» στη Διαχείριση → Δεδομένα.", audience: "admin" },
+   ]},
+   { date: "2026-10-09", items: [
+     { text: "Πανελλήνια Κατάταξη ELO από τις Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος, με δική της θέση στο μενού. Η «Βαθμολογία ELO» λέγεται πλέον «Κατάταξη ELO».", audience: "all" },
+diff --git a/src/firebase.js b/src/firebase.js
+index 7b3cd82..53dc950 100644
+--- a/src/firebase.js
++++ b/src/firebase.js
+@@ -199,20 +199,38 @@ export async function saveIndex(list) {
+ /* Individual tournament data                                             */
+ /* ---------------------------------------------------------------------- */
+ 
++/* Σ2: per-visit cache of tournaments that no longer change — finished
++ * tournaments and imported ones. The statistics screens read every tournament;
++ * with the cache each one is read from the database once per visit instead of
++ * once per screen. Any save or delete of a tournament through this module
++ * drops it from the cache; strict reads (Recompute) always go to the database
++ * and refresh the cache. */
++const TOURNAMENT_CACHE = new Map();
++const cacheable = (id, data) => !!data && (data.phase === "finished" || String(id).startsWith("imp-"));
++
+ export async function saveTournamentData(id, data) {
++  TOURNAMENT_CACHE.delete(id);
+   return await setDocData("tournaments", id, data);
+ }
+ 
+ export async function fetchTournamentData(id) {
+-  return await getDocData("tournaments", id);
++  // Copies in and out: callers may change the object they get back.
++  if (TOURNAMENT_CACHE.has(id)) return structuredClone(TOURNAMENT_CACHE.get(id));
++  const data = await getDocData("tournaments", id);
++  if (cacheable(id, data)) TOURNAMENT_CACHE.set(id, structuredClone(data));
++  return data;
+ }
+ 
+-/** Same as fetchTournamentData, but throws if the read failed. */
++/** Same as fetchTournamentData, but throws if the read failed. Always reads the database. */
+ export async function fetchTournamentDataStrict(id) {
+-  return await getDocDataStrict("tournaments", id);
++  const data = await getDocDataStrict("tournaments", id);
++  if (cacheable(id, data)) TOURNAMENT_CACHE.set(id, structuredClone(data));
++  else TOURNAMENT_CACHE.delete(id);
++  return data;
+ }
+ 
+ export async function deleteTournamentData(id) {
++  TOURNAMENT_CACHE.delete(id);
+   return await deleteDocData("tournaments", id);
+ }
+ 
