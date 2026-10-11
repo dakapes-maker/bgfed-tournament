@@ -199,20 +199,38 @@ export async function saveIndex(list) {
 /* Individual tournament data                                             */
 /* ---------------------------------------------------------------------- */
 
+/* Σ2: per-visit cache of tournaments that no longer change — finished
+ * tournaments and imported ones. The statistics screens read every tournament;
+ * with the cache each one is read from the database once per visit instead of
+ * once per screen. Any save or delete of a tournament through this module
+ * drops it from the cache; strict reads (Recompute) always go to the database
+ * and refresh the cache. */
+const TOURNAMENT_CACHE = new Map();
+const cacheable = (id, data) => !!data && (data.phase === "finished" || String(id).startsWith("imp-"));
+
 export async function saveTournamentData(id, data) {
+  TOURNAMENT_CACHE.delete(id);
   return await setDocData("tournaments", id, data);
 }
 
 export async function fetchTournamentData(id) {
-  return await getDocData("tournaments", id);
+  // Copies in and out: callers may change the object they get back.
+  if (TOURNAMENT_CACHE.has(id)) return structuredClone(TOURNAMENT_CACHE.get(id));
+  const data = await getDocData("tournaments", id);
+  if (cacheable(id, data)) TOURNAMENT_CACHE.set(id, structuredClone(data));
+  return data;
 }
 
-/** Same as fetchTournamentData, but throws if the read failed. */
+/** Same as fetchTournamentData, but throws if the read failed. Always reads the database. */
 export async function fetchTournamentDataStrict(id) {
-  return await getDocDataStrict("tournaments", id);
+  const data = await getDocDataStrict("tournaments", id);
+  if (cacheable(id, data)) TOURNAMENT_CACHE.set(id, structuredClone(data));
+  else TOURNAMENT_CACHE.delete(id);
+  return data;
 }
 
 export async function deleteTournamentData(id) {
+  TOURNAMENT_CACHE.delete(id);
   return await deleteDocData("tournaments", id);
 }
 
