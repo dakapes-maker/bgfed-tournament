@@ -1,5 +1,6 @@
 import { isoToLocalYMD } from "./seasons.js";
 import { DEFAULT_COMPETITION_ID, competitionName } from "./competitions.js";
+import { seasonCompetitionId, seasonName } from "./seasonRegistry.js";
 
 /* ---- Season calendar (Build 3B2) ---------------------------------------
  * Stored in the system document as seasonCalendars: { "2027": [entry] },
@@ -31,9 +32,12 @@ export function buildCalendarView(sys, year, archive) {
     return { ...e, tournament: t, status, effectiveDate };
   });
   entries.sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : a.effectiveDate > b.effectiveDate ? 1 : 0));
+  // Numbered match days: the entries of the season's own competition (for the
+  // Premier League exactly as before; since Σ3 also for other competitions).
+  const own = seasonCompetitionId(sys, year);
   let n = 0;
   entries.forEach((e) => {
-    if ((e.competitionId || DEFAULT_COMPETITION_ID) === DEFAULT_COMPETITION_ID) e.day = ++n;
+    if ((e.competitionId || own) === own) e.day = ++n;
   });
   return entries;
 }
@@ -46,9 +50,14 @@ export function calendarProgress(view) {
   return { total: league.length, done, next };
 }
 
-export function calendarEntryTitle(entry, year, competitions) {
-  if (entry.day) return `Backgammon Premier League ${year} - Ημέρα ${entry.day}`;
-  return `${competitionName(competitions, entry.competitionId)} ${year}`;
+/** Σ3: uses the season's NAME (not its id) and numbers the match days of
+ * every competition; the Premier League keeps its established title. */
+export function calendarEntryTitle(entry, year, competitions, sys) {
+  const label = sys ? seasonName(sys, year) : String(year);
+  const compId = entry.competitionId || (sys ? seasonCompetitionId(sys, year) : DEFAULT_COMPETITION_ID);
+  if (entry.day && compId === DEFAULT_COMPETITION_ID) return `Backgammon Premier League ${label} - Ημέρα ${entry.day}`;
+  const base = `${competitionName(competitions, compId)} ${label}`;
+  return entry.day ? `${base} - Αγωνιστική ${entry.day}` : base;
 }
 
 export const CAL_STATUS_LABEL = { done: "Ολοκληρώθηκε", live: "Σε εξέλιξη", scheduled: "Προγραμματισμένη", missed: "Χωρίς τουρνουά" };

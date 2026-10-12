@@ -20,6 +20,7 @@ import {
   Users,
   Save,
   Award,
+  CalendarDays,
   Lock,
   Trash2,
   RefreshCw,
@@ -118,7 +119,7 @@ import {
   competitionInMainRanking,
   PRIMARY_RANKING_ID,
 } from "./lib/competitions.js";
-import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay } from "./lib/clubs.js";
+import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay, clubColor } from "./lib/clubs.js";
 import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
 import { importCompetitionId, sourceSheetsOf, importSeason, importDateIso, validateImport } from "./lib/imports.js";
 import { buildConsistencyReport, describeStaleReasons, shortTournamentLabel } from "./lib/consistency.js";
@@ -127,6 +128,7 @@ import { buildXlsx } from "./lib/xlsx.js";
 import { isEmbeddedOnFederationSite, formatDate } from "./lib/utils.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { StandingsTable } from "./components/StandingsTable.jsx";
+import { CalendarPage } from "./components/CalendarPage.jsx";
 import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
 import { PlayerTrendCharts } from "./components/charts.jsx";
 import { MoveToTrashControl, TrashRow } from "./components/trash.jsx";
@@ -449,6 +451,7 @@ export default function TournamentManager() {
   useEffect(() => {
     const hash = window.location.hash.replace("#", "");
     if (hash === "season") setPhase("season");
+    else if (hash === "calendar") setPhase("calendar"); // Σ3
     else if (hash === "elo") setPhase("elo");
     else if (hash === "elo-national") { setEloPool(PRIMARY_RANKING_ID); setPhase("elo"); }
     else if (hash === "about") setPhase("about");
@@ -4561,6 +4564,14 @@ export default function TournamentManager() {
     if (await saveSysState({ clubs: next })) setSysState((st) => ({ ...st, clubs: next }));
   }
 
+  /** Σ3: a club's colour in the calendar (empty = automatic). */
+  async function saveClubColor(club, color) {
+    if ((club.color || "") === (color || "")) return;
+    const next = clubsFrom(sysState).map((c) => (c.id === club.id ? { ...c, color: color || undefined } : c));
+    if (await saveSysState({ clubs: next })) setSysState((st) => ({ ...st, clubs: next }));
+    else reportSaveFailure("Σύλλογοι — το χρώμα δεν αποθηκεύτηκε");
+  }
+
   /** 5B.2γ: open a competition's page on its current season. */
   function openCompetitionPage(compId, seasonId) {
     setControlCompId(compId);
@@ -4700,7 +4711,7 @@ export default function TournamentManager() {
       return;
     }
     setCalendarEntryId(entry.id);
-    setTournamentName(calendarEntryTitle(entry, year, competitionsFrom(sysState)));
+    setTournamentName(calendarEntryTitle(entry, year, competitionsFrom(sysState), sysState));
     setCreatedAt((prev) => withLocalDate(prev || new Date().toISOString(), entry.date));
     setSeasonYear(year);
     // The calendar belongs to a season, and the season to a competition.
@@ -5820,6 +5831,9 @@ export default function TournamentManager() {
           <button className="btn-ghost" onClick={() => setPhase("archive")}>
             <Trophy size={14} /> {L.navTournaments}
           </button>
+          <button className="btn-ghost" onClick={() => setPhase("calendar")}>
+            <CalendarDays size={14} /> Ημερολόγιο
+          </button>
           <button className="btn-ghost" onClick={() => setPhase("season")}>
             <TrendingUp size={14} /> {L.navSeason}
           </button>
@@ -6332,6 +6346,23 @@ export default function TournamentManager() {
 
       {/* #region Οθόνη: Βαθμολογία (phase "season") */}
       {/* SEASON STANDINGS */}
+      {phase === "calendar" && (
+        <>
+          <div className="header">
+            <p className="eyebrow">Επερχόμενες αγωνιστικές</p>
+            <h1>Ημερολόγιο</h1>
+            <div className="points-strip">
+              {Array.from({ length: 24 }).map((_, i) => (
+                <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
+              ))}
+            </div>
+          </div>
+          <div className="content">
+            <CalendarPage sys={sysState} archive={archive} onOpenTournament={(id) => openArchived(id)} />
+          </div>
+        </>
+      )}
+
       {phase === "season" && (
         <>
           <div className="header">
@@ -7150,6 +7181,11 @@ export default function TournamentManager() {
                 <span className="dashboard-card-title">{L.navTournaments}</span>
                 <span className="dashboard-card-desc">Browse past tournaments or start a new one</span>
               </button>
+              <button className="dashboard-card" onClick={() => setPhase("calendar")}>
+                <CalendarDays size={26} />
+                <span className="dashboard-card-title">Ημερολόγιο</span>
+                <span className="dashboard-card-desc">Οι επόμενες αγωνιστικές όλων των διοργανώσεων</span>
+              </button>
               <button className="dashboard-card" onClick={() => setPhase("season")}>
                 <TrendingUp size={26} />
                 <span className="dashboard-card-title">{L.navSeason}</span>
@@ -7449,7 +7485,7 @@ export default function TournamentManager() {
                     </p>
                     <table className="cal-table">
                       <thead>
-                        <tr><th>Σύλλογος</th><th>Παίκτες</th><th>Ο σύλλογός μου</th><th title="Φορέας διοργανώσεων — δεν εμφανίζεται στους παίκτες">Φορέας</th><th></th></tr>
+                        <tr><th>Σύλλογος</th><th title="Χρώμα στο Ημερολόγιο">Χρώμα</th><th>Παίκτες</th><th>Ο σύλλογός μου</th><th title="Φορέας διοργανώσεων — δεν εμφανίζεται στους παίκτες">Φορέας</th><th></th></tr>
                       </thead>
                       <tbody>
                         {[...clubsFrom(sysState)]
@@ -7466,6 +7502,10 @@ export default function TournamentManager() {
                                   id: <code>{c.id}</code>
                                   <button className="btn-ghost" style={{ padding: "0 4px" }} title="Αντιγραφή id (για το clubIds ενός διαχειριστή συλλόγου)" onClick={() => { navigator.clipboard?.writeText(c.id).then(() => showToast("Το id αντιγράφηκε."), () => showToast(c.id)); }}><Copy size={12} /></button>
                                 </div>
+                              </td>
+                              <td style={{ whiteSpace: "nowrap" }}>
+                                <input type="color" key={`${c.id}-${c.color || "auto"}`} defaultValue={clubColor(sysState, c.id)} onBlur={(e) => { if (e.target.value !== clubColor(sysState, c.id)) saveClubColor(c, e.target.value); }} title="Χρώμα στο Ημερολόγιο" style={{ width: 34, height: 24, padding: 0, border: "none", background: "none", cursor: "pointer" }} />
+                                {c.color && <button className="btn-ghost" style={{ padding: "0 4px", fontSize: 11 }} title="Επαναφορά στο αυτόματο χρώμα" onClick={() => saveClubColor(c, "")}>αυτόματο</button>}
                               </td>
                               <td>{Object.values(registry.players).filter((p) => p.clubId === c.id).length}</td>
                               <td>

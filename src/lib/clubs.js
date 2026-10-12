@@ -30,3 +30,21 @@ export function clubDisplay(sys, id, fallback) {
   const c = id ? clubsFrom(sys).find((x) => x.id === id) : null;
   return c ? c.name : fallback || "";
 }
+
+/* ---- Σ3: club colours (calendar and badges) ----------------------------
+ * A club may have its own `color` (set by the super administrator in the
+ * clubs list); otherwise it gets one from a palette of quiet tones that suit
+ * the app, by its position in the list. The home club (the Federation) uses
+ * the app's accent colour. */
+export const CLUB_PALETTE = ["#2f6f8f", "#5b8a3c", "#b07a1e", "#7a4f9a", "#2e8577", "#a3504a", "#4a5f9e", "#8a6d3b", "#3f7f5f", "#9c5a86"];
+export const HOME_CLUB_COLOR = "#7a2e2e";
+
+export function clubColor(sys, clubId) {
+  const clubs = clubsFrom(sys);
+  const c = clubs.find((x) => x.id === clubId);
+  if (c && c.color) return c.color;
+  if (clubId && clubId === sys?.homeClubId) return HOME_CLUB_COLOR;
+  const others = clubs.filter((x) => x.id !== sys?.homeClubId);
+  const i = others.findIndex((x) => x.id === clubId);
+  return i >= 0 ? CLUB_PALETTE[i % CLUB_PALETTE.length] : "#888888";
+}
