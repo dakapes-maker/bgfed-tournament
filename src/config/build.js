@@ -1,7 +1,7 @@
 // Bumped by hand on every code change sent in chat — compare this to what
 // Claude states in its reply to confirm a "Publish" actually picked up the
 // latest version, independent of claude.ai's own artifact-version UI.
-export const APP_BUILD_VERSION = "2026-10-12.01";
+export const APP_BUILD_VERSION = "2026-10-12.02";
 
 // Shown to everyone (admins and visitors) as a "What's New" popup the first
 // time their browser sees a given build. Newest entry first. Keep entries
@@ -13,7 +13,7 @@ export const APP_BUILD_VERSION = "2026-10-12.01";
 export const FEATURES_SUMMARY = [
   "Διοργάνωση τουρνουά Swiss-system, με αυτόματο ζευγάρωμα και πρόβλεψη νικητή βάσει ELO.",
   "Ενιαίο μητρώο παικτών με Αριθμό Μητρώου και πλήρες ιστορικό συμμετοχών.",
-  "Κατάταξη ELO της Ομοσπονδίας και Πανελλήνια Κατάταξη ELO, με γράφημα εξέλιξης και «Πώς προέκυψε η ELO» για κάθε παίκτη.",
+  "Πανελλήνια Κατάταξη ELO (με επιλογή των διοργανώσεων που μετράνε), με γράφημα εξέλιξης και «Πώς προέκυψε η ELO» για κάθε παίκτη.",
   "Βαθμολογία σεζόν με κανόνες ανά σεζόν (καλύτερα αποτελέσματα, προκρίσεις) και ημερολόγιο αγωνιστικών.",
   "Διοργανώσεις και σύλλογοι, και τουρνουά που έγιναν εκτός εφαρμογής (Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος) σε προβολή Λίστα, Δέντρο και Excel.",
   "Στατιστικά: παίκτης έναντι κάθε αντιπάλου, σερί, κατακτήσεις, πρωτοπορία, στατιστικά σεζόν, με φίλτρα περιόδου και διοργάνωσης.",

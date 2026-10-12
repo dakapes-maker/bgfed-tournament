@@ -5,7 +5,7 @@ export const TRANSLATIONS = {
   el: {
     navAbout: "Σχετικά", navTournaments: "Τουρνουά", navSeason: "Βαθμολογία", navEloNational: "Πανελλήνια Κατάταξη ELO", navStats: "Στατιστικά", navPlayers: "Παίκτες", navControl: "Διαχείριση",
     controlEyebrow: "Μόνο για διαχειριστή", controlTitle: "Διαχείριση εφαρμογής",
-    dashboardEyebrow: "Διαχείριση Τουρνουά", dashboardTitle: "Πίνακας Ελέγχου",
+    dashboardEyebrow: "Hellenic Backgammon Platform", dashboardTitle: "Πίνακας Ελέγχου",
     archiveEyebrow: "Τουρνουά Backgammon · Σύστημα Swiss", archiveTitle: "Αρχείο Τουρνουά",
     seasonEyebrow: "Ετήσια Κατάταξη", seasonTitle: "Βαθμολογία Σεζόν",
     eloEyebrow: "Διαχρονική Αξιολόγηση",
@@ -16,7 +16,7 @@ export const TRANSLATIONS = {
   en: {
     navAbout: "About", navTournaments: "Tournaments", navSeason: "Season Standings", navEloNational: "National ELO Ranking", navStats: "Statistics", navPlayers: "Players", navControl: "Admin",
     controlEyebrow: "Admin only", controlTitle: "App administration",
-    dashboardEyebrow: "Tournament Manager", dashboardTitle: "Dashboard",
+    dashboardEyebrow: "Hellenic Backgammon Platform", dashboardTitle: "Dashboard",
     archiveEyebrow: "Backgammon Tournament · Swiss System", archiveTitle: "Tournament Archive",
     seasonEyebrow: "Annual Ranking", seasonTitle: "Season Standings",
     eloEyebrow: "Lifetime Skill Rating",

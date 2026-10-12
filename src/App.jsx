@@ -5811,7 +5811,7 @@ export default function TournamentManager() {
               <ArrowLeft size={15} />
             </button>
           )}
-          HELLENIC BACKGAMMON FEDERATION
+          HELLENIC BACKGAMMON PLATFORM
           <span style={{ fontFamily: "'Source Sans 3', sans-serif", fontWeight: 400, fontSize: 11, color: "var(--muted)", marginLeft: 10, letterSpacing: 0 }}>
             build {APP_BUILD_VERSION}
           </span>
@@ -5893,6 +5893,8 @@ export default function TournamentManager() {
           <div className="content" style={{ maxWidth: 640 }}>
             {aboutTab === "features" && (
               <>
+                <p style={{ fontSize: 15, margin: "0 0 4px 0" }}><strong>Hellenic Backgammon Platform</strong>: τουρνουά, βαθμολογίες και Πανελλήνια Κατάταξη ELO για τους συλλόγους backgammon της Ελλάδας.</p>
+                <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 6px 0" }}>Με την υποστήριξη της Ελληνικής Ομοσπονδίας Backgammon.</p>
                 <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 14px 0" }}>build {APP_BUILD_VERSION}</p>
                 <ul style={{ margin: 0, paddingLeft: 20, fontSize: 15, lineHeight: 1.7 }}>
                   {FEATURES_SUMMARY.map((it, idx) => (
@@ -7221,6 +7223,7 @@ export default function TournamentManager() {
                 <span className="dashboard-card-desc">Λειτουργικότητες, τεχνικά στοιχεία, changelog</span>
               </button>
             </div>
+            <p style={{ textAlign: "center", fontSize: 13, color: "var(--muted)", marginTop: 26 }}>Με την υποστήριξη της Ελληνικής Ομοσπονδίας Backgammon</p>
           </div>
         </>
       )}
