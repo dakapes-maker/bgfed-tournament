@@ -1,0 +1,386 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 52e17cb..8022f60 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -200,6 +200,6 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ 
+ - **Τελευταίο ολοκληρωμένο:** στάδιο **5A** (build `2026-10-10.04`, PR #7) — εφαρμόστηκε πλήρως στην παραγωγή στις 2026-10-10 (βήματα 0–5 του `docs/plan-5A.md` §6). Πριν από αυτό: σχέδιο R (builds `.01`–`.03`, PR #3, #4, #6).
+ - **Δοκιμές 5A:** κανόνες 6/6 (`npm run test:rules`)· εφαρμογή 29/29 σε Emulator Firestore + Auth με τους πραγματικούς κανόνες· Excel πανομοιότυπο πριν/μετά τη μετάπτωση· Google ελέγχθηκε από τον Γιάννη στο preview και στην παραγωγή.
+-- **Τρέχον:** ολοκληρώθηκε το **5B** (builds `.05`–`.09`: σεζόν διοργάνωσης, σελίδα διοργάνωσης, Βαθμολογία ανά διοργάνωση και σεζόν, οικονομικά ανά διοργάνωση — βλ. §9). Το 5B.6 (καθαρισμός) **δεν χρειάζεται**: τα ids σεζόν είναι τα έτη, δεν έμειναν παλιά πεδία. Τα 5B.4β / 5B.5 «όταν χρειαστεί». **5C** (build `2026-10-10.10`): διαχειριστές συλλόγων (§9.3) — απαιτεί δημοσίευση του νέου `firestore.rules` στο console μετά το merge. **5D** (build `2026-10-10.11`): κατατάξεις ELO (§9.4) — μετά το merge: δημοσίευση `firestore.rules` (νέο `eloRankings/{id}`) και **Recompute** στην παραγωγή. **5D.3** (`2026-10-10.12`): χωριστά Recompute ELO / Βαθμολογίας (§9.4). **Σ1 — καθαρισμός** (build `2026-10-10.13`): αφαιρέθηκαν η αρχικοποίηση άδειας βάσης (αρχικό μητρώο, ιστορική σεζόν 2026, αρχικό ELO, αναδημιουργία ιστορικών ημερών) και το `data/history2026.js` (−450 KB κώδικα· **η εφαρμογή δεν στήνει πια μόνη της άδεια βάση** — επαναφορά μόνο από Export), όλες οι μεταπτώσεις μιας χρήσης (μόνιμα ID, Build 2 διοργανώσεις/σεζόν, σύλλογοι, σύνδεση διοργανώσεων με συλλόγους, Αριθμός Μητρώου, στοιχεία επικοινωνίας — και η καρτέλα «Παίκτες» της Διαχείρισης), νεκρός κώδικας (ELO_POOLS/eloPoolOf, παλιές σταθερές ποσών, αχρησιμοποίητες συναρτήσεις/κείμενα). Οι έλεγχοι `identityVersion`/`regNoVersion`/`contactsVersion`/`clubsActive` στη λογική έμειναν (είναι αληθείς στην παραγωγή). Διορθώσεις 5C: η κάρτα «Σύλλογοι» μόνο για υπερ-διαχειριστή· ο διαχειριστής συλλόγου βλέπει **όλους** τους παίκτες στο μητρώο (για να μη διπλοεγγράφει), ιδιωτικά στοιχεία και επεξεργασία μόνο για τους δικούς του· νέος παίκτης από διαχειριστή συλλόγου παίρνει αυτόματα τον σύλλογό του· `clubIds` γίνεται δεκτό και ως string. Στον πίνακα συλλόγων φαίνεται το id με κουμπί αντιγραφής — **τα ids των συλλόγων της παλιάς μετάπτωσης τελειώνουν σε ελληνικά γράμματα** (π.χ. `…ομο`, `…σακ`) και δεν πρέπει να πληκτρολογούνται. Το tab ELO λέγεται «Πανελλήνια Κατάταξη ELO». **Σ1.1** (`.14`): μετονομασία παίκτη δεν χρειάζεται Recompute — η Βαθμολογία (`computeSeasonStandings`) και η σελίδα ELO δείχνουν το **τρέχον** όνομα του μητρώου (`displayNameFor`)· το `nameStale` του ελέγχου συνέπειας είναι πλέον ενημερωτικό (δεν θέτει `needsRecompute`). Το ELO και η Βαθμολογία είναι δεμένα με το id προσώπου (μέσω `normalizeName` → `PERSON_LOOKUP`, που αναγνωρίζει και τα aliases)· τα ονόματα που αποθηκεύονται μέσα τους είναι μόνο αντίγραφα εμφάνισης. Μετά (απευθείας στο main, ένα αρχείο): διαχειριστής συλλόγου — το «Νέο τουρνουά» παίρνει το ημερολόγιο **της διοργάνωσης του χρήστη** (όχι πάντα της Premier League), η αγωνιστική ημερολογίου ορίζει διοργάνωση από τη σεζόν της (`seasonCompetitionId`), διοργανωτής = ο σύλλογος της διοργάνωσης, σαφές μήνυμα όταν δεν έχει διοργάνωση. **Σ2** (`2026-10-10.15`): (α) **έλεγχος των ροών διαχειριστή συλλόγου** για σιωπηρές υποθέσεις «Premier League / Ομοσπονδία»: διάλογος ολοκλήρωσης τουρνουά ανά διοργάνωση (ELO/Βαθμολογία), «Προσθήκη στο RSS feed» και `exportAllData` μόνο υπερ-διαχειριστής (το RSS είναι του bgfed.gr· το Export περιέχει όλα τα ιδιωτικά στοιχεία), στο κλείσιμο σεζόν ο διαχειριστής συλλόγου ζητά Export από τον υπερ-διαχειριστή, νέα αγωνιστική ημερολογίου → διοργάνωση της σεζόν, επιλογή διοργάνωσης στο ημερολόγιο μόνο από όσες επεξεργάζεται· (β) **cache τουρνουά ανά επίσκεψη** στο `firebase.js` (ολοκληρωμένα + εισαγωγές, αντίγραφα με `structuredClone`· κάθε save/delete μέσω `firebase.js` το ακυρώνει· οι strict αναγνώσεις πάνε πάντα στη βάση)· (γ) Διαχείριση → Δεδομένα → **«Μεγέθη δεδομένων»** (μέγεθος κάθε εγγράφου ως % του ορίου 1 MiB)· (δ) αφαιρέθηκε το νεκρό παράθυρο του συνδυασμένου Recompute. Οι αναγνώσεις εκκίνησης ελέγχθηκαν: λίγες και εύλογες, χωρίς αλλαγή. Επόμενο: απόφαση για το αρχικό Excel των εισαγωγών (χωριστό έγγραφο;) με βάση τα «Μεγέθη δεδομένων»· ένταξη Τρικάλων σε εξέλιξη· δημόσιες σελίδες ανά πρωτάθλημα μετά.
++- **Τρέχον:** ολοκληρώθηκε το **5B** (builds `.05`–`.09`: σεζόν διοργάνωσης, σελίδα διοργάνωσης, Βαθμολογία ανά διοργάνωση και σεζόν, οικονομικά ανά διοργάνωση — βλ. §9). Το 5B.6 (καθαρισμός) **δεν χρειάζεται**: τα ids σεζόν είναι τα έτη, δεν έμειναν παλιά πεδία. Τα 5B.4β / 5B.5 «όταν χρειαστεί». **5C** (build `2026-10-10.10`): διαχειριστές συλλόγων (§9.3) — απαιτεί δημοσίευση του νέου `firestore.rules` στο console μετά το merge. **5D** (build `2026-10-10.11`): κατατάξεις ELO (§9.4) — μετά το merge: δημοσίευση `firestore.rules` (νέο `eloRankings/{id}`) και **Recompute** στην παραγωγή. **5D.3** (`2026-10-10.12`): χωριστά Recompute ELO / Βαθμολογίας (§9.4). **Σ1 — καθαρισμός** (build `2026-10-10.13`): αφαιρέθηκαν η αρχικοποίηση άδειας βάσης (αρχικό μητρώο, ιστορική σεζόν 2026, αρχικό ELO, αναδημιουργία ιστορικών ημερών) και το `data/history2026.js` (−450 KB κώδικα· **η εφαρμογή δεν στήνει πια μόνη της άδεια βάση** — επαναφορά μόνο από Export), όλες οι μεταπτώσεις μιας χρήσης (μόνιμα ID, Build 2 διοργανώσεις/σεζόν, σύλλογοι, σύνδεση διοργανώσεων με συλλόγους, Αριθμός Μητρώου, στοιχεία επικοινωνίας — και η καρτέλα «Παίκτες» της Διαχείρισης), νεκρός κώδικας (ELO_POOLS/eloPoolOf, παλιές σταθερές ποσών, αχρησιμοποίητες συναρτήσεις/κείμενα). Οι έλεγχοι `identityVersion`/`regNoVersion`/`contactsVersion`/`clubsActive` στη λογική έμειναν (είναι αληθείς στην παραγωγή). Διορθώσεις 5C: η κάρτα «Σύλλογοι» μόνο για υπερ-διαχειριστή· ο διαχειριστής συλλόγου βλέπει **όλους** τους παίκτες στο μητρώο (για να μη διπλοεγγράφει), ιδιωτικά στοιχεία και επεξεργασία μόνο για τους δικούς του· νέος παίκτης από διαχειριστή συλλόγου παίρνει αυτόματα τον σύλλογό του· `clubIds` γίνεται δεκτό και ως string. Στον πίνακα συλλόγων φαίνεται το id με κουμπί αντιγραφής — **τα ids των συλλόγων της παλιάς μετάπτωσης τελειώνουν σε ελληνικά γράμματα** (π.χ. `…ομο`, `…σακ`) και δεν πρέπει να πληκτρολογούνται. Το tab ELO λέγεται «Πανελλήνια Κατάταξη ELO». **Σ1.1** (`.14`): μετονομασία παίκτη δεν χρειάζεται Recompute — η Βαθμολογία (`computeSeasonStandings`) και η σελίδα ELO δείχνουν το **τρέχον** όνομα του μητρώου (`displayNameFor`)· το `nameStale` του ελέγχου συνέπειας είναι πλέον ενημερωτικό (δεν θέτει `needsRecompute`). Το ELO και η Βαθμολογία είναι δεμένα με το id προσώπου (μέσω `normalizeName` → `PERSON_LOOKUP`, που αναγνωρίζει και τα aliases)· τα ονόματα που αποθηκεύονται μέσα τους είναι μόνο αντίγραφα εμφάνισης. Μετά (απευθείας στο main, ένα αρχείο): διαχειριστής συλλόγου — το «Νέο τουρνουά» παίρνει το ημερολόγιο **της διοργάνωσης του χρήστη** (όχι πάντα της Premier League), η αγωνιστική ημερολογίου ορίζει διοργάνωση από τη σεζόν της (`seasonCompetitionId`), διοργανωτής = ο σύλλογος της διοργάνωσης, σαφές μήνυμα όταν δεν έχει διοργάνωση. **Σ2** (`2026-10-10.15`): (α) **έλεγχος των ροών διαχειριστή συλλόγου** για σιωπηρές υποθέσεις «Premier League / Ομοσπονδία»: διάλογος ολοκλήρωσης τουρνουά ανά διοργάνωση (ELO/Βαθμολογία), «Προσθήκη στο RSS feed» και `exportAllData` μόνο υπερ-διαχειριστής (το RSS είναι του bgfed.gr· το Export περιέχει όλα τα ιδιωτικά στοιχεία), στο κλείσιμο σεζόν ο διαχειριστής συλλόγου ζητά Export από τον υπερ-διαχειριστή, νέα αγωνιστική ημερολογίου → διοργάνωση της σεζόν, επιλογή διοργάνωσης στο ημερολόγιο μόνο από όσες επεξεργάζεται· (β) **cache τουρνουά ανά επίσκεψη** στο `firebase.js` (ολοκληρωμένα + εισαγωγές, αντίγραφα με `structuredClone`· κάθε save/delete μέσω `firebase.js` το ακυρώνει· οι strict αναγνώσεις πάνε πάντα στη βάση)· (γ) Διαχείριση → Δεδομένα → **«Μεγέθη δεδομένων»** (μέγεθος κάθε εγγράφου ως % του ορίου 1 MiB)· (δ) αφαιρέθηκε το νεκρό παράθυρο του συνδυασμένου Recompute. Οι αναγνώσεις εκκίνησης ελέγχθηκαν: λίγες και εύλογες, χωρίς αλλαγή. Μετρήσεις «Μεγέθη δεδομένων» (11/10): σύνολο ~705 KB· μεγαλύτερο έγγραφο η εισαγωγή «Τελική Φάση Πρωταθλήματος 2025» 165 KB (16%, αρχικό Excel μόνο 20 KB → **δεν** χωρίζεται)· Βαθμολογία 2026 80 KB (~6,6 KB/αγωνιστική)· μητρώο 31 KB· ELO 21 KB. Πιθανό μελλοντικό βήμα: εισαγωγές να φορτώνονται μόνο όταν χρειάζονται (αν φορτωθούν πολλά ιστορικά). **Σ3** (`2026-10-10.16`, επίπεδο 1): δημόσια σελίδα **«Ημερολόγιο»** (`components/CalendarPage.jsx`, phase `calendar`, `#calendar`): όλες οι αγωνιστικές όλων των σεζόν από `sysState.seasonCalendars` (καμία ανάγνωση βάσης), λίστα ανά μήνα με ευδιάκριτη κεφαλίδα, χρώμα ανά σύλλογο (`clubColor` — `club.color` ή αυτόματη παλέτα `CLUB_PALETTE`· η Ομοσπονδία `HOME_CLUB_COLOR`), φίλτρα σύλλογος (πολλαπλή επιλογή) / διοργάνωση / «και παλαιότερες», κλικ σε ολοκληρωμένη αγωνιστική → τουρνουά. Χρώμα συλλόγου στη λίστα συλλόγων (υπερ-διαχειριστής). Διόρθωση: `calendarEntryTitle` χρησιμοποιεί το **όνομα** σεζόν (όχι id) και η αρίθμηση αγωνιστικών ισχύει για κάθε διοργάνωση (Premier League: ίδιος τίτλος με πριν). **Αργότερα:** μηνιαία προβολή σε πλέγμα (απόφαση του Γιάννη: πρώτα απλή λίστα)· ίσως .ics. Επόμενο: ένταξη Τρικάλων σε εξέλιξη· δημόσιες σελίδες ανά πρωτάθλημα μετά.
+ - **Εκκρεμότητες εκτός κώδικα:** ο admin του bgfed.gr να επιβεβαιώσει την ανάκληση του WordPress Application Password (βλ. §8).
+ - **Μικρά υπόλοιπα:** τα περισσότερα διορθώθηκαν στο Σ1 (`.13`). Μένει: το `eslint@9.39.5` δεν υποστηρίζεται πια (μόνο εργαλείο ελέγχου).
+diff --git a/src/App.jsx b/src/App.jsx
+index fa2b43c..158fe8b 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -20,6 +20,7 @@ import {
+   Users,
+   Save,
+   Award,
++  CalendarDays,
+   Lock,
+   Trash2,
+   RefreshCw,
+@@ -118,7 +119,7 @@ import {
+   competitionInMainRanking,
+   PRIMARY_RANKING_ID,
+ } from "./lib/competitions.js";
+-import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay } from "./lib/clubs.js";
++import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay, clubColor } from "./lib/clubs.js";
+ import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
+ import { importCompetitionId, sourceSheetsOf, importSeason, importDateIso, validateImport } from "./lib/imports.js";
+ import { buildConsistencyReport, describeStaleReasons, shortTournamentLabel } from "./lib/consistency.js";
+@@ -127,6 +128,7 @@ import { buildXlsx } from "./lib/xlsx.js";
+ import { isEmbeddedOnFederationSite, formatDate } from "./lib/utils.js";
+ import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
+ import { StandingsTable } from "./components/StandingsTable.jsx";
++import { CalendarPage } from "./components/CalendarPage.jsx";
+ import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
+ import { PlayerTrendCharts } from "./components/charts.jsx";
+ import { MoveToTrashControl, TrashRow } from "./components/trash.jsx";
+@@ -449,6 +451,7 @@ export default function TournamentManager() {
+   useEffect(() => {
+     const hash = window.location.hash.replace("#", "");
+     if (hash === "season") setPhase("season");
++    else if (hash === "calendar") setPhase("calendar"); // Σ3
+     else if (hash === "elo") setPhase("elo");
+     else if (hash === "elo-national") { setEloPool(PRIMARY_RANKING_ID); setPhase("elo"); }
+     else if (hash === "about") setPhase("about");
+@@ -4561,6 +4564,14 @@ export default function TournamentManager() {
+     if (await saveSysState({ clubs: next })) setSysState((st) => ({ ...st, clubs: next }));
+   }
+ 
++  /** Σ3: a club's colour in the calendar (empty = automatic). */
++  async function saveClubColor(club, color) {
++    if ((club.color || "") === (color || "")) return;
++    const next = clubsFrom(sysState).map((c) => (c.id === club.id ? { ...c, color: color || undefined } : c));
++    if (await saveSysState({ clubs: next })) setSysState((st) => ({ ...st, clubs: next }));
++    else reportSaveFailure("Σύλλογοι — το χρώμα δεν αποθηκεύτηκε");
++  }
++
+   /** 5B.2γ: open a competition's page on its current season. */
+   function openCompetitionPage(compId, seasonId) {
+     setControlCompId(compId);
+@@ -4700,7 +4711,7 @@ export default function TournamentManager() {
+       return;
+     }
+     setCalendarEntryId(entry.id);
+-    setTournamentName(calendarEntryTitle(entry, year, competitionsFrom(sysState)));
++    setTournamentName(calendarEntryTitle(entry, year, competitionsFrom(sysState), sysState));
+     setCreatedAt((prev) => withLocalDate(prev || new Date().toISOString(), entry.date));
+     setSeasonYear(year);
+     // The calendar belongs to a season, and the season to a competition.
+@@ -5820,6 +5831,9 @@ export default function TournamentManager() {
+           <button className="btn-ghost" onClick={() => setPhase("archive")}>
+             <Trophy size={14} /> {L.navTournaments}
+           </button>
++          <button className="btn-ghost" onClick={() => setPhase("calendar")}>
++            <CalendarDays size={14} /> Ημερολόγιο
++          </button>
+           <button className="btn-ghost" onClick={() => setPhase("season")}>
+             <TrendingUp size={14} /> {L.navSeason}
+           </button>
+@@ -6332,6 +6346,23 @@ export default function TournamentManager() {
+ 
+       {/* #region Οθόνη: Βαθμολογία (phase "season") */}
+       {/* SEASON STANDINGS */}
++      {phase === "calendar" && (
++        <>
++          <div className="header">
++            <p className="eyebrow">Επερχόμενες αγωνιστικές</p>
++            <h1>Ημερολόγιο</h1>
++            <div className="points-strip">
++              {Array.from({ length: 24 }).map((_, i) => (
++                <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
++              ))}
++            </div>
++          </div>
++          <div className="content">
++            <CalendarPage sys={sysState} archive={archive} onOpenTournament={(id) => openArchived(id)} />
++          </div>
++        </>
++      )}
++
+       {phase === "season" && (
+         <>
+           <div className="header">
+@@ -7150,6 +7181,11 @@ export default function TournamentManager() {
+                 <span className="dashboard-card-title">{L.navTournaments}</span>
+                 <span className="dashboard-card-desc">Browse past tournaments or start a new one</span>
+               </button>
++              <button className="dashboard-card" onClick={() => setPhase("calendar")}>
++                <CalendarDays size={26} />
++                <span className="dashboard-card-title">Ημερολόγιο</span>
++                <span className="dashboard-card-desc">Οι επόμενες αγωνιστικές όλων των διοργανώσεων</span>
++              </button>
+               <button className="dashboard-card" onClick={() => setPhase("season")}>
+                 <TrendingUp size={26} />
+                 <span className="dashboard-card-title">{L.navSeason}</span>
+@@ -7449,7 +7485,7 @@ export default function TournamentManager() {
+                     </p>
+                     <table className="cal-table">
+                       <thead>
+-                        <tr><th>Σύλλογος</th><th>Παίκτες</th><th>Ο σύλλογός μου</th><th title="Φορέας διοργανώσεων — δεν εμφανίζεται στους παίκτες">Φορέας</th><th></th></tr>
++                        <tr><th>Σύλλογος</th><th title="Χρώμα στο Ημερολόγιο">Χρώμα</th><th>Παίκτες</th><th>Ο σύλλογός μου</th><th title="Φορέας διοργανώσεων — δεν εμφανίζεται στους παίκτες">Φορέας</th><th></th></tr>
+                       </thead>
+                       <tbody>
+                         {[...clubsFrom(sysState)]
+@@ -7467,6 +7503,10 @@ export default function TournamentManager() {
+                                   <button className="btn-ghost" style={{ padding: "0 4px" }} title="Αντιγραφή id (για το clubIds ενός διαχειριστή συλλόγου)" onClick={() => { navigator.clipboard?.writeText(c.id).then(() => showToast("Το id αντιγράφηκε."), () => showToast(c.id)); }}><Copy size={12} /></button>
+                                 </div>
+                               </td>
++                              <td style={{ whiteSpace: "nowrap" }}>
++                                <input type="color" key={`${c.id}-${c.color || "auto"}`} defaultValue={clubColor(sysState, c.id)} onBlur={(e) => { if (e.target.value !== clubColor(sysState, c.id)) saveClubColor(c, e.target.value); }} title="Χρώμα στο Ημερολόγιο" style={{ width: 34, height: 24, padding: 0, border: "none", background: "none", cursor: "pointer" }} />
++                                {c.color && <button className="btn-ghost" style={{ padding: "0 4px", fontSize: 11 }} title="Επαναφορά στο αυτόματο χρώμα" onClick={() => saveClubColor(c, "")}>αυτόματο</button>}
++                              </td>
+                               <td>{Object.values(registry.players).filter((p) => p.clubId === c.id).length}</td>
+                               <td>
+                                 {!c.organiserOnly && <input type="radio" name="home-club" checked={sysState.homeClubId === c.id} onChange={() => setHomeClubId(c.id)} />}
+diff --git a/src/components/CalendarPage.jsx b/src/components/CalendarPage.jsx
+new file mode 100644
+index 0000000..9238ff8
+--- /dev/null
++++ b/src/components/CalendarPage.jsx
+@@ -0,0 +1,146 @@
++import React, { useMemo, useState } from "react";
++import { buildCalendarView, calendarEntryTitle, todayYMD } from "../lib/calendar.js";
++import { competitionsFrom } from "../lib/competitions.js";
++import { clubsFrom, clubDisplay, clubColor } from "../lib/clubs.js";
++import { seasonCompetitionId, seasonName } from "../lib/seasonRegistry.js";
++
++/* Σ3: public calendar — every competition's upcoming (and, on request, past)
++ * match days, from the season calendars already in the system document, so
++ * it costs no database read. Grouped by month; each club has its colour. */
++
++const MONTHS = ["Ιανουάριος", "Φεβρουάριος", "Μάρτιος", "Απρίλιος", "Μάιος", "Ιούνιος", "Ιούλιος", "Αύγουστος", "Σεπτέμβριος", "Οκτώβριος", "Νοέμβριος", "Δεκέμβριος"];
++const WEEKDAYS = ["Κυρ", "Δευ", "Τρί", "Τετ", "Πέμ", "Παρ", "Σάβ"];
++
++export function CalendarPage({ sys, archive, onOpenTournament }) {
++  const [clubFilter, setClubFilter] = useState([]); // empty = all clubs
++  const [compFilter, setCompFilter] = useState("all");
++  const [showPast, setShowPast] = useState(false);
++  const comps = competitionsFrom(sys);
++
++  const items = useMemo(() => {
++    const out = [];
++    Object.keys(sys?.seasonCalendars || {}).forEach((sid) => {
++      const seasonId = Number(sid);
++      if (!Number.isInteger(seasonId)) return;
++      buildCalendarView(sys, seasonId, archive || []).forEach((e) => {
++        const compId = e.competitionId || seasonCompetitionId(sys, seasonId);
++        const comp = comps.find((c) => c.id === compId);
++        out.push({
++          ...e,
++          seasonId,
++          compId,
++          compName: comp ? comp.name : compId,
++          clubId: comp ? comp.ownerClubId : null,
++          title: calendarEntryTitle(e, seasonId, comps, sys),
++          seasonLabel: seasonName(sys, seasonId),
++        });
++      });
++    });
++    return out.sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : a.effectiveDate > b.effectiveDate ? 1 : 0));
++  }, [sys, archive, comps]);
++
++  const today = todayYMD();
++  const clubsInUse = clubsFrom(sys).filter((c) => items.some((i) => i.clubId === c.id));
++  const compsInUse = comps.filter((c) => items.some((i) => i.compId === c.id));
++  const visible = items.filter(
++    (i) =>
++      (showPast || i.effectiveDate >= today || i.status === "live") &&
++      (clubFilter.length === 0 || clubFilter.includes(i.clubId)) &&
++      (compFilter === "all" || i.compId === compFilter)
++  );
++
++  const groups = [];
++  visible.forEach((i) => {
++    const key = (i.effectiveDate || "").slice(0, 7);
++    if (!groups.length || groups[groups.length - 1].key !== key) groups.push({ key, rows: [] });
++    groups[groups.length - 1].rows.push(i);
++  });
++
++  const toggleClub = (id) => setClubFilter((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
++
++  return (
++    <div className="calendar-page">
++      <div className="card" style={{ padding: "12px 14px", marginBottom: 16 }}>
++        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
++          <span style={{ fontSize: 13, color: "var(--muted)", marginRight: 4 }}>Σύλλογος:</span>
++          {clubsInUse.map((c) => {
++            const on = clubFilter.length === 0 || clubFilter.includes(c.id);
++            const col = clubColor(sys, c.id);
++            return (
++              <button
++                key={c.id}
++                onClick={() => toggleClub(c.id)}
++                style={{ border: `1.5px solid ${col}`, background: clubFilter.includes(c.id) ? col : "transparent", color: clubFilter.includes(c.id) ? "#fff" : col, opacity: on ? 1 : 0.45, borderRadius: 999, padding: "3px 11px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
++              >
++                {c.name}
++              </button>
++            );
++          })}
++          {clubFilter.length > 0 && (
++            <button className="btn-ghost" style={{ fontSize: 13, padding: "2px 6px" }} onClick={() => setClubFilter([])}>όλοι</button>
++          )}
++        </div>
++        <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginTop: 10 }}>
++          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 14 }}>
++            Διοργάνωση:
++            <select value={compFilter} onChange={(e) => setCompFilter(e.target.value)} style={{ fontSize: 14, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
++              <option value="all">Όλες</option>
++              {compsInUse.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
++            </select>
++          </label>
++          <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 14 }}>
++            <input type="checkbox" checked={showPast} onChange={(e) => setShowPast(e.target.checked)} /> και παλαιότερες
++          </label>
++        </div>
++      </div>
++
++      {groups.length === 0 && (
++        <div className="empty-state">Δεν υπάρχουν {showPast ? "" : "επερχόμενες "}αγωνιστικές για τα φίλτρα που επέλεξες.</div>
++      )}
++
++      {groups.map((g) => {
++        const [y, m] = g.key.split("-").map(Number);
++        return (
++          <section key={g.key} style={{ marginBottom: 22 }}>
++            <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 18, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--accent)", borderBottom: "2px solid var(--accent)", paddingBottom: 4, margin: "0 0 8px 0" }}>
++              {MONTHS[m - 1]} {y}
++            </h3>
++            {g.rows.map((i) => {
++              const [yy, mm, dd] = i.effectiveDate.split("-").map(Number);
++              const wd = WEEKDAYS[new Date(yy, mm - 1, dd).getDay()];
++              const col = clubColor(sys, i.clubId);
++              const past = i.status === "done" || i.status === "missed";
++              const canOpen = !!i.tournament && (i.status === "done" || i.status === "live");
++              return (
++                <div
++                  key={`${i.seasonId}-${i.id}`}
++                  onClick={canOpen ? () => onOpenTournament(i.tournament.id) : undefined}
++                  style={{ display: "flex", gap: 12, alignItems: "center", padding: "8px 10px", margin: "4px 0", background: "var(--surface, #fff)", borderRadius: 8, borderLeft: `5px solid ${col}`, opacity: past ? 0.6 : 1, cursor: canOpen ? "pointer" : "default", boxShadow: "0 1px 0 var(--border)" }}
++                >
++                  <div style={{ width: 44, textAlign: "center", flexShrink: 0 }}>
++                    <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase" }}>{wd}</div>
++                    <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{dd}</div>
++                  </div>
++                  <div style={{ flex: 1, minWidth: 0 }}>
++                    <div style={{ fontWeight: 600 }}>
++                      {i.title}
++                      {i.status === "done" && <span style={{ color: "var(--win)", marginLeft: 6 }}>✓</span>}
++                      {i.status === "live" && <span style={{ color: "var(--accent)", marginLeft: 6, fontSize: 12, fontWeight: 700 }}>● σε εξέλιξη</span>}
++                    </div>
++                    <div style={{ fontSize: 13, color: "var(--muted)" }}>
++                      {i.compName} · σεζόν {i.seasonLabel}
++                      {i.note ? ` · ${i.note}` : ""}
++                    </div>
++                  </div>
++                  <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: "2px 9px", whiteSpace: "nowrap" }}>
++                    {clubDisplay(sys, i.clubId, "—")}
++                  </span>
++                </div>
++              );
++            })}
++          </section>
++        );
++      })}
++    </div>
++  );
++}
+diff --git a/src/config/build.js b/src/config/build.js
+index b2750cf..c23ee79 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-10-10.15";
++export const APP_BUILD_VERSION = "2026-10-10.16";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index d9321c1..3042704 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -19,6 +19,8 @@ export const CHANGELOG = [
+     { text: "Μετονομασία παίκτη: η Βαθμολογία και η Κατάταξη ELO δείχνουν αμέσως το νέο όνομα, χωρίς Recompute.", audience: "admin" },
+     { text: "Τα Στατιστικά διαβάζουν κάθε ολοκληρωμένο τουρνουά μία φορά ανά επίσκεψη (λιγότερες αναγνώσεις, πιο γρήγορα).", audience: "all" },
+     { text: "Διαχειριστές συλλόγων: το νέο τουρνουά ξεκινά από το ημερολόγιο της δικής τους διοργάνωσης, με διοργανωτή τον σύλλογό τους· σωστά μηνύματα για ELO/Βαθμολογία ανά διοργάνωση. Το RSS του bgfed.gr και το πλήρες Export μένουν στον υπερ-διαχειριστή. Νέο: «Μεγέθη δεδομένων» στη Διαχείριση → Δεδομένα.", audience: "admin" },
++    { text: "Νέο «Ημερολόγιο»: οι επόμενες αγωνιστικές όλων των διοργανώσεων ανά μήνα, με χρώμα ανά σύλλογο και φίλτρα ανά σύλλογο και διοργάνωση.", audience: "all" },
++    { text: "Χρώμα ανά σύλλογο στη λίστα συλλόγων (αυτόματο ή επιλογή). Οι αγωνιστικές κάθε διοργάνωσης αριθμούνται και παίρνουν τίτλο με το όνομα της σεζόν.", audience: "admin" },
+   ]},
+   { date: "2026-10-09", items: [
+     { text: "Πανελλήνια Κατάταξη ELO από τις Τελικές Φάσεις Κυπέλλου και Πρωταθλήματος, με δική της θέση στο μενού. Η «Βαθμολογία ELO» λέγεται πλέον «Κατάταξη ELO».", audience: "all" },
+diff --git a/src/lib/calendar.js b/src/lib/calendar.js
+index 8b81941..d5c2d42 100644
+--- a/src/lib/calendar.js
++++ b/src/lib/calendar.js
+@@ -1,5 +1,6 @@
+ import { isoToLocalYMD } from "./seasons.js";
+ import { DEFAULT_COMPETITION_ID, competitionName } from "./competitions.js";
++import { seasonCompetitionId, seasonName } from "./seasonRegistry.js";
+ 
+ /* ---- Season calendar (Build 3B2) ---------------------------------------
+  * Stored in the system document as seasonCalendars: { "2027": [entry] },
+@@ -31,9 +32,12 @@ export function buildCalendarView(sys, year, archive) {
+     return { ...e, tournament: t, status, effectiveDate };
+   });
+   entries.sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : a.effectiveDate > b.effectiveDate ? 1 : 0));
++  // Numbered match days: the entries of the season's own competition (for the
++  // Premier League exactly as before; since Σ3 also for other competitions).
++  const own = seasonCompetitionId(sys, year);
+   let n = 0;
+   entries.forEach((e) => {
+-    if ((e.competitionId || DEFAULT_COMPETITION_ID) === DEFAULT_COMPETITION_ID) e.day = ++n;
++    if ((e.competitionId || own) === own) e.day = ++n;
+   });
+   return entries;
+ }
+@@ -46,9 +50,14 @@ export function calendarProgress(view) {
+   return { total: league.length, done, next };
+ }
+ 
+-export function calendarEntryTitle(entry, year, competitions) {
+-  if (entry.day) return `Backgammon Premier League ${year} - Ημέρα ${entry.day}`;
+-  return `${competitionName(competitions, entry.competitionId)} ${year}`;
++/** Σ3: uses the season's NAME (not its id) and numbers the match days of
++ * every competition; the Premier League keeps its established title. */
++export function calendarEntryTitle(entry, year, competitions, sys) {
++  const label = sys ? seasonName(sys, year) : String(year);
++  const compId = entry.competitionId || (sys ? seasonCompetitionId(sys, year) : DEFAULT_COMPETITION_ID);
++  if (entry.day && compId === DEFAULT_COMPETITION_ID) return `Backgammon Premier League ${label} - Ημέρα ${entry.day}`;
++  const base = `${competitionName(competitions, compId)} ${label}`;
++  return entry.day ? `${base} - Αγωνιστική ${entry.day}` : base;
+ }
+ 
+ export const CAL_STATUS_LABEL = { done: "Ολοκληρώθηκε", live: "Σε εξέλιξη", scheduled: "Προγραμματισμένη", missed: "Χωρίς τουρνουά" };
+diff --git a/src/lib/clubs.js b/src/lib/clubs.js
+index 1881274..e128c82 100644
+--- a/src/lib/clubs.js
++++ b/src/lib/clubs.js
+@@ -30,3 +30,21 @@ export function clubDisplay(sys, id, fallback) {
+   const c = id ? clubsFrom(sys).find((x) => x.id === id) : null;
+   return c ? c.name : fallback || "";
+ }
++
++/* ---- Σ3: club colours (calendar and badges) ----------------------------
++ * A club may have its own `color` (set by the super administrator in the
++ * clubs list); otherwise it gets one from a palette of quiet tones that suit
++ * the app, by its position in the list. The home club (the Federation) uses
++ * the app's accent colour. */
++export const CLUB_PALETTE = ["#2f6f8f", "#5b8a3c", "#b07a1e", "#7a4f9a", "#2e8577", "#a3504a", "#4a5f9e", "#8a6d3b", "#3f7f5f", "#9c5a86"];
++export const HOME_CLUB_COLOR = "#7a2e2e";
++
++export function clubColor(sys, clubId) {
++  const clubs = clubsFrom(sys);
++  const c = clubs.find((x) => x.id === clubId);
++  if (c && c.color) return c.color;
++  if (clubId && clubId === sys?.homeClubId) return HOME_CLUB_COLOR;
++  const others = clubs.filter((x) => x.id !== sys?.homeClubId);
++  const i = others.findIndex((x) => x.id === clubId);
++  return i >= 0 ? CLUB_PALETTE[i % CLUB_PALETTE.length] : "#888888";
++}
