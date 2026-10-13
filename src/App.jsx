@@ -5385,6 +5385,13 @@ export default function TournamentManager() {
         }
         * { box-sizing: border-box; }
         .app { background: var(--bg); color: var(--ink); font-family: 'Source Sans 3', system-ui, sans-serif; min-height: 100%; width: 100%; }
+        /* Σ4: background — the «board blueprint» drawing, very faint, fixed behind
+           everything (a fixed layer, not background-attachment, so it also works on
+           iPhone). Intensity = the opacity below. */
+        body { background: var(--bg); margin: 0; }
+        .app { position: relative; isolation: isolate; }
+        .app::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: url('/bg-blueprint.webp') center / cover no-repeat; opacity: 0.08; }
+        @media print { .app::before { display: none; } }
 
         .topbar { display: flex; justify-content: space-between; align-items: center; padding: 14px 28px; border-bottom: 1px solid var(--border); }
         .brand { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; letter-spacing: 0.02em; color: var(--accent); }
