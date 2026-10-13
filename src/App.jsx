@@ -2921,7 +2921,11 @@ export default function TournamentManager() {
   function openPlayerDetail(key) {
     setNotice("");
     setConfirmingDeletePlayer(null);
-    setPlayerDetailTab(isAdmin ? "contact" : "stats");
+    // The contact tab only for whoever may manage this player (a club
+    // administrator: only the players of their clubs); everyone else starts —
+    // and stays — on the playing stats.
+    const mayManage = isSuper || (isAdminAny && adminClubIds.includes(String(registry.players?.[key]?.clubId || "")));
+    setPlayerDetailTab(mayManage ? "contact" : "stats");
     setExpandedRegistryPlayer(key);
     setPlayerDetailReturnPhase(phase);
     setPhase("playerDetail");
@@ -6847,7 +6851,7 @@ export default function TournamentManager() {
                     Contact &amp; Membership
                   </button>
                 )}
-                <button className={`detail-tab ${playerDetailTab === "stats" ? "active" : ""}`} onClick={() => setPlayerDetailTab("stats")}>
+                <button className={`detail-tab ${playerDetailTab === "stats" || !isAdmin ? "active" : ""}`} onClick={() => setPlayerDetailTab("stats")}>
                   Playing Stats
                 </button>
               </div>
@@ -7017,7 +7021,7 @@ export default function TournamentManager() {
                 </div>
               )}
 
-              {playerDetailTab === "stats" && (
+              {(playerDetailTab === "stats" || !isAdmin) && (
                 <div className="card">
                   {eloEntry && (
                     <div className="elo-snapshot">
