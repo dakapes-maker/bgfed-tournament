@@ -1593,8 +1593,14 @@ export default function TournamentManager() {
   // #region Κάδος
   /** Moves the open tournament to the trash. The document itself is NOT
    * deleted — it stays in the database and can be restored. */
+  // Σ5: a club administrator may move to the trash only unofficial or
+  // unfinished tournaments of their clubs (an official finished one changes
+  // the standings/ELO — that is left to the super administrator). Restoring
+  // and permanent deletion stay with the super administrator.
+  const mayTrashTournament = isSuper || (isAdmin && (!isOfficial || phase !== "finished"));
+
   async function confirmDeleteTournament(runRecompute) {
-    if (!tournamentId || trashBusy) return;
+    if (!tournamentId || trashBusy || !mayTrashTournament) return;
     setTrashBusy(true);
     try {
       const known = archive.find((t) => t.id === tournamentId);
@@ -5339,9 +5345,16 @@ export default function TournamentManager() {
           </div>
         )}
 
-        {isSuper && (
+        {isAdmin && !mayTrashTournament && (
           <div className="card details-card">
             <strong>Μετακίνηση στον κάδο</strong>
+            <p className="cal-note" style={{ marginTop: 8 }}>Το τουρνουά είναι επίσημο και ολοκληρωμένο, οπότε μετράει στη Βαθμολογία (και ίσως στην ELO). Για να μεταφερθεί στον κάδο, ζήτησέ το από τον υπερ-διαχειριστή.</p>
+          </div>
+        )}
+        {mayTrashTournament && (
+          <div className="card details-card">
+            <strong>Μετακίνηση στον κάδο</strong>
+            {!isSuper && <p className="cal-note" style={{ marginTop: 6 }}>Η επαναφορά από τον κάδο γίνεται από τον υπερ-διαχειριστή.</p>}
             <div style={{ marginTop: 10 }}>
               <MoveToTrashControl
                 confirming={confirmingDelete}
