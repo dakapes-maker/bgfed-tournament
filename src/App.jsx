@@ -5390,7 +5390,7 @@ export default function TournamentManager() {
            iPhone). Intensity = the opacity below. */
         body { background: var(--bg); margin: 0; }
         .app { position: relative; isolation: isolate; }
-        .app::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: url('/bg-blueprint.webp') center / cover no-repeat; opacity: 0.08; }
+        .app::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: url('/bg-blueprint.webp') center / cover no-repeat; opacity: 0.12; }
         @media print { .app::before { display: none; } }
 
         .topbar { display: flex; justify-content: space-between; align-items: center; padding: 14px 28px; border-bottom: 1px solid var(--border); }
