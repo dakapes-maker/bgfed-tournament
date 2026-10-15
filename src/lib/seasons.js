@@ -102,14 +102,24 @@ export const DEFAULT_SEASON_RULES = { bestOf: 12, cutoffR32: 5, cutoffR48: 16 };
 export function rulesForSeason(sys, year) {
   const all = (sys && sys.seasonRules) || {};
   const y = Number(year);
-  if (all[String(y)]) return { ...DEFAULT_SEASON_RULES, ...all[String(y)], inherited: false, from: y };
   // 5B.2α: inherit only from an earlier season of the SAME competition
   // (season ids grow with creation order; see lib/seasonRegistry.js).
   const compOf = (k) => (sys && sys.seasons && sys.seasons[String(k)] && sys.seasons[String(k)].competitionId) || DEFAULT_COMPETITION_ID;
   const comp = compOf(y);
+  // Qualification zones (Player of the Year / Round of 32 / 48) are a rule
+  // of the season: explicit qualZones, else only the Premier League's
+  // seasons have them (no database write needed for the existing ones).
+  const withZones = (r) => ({ ...r, qualZones: typeof r.qualZones === "boolean" ? r.qualZones : comp === DEFAULT_COMPETITION_ID });
+  if (all[String(y)]) return withZones({ ...DEFAULT_SEASON_RULES, ...all[String(y)], inherited: false, from: y });
   const earlier = Object.keys(all).map(Number).filter((k) => !isNaN(k) && k < y && compOf(k) === comp).sort((a, b) => b - a);
-  if (earlier.length) return { ...DEFAULT_SEASON_RULES, ...all[String(earlier[0])], inherited: true, from: earlier[0] };
-  return { ...DEFAULT_SEASON_RULES, inherited: true, from: null };
+  if (earlier.length) return withZones({ ...DEFAULT_SEASON_RULES, ...all[String(earlier[0])], inherited: true, from: earlier[0] });
+  return withZones({ ...DEFAULT_SEASON_RULES, inherited: true, from: null });
+}
+
+/** The stored copy of a season's rules (what createSeason / saveSeasonRules
+ * pin): best-of, cut-offs and the zones switch. */
+export function storedRules(r, setAt) {
+  return { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, qualZones: !!r.qualZones, setAt };
 }
 
 /* ---- Season closing (Build 3D) ------------------------------------------

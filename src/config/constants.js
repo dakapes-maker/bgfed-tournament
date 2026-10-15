@@ -7,3 +7,4 @@
 
 export const WHATS_NEW_SEEN_KEY = "bgfed_whatsnew_seen_build";
 export const LANG_STORAGE_KEY = "bgfed_lang";
+export const SEASON_VIEW_KEY = "bgfed_season_view"; // last competition/season on the standings page

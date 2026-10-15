@@ -84,6 +84,8 @@ import {
   withLocalDate,
   seasonForDate,
   rulesForSeason,
+  storedRules,
+  DEFAULT_SEASON_RULES,
   seasonLocked,
   seasonFingerprint,
   tournamentInScope,
@@ -123,6 +125,18 @@ import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay, clubColor 
 import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
 import { importCompetitionId, importsCountFor, sourceSheetsOf, importSeason, importDateIso, validateImportBundle, saveImportBundle } from "./lib/imports.js";
 import { ImportBundlePreview } from "./components/ImportBundlePreview.jsx";
+import { SeasonFilter } from "./components/SeasonFilter.jsx";
+import {
+  competitionSlug,
+  slugProblem,
+  standingsCompetitions,
+  parseSeasonHash,
+  seasonHasStandings,
+  standingsSeasonOptions,
+  loadSeasonView,
+  saveSeasonView,
+  initialSeasonView,
+} from "./lib/seasonView.js";
 import { buildConsistencyReport, describeStaleReasons, shortTournamentLabel } from "./lib/consistency.js";
 import { generatePairings, replayPlayersFromHistory, computeBuchholz, sortStandings } from "./lib/swiss.js";
 import { buildXlsx } from "./lib/xlsx.js";
@@ -393,6 +407,8 @@ export default function TournamentManager() {
   const [seasonYearsAvailable, setSeasonYearsAvailable] = useState([]);
   const [seasonBrowseComp, setSeasonBrowseComp] = useState(DEFAULT_COMPETITION_ID); // 5B.3: competition on the standings page
   const [seasonData, setSeasonData] = useState({ players: {} });
+  const [seasonDataYear, setSeasonDataYear] = useState(null); // season whose standings are in seasonData (null = loading)
+  const seasonLinkRef = useRef(null); // #season/<slug>[/<season>] of the start-up link, applied once the settings load
   const [expandedPlayer, setExpandedPlayer] = useState(null);
 
   const [registry, setRegistry] = useState({ players: {} });
@@ -412,6 +428,7 @@ export default function TournamentManager() {
   setPersonLookup(registry);
   const [trash, setTrash] = useState([]); // tournaments moved to the trash (restorable)
   const [sysState, setSysState] = useState({}); // lastExportAt, purgedIds
+  const [sysLoaded, setSysLoaded] = useState(false); // the system document has been read
   const sn = (id) => seasonName(sysState, id); // 5B.2β: display name of a season id
   // 5B.4: finances of the open tournament (its copy, or the competition switch before it starts)
   const tFin = financeCopy ? tournamentFinance(financeCopy, competitionId) : { ...tournamentFinance(null, competitionId), enabled: competitionHasFinance(competitionsFrom(sysState).find((c) => c.id === competitionId)) };
@@ -455,6 +472,7 @@ export default function TournamentManager() {
   useEffect(() => {
     const hash = window.location.hash.replace("#", "");
     if (hash === "season") setPhase("season");
+    else if (parseSeasonHash(hash)) { seasonLinkRef.current = parseSeasonHash(hash); setPhase("season"); }
     else if (hash === "calendar") setPhase("calendar"); // Σ3
     else if (hash === "elo") setPhase("elo");
     else if (hash === "elo-national") { setEloPool(PRIMARY_RANKING_ID); setPhase("elo"); }
@@ -606,6 +624,7 @@ export default function TournamentManager() {
       }
       setTrash(trashList);
       setSysState(sys);
+      setSysLoaded(true);
       // Build Σ1: the bootstrap of an EMPTY database (seed registry, historical
       // season 2026, initial ELO, re-creation of the historical days) was
       // removed — the production database has all of it, and the backups
@@ -625,11 +644,23 @@ export default function TournamentManager() {
   // Build 2: the Season and Season-statistics pages open on the current
   // season — or, while it has no results yet (e.g. 1 January, before the
   // first tournament of the year), on the most recent season that has.
+  // 2026-10-15: once the settings are loaded; a #season/<slug> link wins,
+  // then the choice this browser remembers (localStorage).
   useEffect(() => {
+    if (!sysLoaded) return;
     let cancelled = false;
     (async () => {
-      const current = currentSeasonId(sysState, DEFAULT_COMPETITION_ID);
-      const years = (await listSeasonYears()).filter((y) => y <= current).sort((a, b) => b - a);
+      const allYears = await listSeasonYears();
+      const chosen = initialSeasonView(sysState, allYears, seasonLinkRef.current, loadSeasonView());
+      seasonLinkRef.current = null;
+      if (cancelled) return;
+      if (chosen) {
+        setSeasonBrowseComp(chosen.comp);
+        setSeasonBrowseYear(chosen.season);
+        return;
+      }
+      const current = currentSeasonId(sysState, DEFAULT_COMPETITION_ID, allYears);
+      const years = allYears.filter((y) => y <= current && seasonCompetitionId(sysState, y) === DEFAULT_COMPETITION_ID).sort((a, b) => b - a);
       let pick = current;
       for (const y of years) {
         const sz = await loadSeason(y);
@@ -639,12 +670,13 @@ export default function TournamentManager() {
         }
       }
       if (cancelled) return;
+      setSeasonBrowseComp(DEFAULT_COMPETITION_ID);
       setSeasonBrowseYear(pick);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sysLoaded]);
 
   useEffect(() => {
     if (phase === "tournament") setSelectedRound(round);
@@ -678,7 +710,15 @@ export default function TournamentManager() {
       const all = [...new Set([seasonBrowseYear, ...years, ...opened])].sort((a, b) => b - a);
       setSeasonYearsAvailable(all);
     });
-    loadSeason(seasonBrowseYear).then(setSeasonData);
+    let cancelled = false;
+    loadSeason(seasonBrowseYear).then((d) => {
+      if (cancelled) return;
+      setSeasonData(d);
+      setSeasonDataYear(seasonBrowseYear);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [phase, seasonBrowseYear]);
 
   // Imported tournaments are public (read-only): load them once for everyone.
@@ -2274,7 +2314,7 @@ export default function TournamentManager() {
     if (eloSaved) {
       for (const y of yearsToWrite) {
         if (!(await saveSeason(y, seasonsBuilt[y] || { players: {} }))) {
-          const notWritten = yearsToWrite.filter((x) => x >= y).join(", ");
+          const notWritten = yearsToWrite.filter((x) => x >= y).map(sn).join(", ");
           reportSaveFailure(`Recompute — δεν αποθηκεύτηκε η Βαθμολογία των σεζόν ${notWritten} (η ELO αποθηκεύτηκε). Τρέξε ξανά το Recompute.`);
           seasonsOk = false;
           break;
@@ -4575,7 +4615,19 @@ export default function TournamentManager() {
     }
     let next;
     if (compDraft.id) {
-      next = comps.map((c) => (c.id === compDraft.id ? { ...c, name } : c));
+      // Optional link name (#season/<slug>); empty = the id is used.
+      const slug = String(compDraft.slug || "").trim();
+      const problem = slugProblem(sysState, compDraft.id, slug);
+      if (problem) {
+        showToast(problem);
+        return;
+      }
+      next = comps.map((c) => {
+        if (c.id !== compDraft.id) return c;
+        const rest = { ...c, name };
+        delete rest.slug;
+        return slug ? { ...rest, slug } : rest;
+      });
     } else {
       if (!compDraft.ownerClubId) {
         showToast("Διάλεξε σε ποιον σύλλογο ανήκει η διοργάνωση.");
@@ -4664,11 +4716,19 @@ export default function TournamentManager() {
               const editing = compDraft && compDraft.id === c.id;
               return (
                 <tr key={c.id}>
-                  <td>{editing ? <input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} /> : <button className="history-link" title="Άνοιγμα διοργάνωσης: σεζόν, κανόνες, ημερολόγιο" onClick={() => openCompetitionPage(c.id)}>{c.name}</button>}
+                  <td>{editing ? (
+                    <>
+                      <input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} />
+                      <label style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, display: "block" }}>Όνομα συνδέσμου (προαιρετικό, π.χ. trikala)</label>
+                      <input type="text" value={compDraft.slug || ""} placeholder={c.id} onChange={(e) => setCompDraft({ ...compDraft, slug: e.target.value.toLowerCase() })} />
+                      {slugProblem(sysState, c.id, compDraft.slug) && <p className="field-warning" style={{ margin: "4px 0 0 0" }}>{slugProblem(sysState, c.id, compDraft.slug)}</p>}
+                    </>
+                  ) : <button className="history-link" title="Άνοιγμα διοργάνωσης: σεζόν, κανόνες, ημερολόγιο" onClick={() => openCompetitionPage(c.id)}>{c.name}</button>}
                     <div className="cal-note" style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       id: <code>{c.id}</code>
                       <button className="btn-ghost" style={{ padding: "0 4px" }} title="Αντιγραφή id διοργάνωσης" onClick={() => { navigator.clipboard?.writeText(c.id).then(() => showToast("Το id αντιγράφηκε."), () => showToast(c.id)); }}><Copy size={12} /></button>
                     </div>
+                    {competitionHasStandings(c) && <div className="cal-note" title="Σύνδεσμος της Βαθμολογίας αυτής της διοργάνωσης">σύνδεσμος: <code>#season/{competitionSlug(c)}</code></div>}
                   </td>
                   <td>{clubDisplay(sysState, c.ownerClubId, "—")}</td>
                   <td>{rankingsOfCompetition(c.id)}</td>
@@ -4682,7 +4742,7 @@ export default function TournamentManager() {
                       </>
                     ) : (
                       <>
-                        <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Μετονομασία" onClick={() => setCompDraft({ id: c.id, name: c.name })}><Pencil size={13} /></button>
+                        <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Μετονομασία / όνομα συνδέσμου" onClick={() => setCompDraft({ id: c.id, name: c.name, slug: c.slug || "" })}><Pencil size={13} /></button>
                         {c.id !== DEFAULT_COMPETITION_ID && deletable && (
                           <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Διαγραφή" onClick={() => deleteCompetition(c.id)}><Trash2 size={13} /></button>
                         )}
@@ -4861,12 +4921,16 @@ export default function TournamentManager() {
     // then give the new season a copy of the latest rules.
     const rules = { ...(sysState.seasonRules || {}) };
     existing.filter((s) => !rules[String(s.id)]).forEach((s) => {
-      const r = rulesForSeason({ ...sysState, seasonRules: rules }, s.id);
-      rules[String(s.id)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: now };
+      rules[String(s.id)] = storedRules(rulesForSeason({ ...sysState, seasonRules: rules }, s.id), now);
     });
     const seasons = { ...(sysState.seasons || {}), [String(id)]: { competitionId: comp, name, createdAt: now } };
+    // Rules come ONLY from the latest season of the same competition. The
+    // first season of a competition gets the system defaults marked «προς
+    // έλεγχο», without qualification zones.
     const base = rulesForSeason({ ...sysState, seasons, seasonRules: rules }, id);
-    rules[String(id)] = { bestOf: base.bestOf, cutoffR32: base.cutoffR32, cutoffR48: base.cutoffR48, setAt: now };
+    rules[String(id)] = base.from !== null
+      ? storedRules(base, now)
+      : { ...storedRules({ ...DEFAULT_SEASON_RULES, qualZones: false }, now), toReview: true };
     const calendars = { ...(sysState.seasonCalendars || {}), [String(id)]: [] };
     const patch = { seasons, seasonRules: rules, seasonCalendars: calendars, seasonsOpened: { ...(sysState.seasonsOpened || {}), [String(id)]: now } };
     if (await saveSysState(patch)) {
@@ -5174,14 +5238,16 @@ export default function TournamentManager() {
     const valid =
       d &&
       Number.isInteger(Number(d.bestOf)) && Number(d.bestOf) >= 1 &&
-      Number.isInteger(Number(d.cutoffR32)) && Number(d.cutoffR32) >= 1 &&
-      Number.isInteger(Number(d.cutoffR48)) && Number(d.cutoffR48) >= Number(d.cutoffR32);
+      (!d.qualZones || (
+        Number.isInteger(Number(d.cutoffR32)) && Number(d.cutoffR32) >= 1 &&
+        Number.isInteger(Number(d.cutoffR48)) && Number(d.cutoffR48) >= Number(d.cutoffR32)));
+    const startEdit = () => setRulesDraft({ year, bestOf: rules.bestOf, cutoffR32: rules.cutoffR32, cutoffR48: rules.cutoffR48, qualZones: !!rules.qualZones });
     return (
       <div className="control-sub-card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <strong>Σεζόν {sn(year)} — κανόνες Βαθμολογίας</strong>
           {!editing && !seasonLocked(sysState, year) && (
-            <button className="btn-ghost" onClick={() => setRulesDraft({ year, bestOf: rules.bestOf, cutoffR32: rules.cutoffR32, cutoffR48: rules.cutoffR48 })}>
+            <button className="btn-ghost" onClick={startEdit}>
               <Pencil size={13} /> Αλλαγή
             </button>
           )}
@@ -5189,8 +5255,16 @@ export default function TournamentManager() {
         {!editing ? (
           <>
             <p style={{ margin: "6px 0 0 0", fontSize: 14 }}>
-              Μετράνε τα <strong>{rules.bestOf}</strong> καλύτερα αποτελέσματα. 1η θέση: Παίκτης της Χρονιάς και πρόκριση στους 32 · θέσεις 2–{rules.cutoffR32}: πρόκριση στους 32 · θέσεις {rules.cutoffR32 + 1}–{rules.cutoffR48}: πρόκριση στους 48.
+              Μετράνε τα <strong>{rules.bestOf}</strong> καλύτερα αποτελέσματα.
+              {rules.qualZones
+                ? <> 1η θέση: Παίκτης της Χρονιάς και πρόκριση στους 32 · θέσεις 2–{rules.cutoffR32}: πρόκριση στους 32 · θέσεις {rules.cutoffR32 + 1}–{rules.cutoffR48}: πρόκριση στους 48.</>
+                : <> Χωρίς ζώνες πρόκρισης.</>}
             </p>
+            {rules.toReview && (
+              <p className="field-warning" style={{ margin: "4px 0 0 0" }}>
+                ⚠ Προς έλεγχο: πρώτη σεζόν της διοργάνωσης — ισχύουν οι αρχικές τιμές του συστήματος. Όρισε τους κανόνες από την προκήρυξη.
+              </p>
+            )}
             {rules.inherited && (
               <p style={{ margin: "4px 0 0 0", fontSize: 13, color: "var(--muted)" }}>
                 {rules.from ? `Δεν έχουν οριστεί ακόμα κανόνες για το ${sn(year)}· ισχύουν όσοι της σεζόν ${sn(rules.from)}.` : "Δεν έχουν οριστεί ακόμα κανόνες· ισχύουν οι αρχικοί."} Όρισέ τους όταν βγει η προκήρυξη.
@@ -5204,16 +5278,26 @@ export default function TournamentManager() {
                 <label>Καλύτερα αποτελέσματα</label>
                 <input type="number" min={1} value={d.bestOf} onChange={(e) => setRulesDraft({ ...d, bestOf: e.target.value })} />
               </div>
-              <div style={{ width: 170 }}>
-                <label>Πρόκριση στους 32 έως θέση</label>
-                <input type="number" min={1} value={d.cutoffR32} onChange={(e) => setRulesDraft({ ...d, cutoffR32: e.target.value })} />
+              <div style={{ width: 170, alignSelf: "flex-end", paddingBottom: 10 }}>
+                <label style={{ display: "inline-flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!d.qualZones} onChange={(e) => setRulesDraft({ ...d, qualZones: e.target.checked })} /> Ζώνες πρόκρισης
+                </label>
               </div>
-              <div style={{ width: 170 }}>
-                <label>Πρόκριση στους 48 έως θέση</label>
-                <input type="number" min={1} value={d.cutoffR48} onChange={(e) => setRulesDraft({ ...d, cutoffR48: e.target.value })} />
-              </div>
+              {d.qualZones && (
+                <>
+                  <div style={{ width: 170 }}>
+                    <label>Πρόκριση στους 32 έως θέση</label>
+                    <input type="number" min={1} value={d.cutoffR32} onChange={(e) => setRulesDraft({ ...d, cutoffR32: e.target.value })} />
+                  </div>
+                  <div style={{ width: 170 }}>
+                    <label>Πρόκριση στους 48 έως θέση</label>
+                    <input type="number" min={1} value={d.cutoffR48} onChange={(e) => setRulesDraft({ ...d, cutoffR48: e.target.value })} />
+                  </div>
+                </>
+              )}
             </div>
-            {!valid && <p className="field-warning">Ακέραιοι ≥ 1, και η θέση για τους 48 όχι μικρότερη από τη θέση για τους 32.</p>}
+            {!valid && <p className="field-warning">{d.qualZones ? "Ακέραιοι ≥ 1, και η θέση για τους 48 όχι μικρότερη από τη θέση για τους 32." : "Ακέραιος ≥ 1."}</p>}
+            {d.qualZones && <p style={{ fontSize: 13, color: "var(--muted)", margin: "6px 0 0 0" }}>Με ζώνες πρόκρισης η Βαθμολογία χρωματίζει τις θέσεις: 1η Παίκτης της Χρονιάς, μετά πρόκριση στους 32 και στους 48 (κανόνας της Τελικής Φάσης της Ομοσπονδίας).</p>}
             <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0 0 0" }}>
               Αφορά μόνο τη σεζόν {sn(year)}. Οι άλλες σεζόν δεν αλλάζουν. Δεν χρειάζεται Recompute: η Βαθμολογία υπολογίζεται αμέσως με τους νέους κανόνες.
             </p>
@@ -5230,10 +5314,12 @@ export default function TournamentManager() {
   async function saveSeasonRules() {
     if (!rulesDraft) return;
     const year = rulesDraft.year;
+    // Without zones the cut-offs are kept as they were (not shown, not used).
     const next = {
       bestOf: Number(rulesDraft.bestOf),
       cutoffR32: Number(rulesDraft.cutoffR32),
       cutoffR48: Number(rulesDraft.cutoffR48),
+      qualZones: !!rulesDraft.qualZones,
       setAt: new Date().toISOString(),
     };
     // Pin the rules of every earlier season that is still only inheriting,
@@ -5248,8 +5334,7 @@ export default function TournamentManager() {
     }
     const ruleComp = seasonCompetitionId(sysState, year);
     years.filter((y) => y < year && !all[String(y)] && seasonCompetitionId(sysState, y) === ruleComp).forEach((y) => {
-      const r = rulesForSeason({ ...sysState, seasonRules: all }, y);
-      all[String(y)] = { bestOf: r.bestOf, cutoffR32: r.cutoffR32, cutoffR48: r.cutoffR48, setAt: next.setAt };
+      all[String(y)] = storedRules(rulesForSeason({ ...sysState, seasonRules: all }, y), next.setAt);
     });
     all[String(year)] = next;
     if (await saveSysState({ seasonRules: all })) {
@@ -5732,6 +5817,13 @@ export default function TournamentManager() {
         .ledger-btn.active { background: var(--accent-soft); color: var(--accent); }
         .ledger-row > td { background: var(--accent-soft); padding: 12px 14px; }
         .ledger-table td.neg { color: var(--loss, #b03a2e); }
+        .season-filter { display: flex; align-items: center; justify-content: space-between; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 16px; }
+        .season-filter-comps { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+        .season-filter-right { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+        .season-filter-field { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin: 0; }
+        .season-filter-field select { font-size: 14px; color: var(--ink); border: 1px solid var(--border); border-radius: 7px; padding: 5px 10px; background: var(--surface); max-width: 60vw; }
+        .season-filter-link { padding: 5px 7px; color: var(--muted); }
+        @media (max-width: 560px) { .season-filter-right { margin-left: 0; } }
         .scope-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; font-size: 14px; color: var(--muted); }
         .cal-table { width: 100%; border-collapse: collapse; font-size: 14px; }
         .cal-table th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 600; padding: 4px 8px; border-bottom: 1px solid var(--border); }
@@ -6449,35 +6541,46 @@ export default function TournamentManager() {
         </>
       )}
 
-      {phase === "season" && (
+      {phase === "season" && (() => {
+        // 2026-10-15: filter at the top of the content, qualification zones
+        // per season (rules.qualZones), seasons without standings.
+        const stComps = standingsCompetitions(sysState);
+        const stSeasons = standingsSeasonOptions(sysState, seasonBrowseComp, seasonYearsAvailable, archive, seasonBrowseYear);
+        const chooseComp = (compId) => {
+          const y = currentSeasonId(sysState, compId, seasonYearsAvailable);
+          setSeasonBrowseComp(compId);
+          setSeasonBrowseYear(y);
+          setExpandedPlayer(null);
+          saveSeasonView(compId, y);
+        };
+        const chooseSeason = (y) => {
+          setSeasonBrowseYear(y);
+          setExpandedPlayer(null);
+          saveSeasonView(seasonBrowseComp, y);
+        };
+        const rules = rulesForSeason(sysState, seasonBrowseYear);
+        const loading = seasonDataYear !== seasonBrowseYear;
+        const seasonStandings = loading ? [] : computeSeasonStandings(seasonData, rules.bestOf);
+        const hasRows = seasonStandings.length > 0;
+        const zones = hasRows && rules.qualZones;
+        const qual = { roundA: 32, cutoffA: rules.cutoffR32, roundB: 48, cutoffB: rules.cutoffR48 };
+        function rowClassForRank(rank) {
+          if (rank === 1) return "qual-tier1";
+          if (rank <= qual.cutoffA) return "qual-tier2";
+          if (rank <= qual.cutoffB) return "qual-tier3";
+          return "";
+        }
+        // A season with no official in-app tournament has no standings
+        // (imported tournaments count toward ELO only). The current season
+        // with nothing yet shows the «no data yet» message instead.
+        const hasImports = Object.values(importDocs).some((d) => importSeason(d) === seasonBrowseYear && importCompetitionId(d) === seasonBrowseComp);
+        const isCurrent = seasonBrowseYear === currentSeasonId(sysState, seasonBrowseComp, seasonYearsAvailable);
+        const noStandings = !loading && !hasRows && !seasonHasStandings(archive, seasonBrowseYear) && (hasImports || !isCurrent);
+        return (
         <>
           <div className="header">
             <p className="eyebrow">{L.seasonEyebrow}</p>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-              <h1>{L.seasonTitle}</h1>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {competitionsFrom(sysState).filter(competitionHasStandings).length > 1 && (
-                <select
-                  value={seasonBrowseComp}
-                  onChange={(e) => { setSeasonBrowseComp(e.target.value); setSeasonBrowseYear(currentSeasonId(sysState, e.target.value)); }}
-                  style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: "var(--accent)", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 10px", background: "var(--surface)" }}
-                >
-                  {competitionsFrom(sysState).filter(competitionHasStandings).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              )}
-              <select
-                value={seasonBrowseYear}
-                onChange={(e) => setSeasonBrowseYear(Number(e.target.value))}
-                style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: "var(--accent)", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 10px", background: "var(--surface)" }}
-              >
-                {seasonYearsAvailable.filter((y) => y === seasonBrowseYear || seasonCompetitionId(sysState, y) === seasonBrowseComp).map((y) => (
-                  <option key={y} value={y}>{sn(y)}</option>
-                ))}
-              </select>
-              </div>
-            </div>
+            <h1>{L.seasonTitle}</h1>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
                 <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
@@ -6485,61 +6588,66 @@ export default function TournamentManager() {
             </div>
           </div>
           <div className="content">
-            <div className="notice">
-              <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>
-                Σεζόν {sn(seasonBrowseYear)}. Μετράνε τα {rulesForSeason(sysState, seasonBrowseYear).bestOf} καλύτερα αποτελέσματα κάθε παίκτη στη σεζόν.
-              </span>
-            </div>
+            <SeasonFilter
+              L={L}
+              comps={stComps}
+              compId={seasonBrowseComp}
+              seasons={stSeasons}
+              seasonId={seasonBrowseYear}
+              onCompetition={chooseComp}
+              onSeason={chooseSeason}
+              onCopied={showToast}
+            />
+
+            {hasRows && (
+              <div className="notice">
+                <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{L.stNotice(sn(seasonBrowseYear), rules.bestOf)}</span>
+              </div>
+            )}
 
             {renderSeasonSchedule(seasonBrowseYear)}
 
             {staleNotice}
 
-            {(() => {
-              const rules = rulesForSeason(sysState, seasonBrowseYear);
-              const qual = { roundA: 32, cutoffA: rules.cutoffR32, roundB: 48, cutoffB: rules.cutoffR48 };
-
-              function rowClassForRank(rank) {
-                if (rank === 1) return "qual-tier1";
-                if (rank <= qual.cutoffA) return "qual-tier2";
-                if (rank <= qual.cutoffB) return "qual-tier3";
-                return "";
-              }
-
-              const seasonStandings = computeSeasonStandings(seasonData, rules.bestOf);
-
-              return (
-                <>
-                  <div className="qual-legend">
-                    <div className="qual-row qual-tier1">
-                      <span>Player of the Year + qualifies for Round of {qual.roundA}</span>
-                    </div>
-                    <div className="qual-row qual-tier2">
-                      <span>Qualifies for Round of {qual.roundA} — positions 2 to {qual.cutoffA}</span>
-                    </div>
-                    <div className="qual-row qual-tier3">
-                      <span>Qualifies for Round of {qual.roundB} — positions {qual.cutoffA + 1} to {qual.cutoffB}</span>
-                    </div>
-                  </div>
-
-              {seasonStandings.length === 0 ? (
-                <div className="empty-state">
-                  <TrendingUp size={20} style={{ marginBottom: 6 }} />
-                  <p>No season data yet for {seasonBrowseYear}. It fills in as tournaments finish.</p>
+            {zones && (
+              <div className="qual-legend">
+                <div className="qual-row qual-tier1">
+                  <span>{L.stTier1(qual.roundA)}</span>
                 </div>
-              ) : (
+                <div className="qual-row qual-tier2">
+                  <span>{L.stTier2(qual.roundA, qual.cutoffA)}</span>
+                </div>
+                <div className="qual-row qual-tier3">
+                  <span>{L.stTier3(qual.roundB, qual.cutoffA, qual.cutoffB)}</span>
+                </div>
+              </div>
+            )}
+
+            {loading ? (
+              <div className="empty-state"><p>…</p></div>
+            ) : noStandings ? (
+              <div className="empty-state">
+                <Info size={20} style={{ marginBottom: 6 }} />
+                <p>{L.stNoStandings(sn(seasonBrowseYear), hasImports && competitionInMainRanking(seasonBrowseComp))}</p>
+              </div>
+            ) : !hasRows ? (
+              <div className="empty-state">
+                <TrendingUp size={20} style={{ marginBottom: 6 }} />
+                <p>{L.stEmpty(sn(seasonBrowseYear))}</p>
+              </div>
+            ) : (
                 <div className="card" style={{ padding: 0, overflowX: "auto" }}>
                   <table>
                     <thead>
                       <tr>
-                        <th className="rank">Rank</th>
-                        <th>Player</th>
-                        <th>Events</th>
-                        <th>Points<br /><span className="th-sub">(best {rules.bestOf})</span></th>
-                        <th>Total<br /><span className="th-sub">(all events)</span></th>
-                        <th>Wins<br /><span className="th-sub">(regular only)</span></th>
-                        <th>Matches</th>
+                        <th className="rank">{L.thRank}</th>
+                        <th>{L.thPlayer}</th>
+                        <th>{L.thEvents}</th>
+                        <th>{L.thPoints}<br /><span className="th-sub">{L.thBest(rules.bestOf)}</span></th>
+                        <th>{L.thTotal}<br /><span className="th-sub">{L.thAllEvents}</span></th>
+                        <th>{L.thWins}<br /><span className="th-sub">{L.thRegularOnly}</span></th>
+                        <th>{L.thMatches}</th>
                         <th>%</th>
                         <th></th>
                       </tr>
@@ -6550,7 +6658,7 @@ export default function TournamentManager() {
                         return (
                         <React.Fragment key={p.name}>
                           <tr
-                            className={rowClassForRank(rank)}
+                            className={zones ? rowClassForRank(rank) : ""}
                             style={{ cursor: "pointer" }}
                             onClick={() => setExpandedPlayer(expandedPlayer === p.name ? null : p.name)}
                           >
@@ -6604,13 +6712,11 @@ export default function TournamentManager() {
                     </tbody>
                   </table>
                 </div>
-              )}
-                </>
-              );
-            })()}
+            )}
           </div>
         </>
-      )}
+        );
+      })()}
       {/* #endregion Οθόνη: Βαθμολογία (phase "season") */}
 
       {/* #region Οθόνη: Κατάταξη ELO (phase "elo") */}
@@ -7552,7 +7658,7 @@ export default function TournamentManager() {
                     <label>Όνομα σεζόν</label>
                     <input type="text" value={newSeasonYear} placeholder="π.χ. 2027 ή 2026–27" onChange={(e) => setNewSeasonYear(e.target.value)} />
                   </div>
-                  <span style={{ fontSize: 13, color: "var(--muted)", paddingBottom: 10 }}>Οι κανόνες αντιγράφονται από την προηγούμενη σεζόν της διοργάνωσης.</span>
+                  <span style={{ fontSize: 13, color: "var(--muted)", paddingBottom: 10 }}>{compSeasons.length > 0 ? "Οι κανόνες αντιγράφονται από την πιο πρόσφατη σεζόν αυτής της διοργάνωσης." : "Πρώτη σεζόν: οι κανόνες μπαίνουν με τις αρχικές τιμές, προς έλεγχο, χωρίς ζώνες πρόκρισης."}</span>
                   <button className="btn-secondary" onClick={() => setNewSeasonYear(null)}>Άκυρο</button>
                   <button className="btn-primary" onClick={createSeason} disabled={!String(newSeasonYear).trim()}>Δημιουργία</button>
                 </div>
