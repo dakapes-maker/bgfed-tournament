@@ -4447,8 +4447,8 @@ export default function TournamentManager() {
   }
 
   async function confirmLockAction() {
-    if (!lockAction || String(lockTyped).trim() !== String(lockAction.year)) {
-      showToast("Πληκτρολόγησε το έτος της σεζόν για επιβεβαίωση.");
+    if (!lockAction || String(lockTyped).trim() !== String(sn(lockAction.year)).trim()) {
+      showToast("Πληκτρολόγησε το όνομα της σεζόν για επιβεβαίωση.");
       return;
     }
     const { kind, year } = lockAction;
@@ -4479,12 +4479,12 @@ export default function TournamentManager() {
       <div className="lock-prompt">
         <p style={{ margin: "0 0 8px 0", fontSize: 14 }}>{text}</p>
         <div className="row" style={{ alignItems: "flex-end" }}>
-          <div style={{ width: 140 }}>
-            <label>Πληκτρολόγησε «{year}»</label>
+          <div style={{ width: 160 }}>
+            <label>Πληκτρολόγησε «{sn(year)}»</label>
             <input type="text" value={lockTyped} onChange={(e) => setLockTyped(e.target.value)} />
           </div>
           <button className="btn-secondary" onClick={() => { setLockAction(null); setLockTyped(""); }}>Άκυρο</button>
-          <button className="btn-primary" onClick={confirmLockAction} disabled={String(lockTyped).trim() !== String(year)}>Επιβεβαίωση</button>
+          <button className="btn-primary" onClick={confirmLockAction} disabled={String(lockTyped).trim() !== String(sn(year)).trim()}>Επιβεβαίωση</button>
         </div>
       </div>
     );
@@ -4494,7 +4494,8 @@ export default function TournamentManager() {
   function renderSeasonCloseCard(year) {
     const locked = seasonLocked(sysState, year);
     const prog = calendarProgress(buildCalendarView(sysState, year, archive));
-    const ended = todayYMD() > (year === 2026 ? "2026-12-31" : `${year}-12-31`);
+    // Σεζόν πριν το 5B έχουν id το έτος· οι νέες (id ≥ 100001) δεν έχουν ημερομηνίες — μόνο το ημερολόγιο.
+    const ended = Number(year) < 100000 && todayYMD() > `${year}-12-31`;
     const calendarDone = prog.total > 0 && prog.done === prog.total;
     const exportFresh = !!sysState.lastExportAt && Date.now() - new Date(sysState.lastExportAt).getTime() < 24 * 3600 * 1000;
     if (locked) {
@@ -5521,6 +5522,8 @@ export default function TournamentManager() {
         tr.qual-tier2 td { background: #FF00FF; color: #000; }
         tr.qual-tier3 td { background: #00FF00; color: #000; }
         .th-sub { font-weight: 400; font-size: 10px; color: var(--muted); text-transform: none; }
+        /* σύλλογος κάτω από το όνομα: width 0 + min-width 100% = δεν φαρδαίνει ποτέ τη στήλη (κόβεται με …) */
+        .elo-club { font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.25; margin: 0; width: 0; min-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .entry-breakdown { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); }
         .entry-breakdown strong { color: var(--ink); font-size: 13px; }
 
@@ -6650,7 +6653,7 @@ export default function TournamentManager() {
             {(() => {
               const source = eloPool === PRIMARY_RANKING_ID ? eloData.players : rankingDocs[eloPool]?.players;
               // Σ1: current registry names (the stored copy may be older after a rename).
-                const standings = Object.entries(source || {}).map(([k, p]) => ({ ...p, name: displayNameFor(k, p.name) })).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, "en"));
+                const standings = Object.entries(source || {}).map(([k, p]) => ({ ...p, key: k, name: displayNameFor(k, p.name) })).sort((a, b) => b.rating - a.rating || a.name.localeCompare(b.name, "en"));
               if (standings.length === 0) {
                 return (
                   <div className="empty-state">
@@ -6681,7 +6684,14 @@ export default function TournamentManager() {
                         <React.Fragment key={p.name}>
                         <tr>
                           <td className="rank">{i + 1}</td>
-                          <td style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => openPlayerDetail(normalizeName(p.name))}>{formatNameForDisplay(p.name, nameDisplayMode)}</td>
+                          <td style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => openPlayerDetail(normalizeName(p.name))}>
+                            {formatNameForDisplay(p.name, nameDisplayMode)}
+                            {(() => {
+                              const person = registry.players?.[p.key] || registry.players?.[pk];
+                              const club = person && !person.guest ? clubDisplay(sysState, person.clubId, person.club) : "";
+                              return club ? <div className="elo-club">{club}</div> : null;
+                            })()}
+                          </td>
                           <td><strong>{Math.round(p.rating)}</strong></td>
                           <td>{p.matches ?? p.games}</td>
                           <td style={{ fontWeight: 700 }}>{p.matches > 0 ? `${Math.round(((p.wins ?? 0) / p.matches) * 1000) / 10}%` : "—"}</td>
