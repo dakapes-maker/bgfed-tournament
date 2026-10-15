@@ -121,7 +121,8 @@ import {
 } from "./lib/competitions.js";
 import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay, clubColor } from "./lib/clubs.js";
 import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
-import { importCompetitionId, sourceSheetsOf, importSeason, importDateIso, validateImport } from "./lib/imports.js";
+import { importCompetitionId, sourceSheetsOf, importSeason, importDateIso, validateImportBundle, saveImportBundle } from "./lib/imports.js";
+import { ImportBundlePreview } from "./components/ImportBundlePreview.jsx";
 import { buildConsistencyReport, describeStaleReasons, shortTournamentLabel } from "./lib/consistency.js";
 import { generatePairings, replayPlayersFromHistory, computeBuchholz, sortStandings } from "./lib/swiss.js";
 import { buildXlsx } from "./lib/xlsx.js";
@@ -264,7 +265,10 @@ export default function TournamentManager() {
     }
   }); // Pairings: "cards" (default) or "list", remembered per device
   const [importsList, setImportsList] = useState(null); // null = not loaded; [] = none
-  const [importPreview, setImportPreview] = useState(null); // { doc, problems, summary, fileName, replaceId }
+  const [importPreview, setImportPreview] = useState(null); // bundle: { items: [{ doc, problems, summary, replaceId }], matching, title, problems, fileName }
+  const [importTarget, setImportTarget] = useState({ competitionId: "", seasonYear: "" }); // chosen for every tournament of the bundle
+  const [importProgress, setImportProgress] = useState(""); // "k/N" while saving
+  const lastImportTargetRef = useRef(null); // the last choice of this visit
   const [importView, setImportView] = useState(null); // { id, doc, tab, round }
   const [importBusy, setImportBusy] = useState(false);
   const [importDateDraft, setImportDateDraft] = useState(null); // { date, dateEnd, dateAssumed }
@@ -3260,23 +3264,46 @@ export default function TournamentManager() {
     }
   }
 
+  /** Competition and season the bundle starts with: those of its first
+   * tournament if they exist here, else the last choice of this visit, else
+   * none — a new import never gets a competition silently. */
+  function initialImportTarget(items) {
+    const comps = competitionsFrom(sysState).filter((c) => canEditCompetition(c.id));
+    const compOk = (id) => !!id && comps.some((c) => c.id === id);
+    const seasonOk = (cid, sid) => !!sid && seasonsOfCompetition(sysState, cid, controlSeasons).some((x) => String(x.id) === String(sid));
+    const first = (items[0] && items[0].doc) || {};
+    if (compOk(first.competitionId)) {
+      return { competitionId: first.competitionId, seasonYear: seasonOk(first.competitionId, first.seasonYear) ? String(first.seasonYear) : "" };
+    }
+    const last = lastImportTargetRef.current;
+    if (last && compOk(last.competitionId)) {
+      return { competitionId: last.competitionId, seasonYear: seasonOk(last.competitionId, last.seasonYear) ? String(last.seasonYear) : "" };
+    }
+    return { competitionId: "", seasonYear: "" };
+  }
+
+  /** bgfed-import-bundle/1, or a single bgfed-import/1 as a bundle of one. */
   function onImportFile(e) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      let doc = null;
+      let data = null;
       try {
-        doc = JSON.parse(String(reader.result));
+        data = JSON.parse(String(reader.result));
       } catch {
         showToast("Το αρχείο δεν διαβάζεται (δεν είναι έγκυρο JSON).");
         return;
       }
-      const { problems, summary } = validateImport(doc);
-      const existing = (importsList || []).find((t) => doc && t.sourceUrl && t.sourceUrl === doc.sourceUrl);
+      const checked = validateImportBundle(data);
+      const items = checked.items.map((it) => {
+        const existing = (importsList || []).find((t) => it.doc && t.sourceUrl && t.sourceUrl === it.doc.sourceUrl);
+        return { ...it, replaceId: existing ? existing.id : null };
+      });
       setImportView(null);
-      setImportPreview({ doc, problems, summary, fileName: file.name, replaceId: existing ? existing.id : null });
+      setImportTarget(initialImportTarget(items));
+      setImportPreview({ ...checked, items, fileName: file.name });
     };
     reader.readAsText(file);
   }
@@ -3290,30 +3317,43 @@ export default function TournamentManager() {
     return false;
   }
 
+  /** «Εισαγωγή όλων»: every tournament with the chosen competition and
+   * season, one after the other ("k/N"); the list of imports once at the
+   * end. Then, if the bundle carries matching decisions, the matching opens
+   * with them loaded — nothing is applied without the admin. */
   async function confirmImport() {
-    if (!importPreview || importPreview.problems.length > 0 || !importsList) return;
+    if (!importPreview || !importsList || importBusy) return;
+    const { items, problems, matching } = importPreview;
+    if (!importTarget.competitionId || !importTarget.seasonYear) return;
+    if (problems.length > 0 || items.length === 0 || items.some((it) => it.problems.length > 0)) return;
     setImportBusy(true);
     try {
-      const { doc, summary, replaceId } = importPreview;
-      const id = replaceId || `imp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-      const stored = { ...doc, importedAt: new Date().toISOString() };
-      if (!(await saveTournamentData(id, stored))) {
-        reportSaveFailure(`Εισαγωγή «${doc.name}» — δεν αποθηκεύτηκε`);
+      const res = await saveImportBundle(items, { ...importTarget, importsList }, {
+        newId: () => `imp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        now: () => new Date().toISOString(),
+        saveDoc: (id, d) => saveTournamentData(id, d),
+        saveList: (l) => saveImportList(l),
+        onProgress: (k, n) => setImportProgress(`${k}/${n}`),
+      });
+      lastImportTargetRef.current = { ...importTarget };
+      if (!res.ok) {
+        const savedTxt = res.saved.length ? `Αποθηκεύτηκαν (${res.saved.length}): ${res.saved.join(", ")}.` : "Δεν αποθηκεύτηκε κανένα.";
+        reportSaveFailure(
+          res.failed
+            ? `Εισαγωγή — σταμάτησε στο «${res.failed}». ${savedTxt} Ανέβασε ξανά το αρχείο για τα υπόλοιπα.`
+            : `Εισαγωγή — τα τουρνουά γράφτηκαν, αλλά η λίστα εισαγωγών δεν αποθηκεύτηκε. ${savedTxt}`
+        );
+        setImportPreview(null);
+        refreshImports();
         return;
       }
-      const entry = {
-        id, name: doc.name, date: doc.date || "", dateEnd: doc.dateEnd || "", dateAssumed: !!doc.dateAssumed,
-        competition: doc.competition || "", organiser: doc.organiser || "", sourceUrl: doc.sourceUrl || "",
-        players: summary.players, matches: summary.matches, winner: summary.winner, importedAt: stored.importedAt,
-      };
-      const list = [...importsList.filter((t) => t.id !== id), entry];
-      if (await saveImportList(list)) {
-        setImportPreview(null);
-        showToast(replaceId ? "Το τουρνουά αντικαταστάθηκε." : "Το τουρνουά εισήχθη.");
+      setImportPreview(null);
+      showToast(items.length === 1 ? "Το τουρνουά εισήχθη." : `Εισήχθησαν ${items.length} τουρνουά.`);
       refreshImports();
-      }
+      if (matching) await buildMatchPlan(matching, res.list);
     } finally {
       setImportBusy(false);
+      setImportProgress("");
     }
   }
 
@@ -3342,7 +3382,7 @@ export default function TournamentManager() {
       reportSaveFailure("Εισαγωγές — οι ημερομηνίες δεν αποθηκεύτηκαν");
       return;
     }
-    const list = importsList.map((t) => (t.id === importView.id ? { ...t, date: doc.date, dateEnd: doc.dateEnd, dateAssumed: doc.dateAssumed } : t));
+    const list = importsList.map((t) => (t.id === importView.id ? { ...t, date: doc.date, dateEnd: doc.dateEnd, dateAssumed: doc.dateAssumed, seasonYear: doc.seasonYear } : t));
     if (await saveImportList(list)) {
       setImportView({ ...importView, doc });
       setImportDateDraft(null);
@@ -3769,8 +3809,8 @@ export default function TournamentManager() {
             <>
               <dl className="details-list">
                 <dt>Ημερομηνίες</dt><dd>{importDateLabel(doc)}{doc.venue ? ` · ${doc.venue}` : ""}</dd>
-                <dt>Σεζόν</dt><dd>{importSeason(doc) || "—"}</dd>
-                <dt>Διοργάνωση</dt><dd>{doc.competition || "—"}</dd>
+                <dt>Σεζόν</dt><dd>{importSeason(doc) ? sn(importSeason(doc)) : "—"}</dd>
+                <dt>Διοργάνωση</dt><dd>{competitionName(competitionsFrom(sysState), importCompetitionId(doc))}</dd>
                 <dt>Διοργανωτής</dt><dd>{doc.organiser || "—"}</dd>
                 <dt>Σύστημα</dt><dd>{doc.system || "—"}</dd>
                 <dt>Μήκος αγώνα</dt><dd>{doc.matchLength ? `${doc.matchLength} πόντοι` : "—"}</dd>
@@ -3860,11 +3900,12 @@ export default function TournamentManager() {
           <p style={{ fontSize: 14 }}>Δεν υπάρχουν εισαγόμενα τουρνουά.</p>
         ) : (
           <table className="cal-table">
-            <thead><tr><th>Τουρνουά</th><th>Ημερομηνίες</th><th>Παίκτες</th><th>Αγώνες</th><th>Νικητής</th></tr></thead>
+            <thead><tr><th>Τουρνουά</th><th>Διοργάνωση · Σεζόν</th><th>Ημερομηνίες</th><th>Παίκτες</th><th>Αγώνες</th><th>Νικητής</th></tr></thead>
             <tbody>
               {[...importsList].sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((t) => (
                 <tr key={t.id}>
                   <td><button className="history-link" onClick={() => openImport(t.id)}>{t.name}</button></td>
+                  <td>{competitionName(competitionsFrom(sysState), importCompetitionId(t))} · {importSeason(t) ? sn(importSeason(t)) : "—"}</td>
                   <td>{importDateLabel(t)}</td>
                   <td>{t.players}</td>
                   <td>{t.matches}</td>
@@ -3882,29 +3923,18 @@ export default function TournamentManager() {
         <input type="file" accept="application/json,.json" ref={importFileRef} onChange={onImportFile} style={{ display: "none" }} />
         {importsList && importsList.length > 0 && !importPreview && renderMatchingCard()}
         {importPreview && (
-          <div className="control-sub-card">
-            <strong>Προεπισκόπηση: {importPreview.doc?.name || importPreview.fileName}</strong>
-            {importPreview.summary && (
-              <p style={{ fontSize: 14, margin: "6px 0" }}>
-                {importDateLabel(importPreview.doc)} · {importPreview.summary.players} παίκτες · {importPreview.summary.matches} αγώνες + {importPreview.summary.byes} bye · {importPreview.summary.rounds} γύροι · Νικητής: <strong>{importPreview.summary.winner}</strong>
-              </p>
-            )}
-            {importPreview.problems.length === 0 ? (
-              <p style={{ fontSize: 13, color: "var(--win)", margin: "0 0 8px 0" }}>✓ Οι έλεγχοι πέρασαν: κανείς δεν παίζει δύο φορές στον ίδιο γύρο, και οι νίκες κάθε παίκτη συμφωνούν με την κατάταξη της πηγής.</p>
-            ) : (
-              <div className="field-warning">
-                ⚠ Το αρχείο έχει προβλήματα και δεν μπορεί να εισαχθεί:
-                <ul style={{ margin: "4px 0 0 0", paddingLeft: 18 }}>{importPreview.problems.slice(0, 12).map((p, i) => <li key={i}>{p}</li>)}</ul>
-              </div>
-            )}
-            {importPreview.replaceId && <p className="field-warning">Το ίδιο τουρνουά (ίδιο link πηγής) υπάρχει ήδη· η εισαγωγή θα το αντικαταστήσει.</p>}
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button className="btn-secondary" onClick={() => setImportPreview(null)}>Άκυρο</button>
-              <button className="btn-primary" onClick={confirmImport} disabled={importBusy || importPreview.problems.length > 0}>
-                {importBusy ? "Αποθήκευση…" : importPreview.replaceId ? "Αντικατάσταση" : "Εισαγωγή"}
-              </button>
-            </div>
-          </div>
+          <ImportBundlePreview
+            preview={importPreview}
+            competitions={competitionsFrom(sysState).filter((c) => canEditCompetition(c.id))}
+            seasonsOf={(cid) => seasonsOfCompetition(sysState, cid, controlSeasons)}
+            target={importTarget}
+            onTarget={setImportTarget}
+            busy={importBusy}
+            progress={importProgress}
+            onCancel={() => setImportPreview(null)}
+            onConfirm={confirmImport}
+            dateLabel={importDateLabel}
+          />
         )}
       </div>
     );
@@ -3990,10 +4020,10 @@ export default function TournamentManager() {
   /** Builds the matching table for every imported tournament not matched yet.
    * `decisions` (optional) is a prepared file: rows of { names, action,
    * person | name, club, guest }. Changes nothing. */
-  async function buildMatchPlan(decisions) {
+  async function buildMatchPlan(decisions, listOverride) {
     setMatchBusy(true);
     try {
-      const list = importsList || [];
+      const list = listOverride || importsList || [];
       const imports = [];
       for (const t of list) {
         let d;
@@ -4611,7 +4641,12 @@ export default function TournamentManager() {
               const editing = compDraft && compDraft.id === c.id;
               return (
                 <tr key={c.id}>
-                  <td>{editing ? <input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} /> : <button className="history-link" title="Άνοιγμα διοργάνωσης: σεζόν, κανόνες, ημερολόγιο" onClick={() => openCompetitionPage(c.id)}>{c.name}</button>}</td>
+                  <td>{editing ? <input type="text" value={compDraft.name} onChange={(e) => setCompDraft({ ...compDraft, name: e.target.value })} /> : <button className="history-link" title="Άνοιγμα διοργάνωσης: σεζόν, κανόνες, ημερολόγιο" onClick={() => openCompetitionPage(c.id)}>{c.name}</button>}
+                    <div className="cal-note" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      id: <code>{c.id}</code>
+                      <button className="btn-ghost" style={{ padding: "0 4px" }} title="Αντιγραφή id διοργάνωσης" onClick={() => { navigator.clipboard?.writeText(c.id).then(() => showToast("Το id αντιγράφηκε."), () => showToast(c.id)); }}><Copy size={12} /></button>
+                    </div>
+                  </td>
                   <td>{clubDisplay(sysState, c.ownerClubId, "—")}</td>
                   <td>{rankingsOfCompetition(c.id)}</td>
                   <td><input type="checkbox" checked={competitionHasStandings(c)} onChange={() => toggleCompetitionStandings(c)} title="Έχει Βαθμολογία σεζόν" /></td>
@@ -7450,7 +7485,7 @@ export default function TournamentManager() {
                   <tbody>
                     {compSeasons.map((s) => (
                       <tr key={s.id} style={controlSeasonYear === s.id ? { background: "var(--accent-soft, #f3efe6)" } : undefined}>
-                        <td><strong>{s.name}</strong></td>
+                        <td><strong>{s.name}</strong> <span className="cal-note">id: <code>{s.id}</code></span></td>
                         <td>{seasonLocked(sysState, s.id) ? "Κλειστή 🔒" : "Ανοιχτή"}</td>
                         <td>{archive.filter((t) => inComp(t) && Number(t.seasonYear) === s.id).length}</td>
                         <td>
