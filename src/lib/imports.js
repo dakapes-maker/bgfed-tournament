@@ -79,3 +79,66 @@ export function validateImport(doc) {
     },
   };
 }
+
+/* ---- Import bundles (bgfed-import-bundle/1) -----------------------------
+ * { format, title?, tournaments: [<bgfed-import/1>, …], matching?: <bgfed-matching/1> }
+ * A single bgfed-import/1 file is read as a bundle of one. */
+export const IMPORT_BUNDLE_FORMAT = "bgfed-import-bundle/1";
+
+/** Validates every tournament of a bundle (validateImport, unchanged).
+ * Returns { items: [{ doc, problems, summary }], matching, title, problems }
+ * — problems: those of the bundle itself (format, duplicates). */
+export function validateImportBundle(input) {
+  const bundle = input && input.format === "bgfed-import/1" ? { format: IMPORT_BUNDLE_FORMAT, tournaments: [input] } : input;
+  if (!bundle || bundle.format !== IMPORT_BUNDLE_FORMAT || !Array.isArray(bundle.tournaments) || bundle.tournaments.length === 0) {
+    return { items: [], matching: null, title: "", problems: ["Το αρχείο δεν είναι αρχείο εισαγωγής της εφαρμογής (bgfed-import/1 ή bgfed-import-bundle/1)."] };
+  }
+  const items = bundle.tournaments.map((doc) => ({ doc, ...validateImport(doc) }));
+  const problems = [];
+  const seen = new Map();
+  items.forEach((it, i) => {
+    const url = it.doc && it.doc.sourceUrl;
+    if (!url) return;
+    if (seen.has(url)) problems.push(`Τα τουρνουά ${seen.get(url) + 1} και ${i + 1} έχουν το ίδιο link πηγής.`);
+    else seen.set(url, i);
+  });
+  let matching = null;
+  if (bundle.matching) {
+    if (bundle.matching.format === "bgfed-matching/1") matching = bundle.matching;
+    else problems.push("Οι αποφάσεις αντιστοίχισης του πακέτου δεν είναι σε μορφή bgfed-matching/1.");
+  }
+  return { items, matching, title: bundle.title || "", problems };
+}
+
+/** Saves the tournaments of a bundle one after the other, every one with the
+ * chosen competition and season, then the list of imports ONCE at the end
+ * (on a failure: the list with the ones saved so far, so none is left
+ * outside it). items: [{ doc, summary, replaceId }].
+ * io: { newId(), now(), saveDoc(id, doc) → bool, saveList(list) → bool,
+ *       onProgress(k, n) }.
+ * Returns { ok, saved: [names], failed: name | null, listSaved, list }. */
+export async function saveImportBundle(items, { competitionId, seasonYear, importsList }, io) {
+  let list = [...(importsList || [])];
+  const saved = [];
+  let failed = null;
+  for (let k = 0; k < items.length; k++) {
+    const { doc, summary, replaceId } = items[k];
+    io.onProgress(k + 1, items.length);
+    const id = replaceId || io.newId();
+    const stored = { ...doc, competitionId, seasonYear: Number(seasonYear), importedAt: io.now() };
+    if (!(await io.saveDoc(id, stored))) {
+      failed = doc.name || `#${k + 1}`;
+      break;
+    }
+    saved.push(doc.name);
+    const entry = {
+      id, name: doc.name, date: doc.date || "", dateEnd: doc.dateEnd || "", dateAssumed: !!doc.dateAssumed,
+      competition: doc.competition || "", organiser: doc.organiser || "", sourceUrl: doc.sourceUrl || "",
+      competitionId, seasonYear: Number(seasonYear),
+      players: summary.players, matches: summary.matches, winner: summary.winner, importedAt: stored.importedAt,
+    };
+    list = [...list.filter((t) => t.id !== id), entry];
+  }
+  const listSaved = saved.length > 0 ? await io.saveList(list) : true;
+  return { ok: !failed && listSaved, saved, failed, listSaved, list };
+}
