@@ -34,6 +34,12 @@ export function importSeason(doc) {
   return y || null;
 }
 
+/** How many imported tournaments of the list (sys-imports) belong to a
+ * competition — and, if seasonId is given, to that season of it. */
+export function importsCountFor(list, compId, seasonId) {
+  return (list || []).filter((t) => importCompetitionId(t) === compId && (seasonId == null || importSeason(t) === Number(seasonId))).length;
+}
+
 /** "2026-10-02" -> ISO at local noon (for sorting with our tournaments). */
 export function importDateIso(ymd) {
   const [y, m, d] = String(ymd || "").split("-").map(Number);

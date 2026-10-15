@@ -121,7 +121,7 @@ import {
 } from "./lib/competitions.js";
 import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay, clubColor } from "./lib/clubs.js";
 import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
-import { importCompetitionId, sourceSheetsOf, importSeason, importDateIso, validateImportBundle, saveImportBundle } from "./lib/imports.js";
+import { importCompetitionId, importsCountFor, sourceSheetsOf, importSeason, importDateIso, validateImportBundle, saveImportBundle } from "./lib/imports.js";
 import { ImportBundlePreview } from "./components/ImportBundlePreview.jsx";
 import { buildConsistencyReport, describeStaleReasons, shortTournamentLabel } from "./lib/consistency.js";
 import { generatePairings, replayPlayersFromHistory, computeBuchholz, sortStandings } from "./lib/swiss.js";
@@ -532,6 +532,17 @@ export default function TournamentManager() {
   useEffect(() => {
     if (isAdminAny && !isSuper && controlTab !== "competitions") setControlTab("competitions");
   }, [isAdminAny, isSuper, controlTab]);
+
+  // The competitions page counts imported tournaments too: load the imports
+  // list when it opens (one try per opening; a failed read leaves it null,
+  // shows a toast, and the delete button stays hidden).
+  const importsAutoLoadRef = useRef(false);
+  useEffect(() => {
+    if (importsList !== null) { importsAutoLoadRef.current = false; return; }
+    if (phase !== "control" || controlTab !== "competitions" || importsAutoLoadRef.current) return;
+    importsAutoLoadRef.current = true;
+    loadImportsList();
+  }, [phase, controlTab, importsList]);
 
   // An administrator reads private/contacts (strictly) and works with the
   // joined registry; a visitor never reads it. If the read FAILS, every
@@ -4585,7 +4596,15 @@ export default function TournamentManager() {
   async function deleteCompetition(id) {
     if (id === DEFAULT_COMPETITION_ID) return;
     const used = [...archive, ...trash].some((t) => (t.competitionId || DEFAULT_COMPETITION_ID) === id);
-    if (used) {
+    let imported = 0;
+    try {
+      const d = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
+      imported = importsCountFor(d && Array.isArray(d.list) ? d.list : [], id);
+    } catch {
+      showToast("Η λίστα εισαγωγών δεν διαβάστηκε — η διοργάνωση δεν διαγράφηκε.");
+      return;
+    }
+    if (used || imported > 0) {
       showToast("Η διοργάνωση έχει τουρνουά — μπορεί μόνο να μετονομαστεί.");
       return;
     }
@@ -4638,7 +4657,10 @@ export default function TournamentManager() {
           <thead><tr><th>Διοργάνωση</th><th>Σύλλογος</th><th>ELO</th><th title="Έχει πίνακα Βαθμολογίας σεζόν">Βαθμολογία</th><th>Τουρνουά</th><th></th></tr></thead>
           <tbody>
             {comps.filter((c) => canEditCompetition(c.id)).map((c) => {
-              const count = archive.filter((t) => (t.competitionId || DEFAULT_COMPETITION_ID) === c.id).length;
+              const inC = (t) => (t.competitionId || DEFAULT_COMPETITION_ID) === c.id;
+              const imported = importsCountFor(importsList, c.id);
+              const count = archive.filter(inC).length + imported;
+              const deletable = importsList !== null && count === 0 && !trash.some(inC);
               const editing = compDraft && compDraft.id === c.id;
               return (
                 <tr key={c.id}>
@@ -4651,7 +4673,7 @@ export default function TournamentManager() {
                   <td>{clubDisplay(sysState, c.ownerClubId, "—")}</td>
                   <td>{rankingsOfCompetition(c.id)}</td>
                   <td><input type="checkbox" checked={competitionHasStandings(c)} onChange={() => toggleCompetitionStandings(c)} title="Έχει Βαθμολογία σεζόν" /></td>
-                  <td>{count}</td>
+                  <td>{count}{imported > 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>από τα οποία {imported} εισαγωγές</div>}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     {editing ? (
                       <>
@@ -4661,7 +4683,7 @@ export default function TournamentManager() {
                     ) : (
                       <>
                         <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Μετονομασία" onClick={() => setCompDraft({ id: c.id, name: c.name })}><Pencil size={13} /></button>
-                        {c.id !== DEFAULT_COMPETITION_ID && count === 0 && (
+                        {c.id !== DEFAULT_COMPETITION_ID && deletable && (
                           <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Διαγραφή" onClick={() => deleteCompetition(c.id)}><Trash2 size={13} /></button>
                         )}
                       </>
@@ -7497,7 +7519,10 @@ export default function TournamentManager() {
                       <tr key={s.id} style={controlSeasonYear === s.id ? { background: "var(--accent-soft, #f3efe6)" } : undefined}>
                         <td><strong>{s.name}</strong> <span className="cal-note">id: <code>{s.id}</code></span></td>
                         <td>{seasonLocked(sysState, s.id) ? "Κλειστή 🔒" : "Ανοιχτή"}</td>
-                        <td>{archive.filter((t) => inComp(t) && Number(t.seasonYear) === s.id).length}</td>
+                        {(() => {
+                          const imported = importsCountFor(importsList, comp.id, s.id);
+                          return <td>{archive.filter((t) => inComp(t) && Number(t.seasonYear) === s.id).length + imported}{imported > 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>από τα οποία {imported} εισαγωγές</div>}</td>;
+                        })()}
                         <td>
                           {controlSeasonYear === s.id ? <span className="cal-note">επιλεγμένη</span> : (
                             <button className="btn-ghost" style={{ padding: "2px 6px" }} onClick={() => { setControlSeasonYear(s.id); resetDrafts(); }}>Άνοιγμα</button>
