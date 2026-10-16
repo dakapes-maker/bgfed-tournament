@@ -5631,6 +5631,7 @@ export default function TournamentManager() {
         .th-sub { font-weight: 400; font-size: 10px; color: var(--muted); text-transform: none; }
         /* σύλλογος κάτω από το όνομα: width 0 + min-width 100% = δεν φαρδαίνει ποτέ τη στήλη (κόβεται με …) */
         .elo-club { font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.25; margin: 0; width: 0; min-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .elo-club-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; position: relative; top: -1px; }
         .entry-breakdown { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); }
         .entry-breakdown strong { color: var(--ink); font-size: 13px; }
 
@@ -6817,7 +6818,8 @@ export default function TournamentManager() {
                             {(() => {
                               const person = registry.players?.[p.key] || registry.players?.[pk];
                               const club = person && !person.guest ? clubDisplay(sysState, person.clubId, person.club) : "";
-                              return club ? <div className="elo-club">{club}</div> : null;
+                              if (!club) return null;
+                              return <div className="elo-club">{person.clubId && <span className="elo-club-dot" aria-hidden="true" style={{ background: clubColor(sysState, person.clubId) }} />}{club}</div>;
                             })()}
                           </td>
                           <td><strong>{Math.round(p.rating)}</strong></td>
