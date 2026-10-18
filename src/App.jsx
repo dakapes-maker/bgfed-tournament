@@ -93,6 +93,8 @@ import {
 } from "./lib/seasons.js";
 import { seasonCompetitionId, seasonsOfCompetition, currentSeasonId, seasonName, nextSeasonId } from "./lib/seasonRegistry.js";
 import { buildRankingElo } from "./lib/eloRanking.js";
+import { addTournamentHeadToHead, headToHeadFrom, buildSeasonHeadToHead, loadTournamentForDisplay } from "./lib/headToHead.js";
+import { tieExplanation } from "./lib/seasonTiebreakText.js";
 import {
   newCalendarEntryId,
   todayYMD,
@@ -408,6 +410,7 @@ export default function TournamentManager() {
   const [seasonBrowseComp, setSeasonBrowseComp] = useState(DEFAULT_COMPETITION_ID); // 5B.3: competition on the standings page
   const [seasonData, setSeasonData] = useState({ players: {} });
   const [seasonDataYear, setSeasonDataYear] = useState(null); // season whose standings are in seasonData (null = loading)
+  const [seasonH2H, setSeasonH2H] = useState({ year: null, fn: null, failed: false }); // tie-break 4: head-to-head of the season shown
   const seasonLinkRef = useRef(null); // #season/<slug>[/<season>] of the start-up link, applied once the settings load
   const [expandedPlayer, setExpandedPlayer] = useState(null);
 
@@ -720,6 +723,21 @@ export default function TournamentManager() {
       cancelled = true;
     };
   }, [phase, seasonBrowseYear]);
+
+  // Tie-break 4 (head-to-head) of the season shown: from the counting
+  // tournaments of the catalogue, read once per visit (cache).
+  useEffect(() => {
+    if (phase !== "season") return;
+    let cancelled = false;
+    const y = seasonBrowseYear;
+    buildSeasonHeadToHead(archive, y, loadTournamentForDisplay).then(
+      (fn) => { if (!cancelled) setSeasonH2H({ year: y, fn, failed: false }); },
+      () => { if (!cancelled) setSeasonH2H({ year: y, fn: null, failed: true }); }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [phase, seasonBrowseYear, archive]);
 
   // Imported tournaments are public (read-only): load them once for everyone.
   useEffect(() => {
@@ -1426,7 +1444,7 @@ export default function TournamentManager() {
         const season = await loadSeasonStrict(y);
         const bestOfY = rulesForSeason(sysState, y).bestOf;
         seasonBestOf.push(`${y}: ${bestOfY}`);
-        const standings = computeSeasonStandings(season, bestOfY);
+        const standings = computeSeasonStandings(season, bestOfY, await buildSeasonHeadToHead(index, y, fetchTournamentDataStrict));
         seasonPlayerCounts.push(`${y}: ${standings.length}`);
         const rows = [["Rank", "Παίκτης", "Events", `Points (best ${bestOfY})`, "Total (all events)", "Wins (regular)", "Matches", "%"]];
         standings.forEach((p, i) => rows.push([i + 1, p.name, p.eventsPlayed, p.total, p.sumAll, p.totalWins, p.totalMatches, p.pct]));
@@ -2377,10 +2395,10 @@ export default function TournamentManager() {
       // 2. Season Standings: compare with vs. without this tournament's entries.
       const seasonFull = await loadSeason(seasonYear);
       const recapBestOf = rulesForSeason(sysState, seasonYear).bestOf;
-      const afterStandings = computeSeasonStandings(seasonFull, recapBestOf);
+      const afterStandings = computeSeasonStandings(seasonFull, recapBestOf, await buildSeasonHeadToHead(archive, seasonYear, loadTournamentForDisplay));
       const seasonBefore = JSON.parse(JSON.stringify(seasonFull));
       Object.values(seasonBefore.players).forEach((p) => { delete p.entries[tournamentId]; });
-      const beforeStandings = computeSeasonStandings(seasonBefore, recapBestOf);
+      const beforeStandings = computeSeasonStandings(seasonBefore, recapBestOf, await buildSeasonHeadToHead(archive, seasonYear, loadTournamentForDisplay, tournamentId));
       const beforeRank = {};
       beforeStandings.forEach((p, i) => { beforeRank[p.name] = i + 1; });
       const top5Season = afterStandings.slice(0, 5).map((p, i) => {
@@ -2799,6 +2817,7 @@ export default function TournamentManager() {
 
       const eloRunning = { players: {} };
       const seasonRunningByYear = {}; // each season runs on its own, with its own rules
+      const h2hRunningByYear = {}; // tie-break 4 of each running season
       const perPlayerSequence = {};
       const titleCounts = {};
       const eloLeaderDays = {};
@@ -2891,7 +2910,9 @@ export default function TournamentManager() {
           const normalMatches = p.matchLog.filter((m) => m.method === "normal").length;
           seasonRunning.players[key].entries[t.id] = { points: p.wins, wins, matches, normalMatches };
         });
-        const seasonStandingsNow = computeSeasonStandings(seasonRunning, rulesForSeason(sysState, runYear).bestOf);
+        if (!h2hRunningByYear[runYear]) h2hRunningByYear[runYear] = {};
+        addTournamentHeadToHead(h2hRunningByYear[runYear], tPlayers);
+        const seasonStandingsNow = computeSeasonStandings(seasonRunning, rulesForSeason(sysState, runYear).bestOf, headToHeadFrom(h2hRunningByYear[runYear]));
         if (seasonStandingsNow.length > 0) {
           const leaderKey = normalizeName(seasonStandingsNow[0].name);
           standingsLeaderDays[leaderKey] = (standingsLeaderDays[leaderKey] || 0) + 1;
@@ -5631,6 +5652,11 @@ export default function TournamentManager() {
         .th-sub { font-weight: 400; font-size: 10px; color: var(--muted); text-transform: none; }
         /* σύλλογος κάτω από το όνομα: width 0 + min-width 100% = δεν φαρδαίνει ποτέ τη στήλη (κόβεται με …) */
         .elo-club { font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.25; margin: 0; width: 0; min-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .tie-mark { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: var(--border); color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; margin-left: 4px; vertical-align: middle; position: relative; top: -1px; cursor: help; }
+        .tie-explain { font-size: 13px; color: var(--ink); padding: 0 0 8px 0; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+        .tie-explain p { margin: 0 0 2px 0; }
+        .st-criteria { font-size: 12.5px; color: var(--muted); margin: 10px 2px 0 2px; scroll-margin-top: 16px; }
+        .st-criteria-link { color: var(--accent); white-space: nowrap; margin-left: 6px; text-decoration: none; }
         .elo-club-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; position: relative; top: -1px; }
         .entry-breakdown { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); }
         .entry-breakdown strong { color: var(--ink); font-size: 13px; }
@@ -6560,8 +6586,8 @@ export default function TournamentManager() {
           saveSeasonView(seasonBrowseComp, y);
         };
         const rules = rulesForSeason(sysState, seasonBrowseYear);
-        const loading = seasonDataYear !== seasonBrowseYear;
-        const seasonStandings = loading ? [] : computeSeasonStandings(seasonData, rules.bestOf);
+        const loading = seasonDataYear !== seasonBrowseYear || seasonH2H.year !== seasonBrowseYear;
+        const seasonStandings = loading ? [] : computeSeasonStandings(seasonData, rules.bestOf, seasonH2H.year === seasonBrowseYear ? seasonH2H.fn : null);
         const hasRows = seasonStandings.length > 0;
         const zones = hasRows && rules.qualZones;
         const qual = { roundA: 32, cutoffA: rules.cutoffR32, roundB: 48, cutoffB: rules.cutoffR48 };
@@ -6603,7 +6629,19 @@ export default function TournamentManager() {
             {hasRows && (
               <div className="notice">
                 <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-                <span>{L.stNotice(sn(seasonBrowseYear), rules.bestOf)}</span>
+                <span>
+                  {L.stNotice(sn(seasonBrowseYear), rules.bestOf)}
+                  <a
+                    href="#st-criteria"
+                    className="st-criteria-link"
+                    onClick={(e) => {
+                      e.preventDefault(); // keep the #season/… link in the address bar
+                      document.getElementById("st-criteria")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }}
+                  >
+                    {L.stCriteriaLink}
+                  </a>
+                </span>
               </div>
             )}
 
@@ -6663,7 +6701,10 @@ export default function TournamentManager() {
                             style={{ cursor: "pointer" }}
                             onClick={() => setExpandedPlayer(expandedPlayer === p.name ? null : p.name)}
                           >
-                            <td className="rank">{rank}</td>
+                            <td className="rank" style={{ whiteSpace: "nowrap" }}>
+                              {rank}
+                              {p.tie && <span className="tie-mark" title={tieExplanation(p, L, lang, rules.bestOf).join(" ")} aria-label={L.tieBadge}>=</span>}
+                            </td>
                             <td className="standings-name" style={{ cursor: "pointer" }} onClick={() => openPlayerDetail(normalizeName(p.name))}>{p.name}</td>
                             <td>{p.eventsPlayed}</td>
                             <td><strong>{p.total}</strong></td>
@@ -6678,6 +6719,11 @@ export default function TournamentManager() {
                           {expandedPlayer === p.name && (
                             <tr>
                               <td colSpan={9} style={{ background: "var(--bg)", padding: "10px 14px" }}>
+                                {p.tie && (
+                                  <div className="tie-explain">
+                                    {tieExplanation(p, L, lang, rules.bestOf).map((line, k) => <p key={k}>{line}</p>)}
+                                  </div>
+                                )}
                                 {p.entries.map((e) => (
                                   <div
                                     key={e.tournamentId}
@@ -6713,6 +6759,12 @@ export default function TournamentManager() {
                     </tbody>
                   </table>
                 </div>
+            )}
+            {hasRows && !loading && (
+              <p id="st-criteria" className="st-criteria">
+                {L.stCriteria(rules.bestOf)}
+                {seasonH2H.failed && <><br />{L.stH2hFailed}</>}
+              </p>
             )}
           </div>
         </>

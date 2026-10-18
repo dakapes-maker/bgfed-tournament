@@ -25,7 +25,9 @@ export async function pushSeasonUpdate(year, tournamentId, tournamentName, date,
     // match do count, for whoever played them.
     const matches = p.matchLog.filter((m) => m.method !== "bye" && m.method !== "retirement_win").length;
     // Matches actually decided on the board — excludes bye AND any match
-    // ended by a retirement, whether won or lost. Used for the win % only.
+    // ended by a retirement, whether won or lost. Kept in the season data
+    // only; not used for the win % since build 2026-09-22.07 (% = wins ÷
+    // matches).
     const normalMatches = p.matchLog.filter((m) => m.method === "normal").length;
     season.players[key].entries[tournamentId] = {
       tournamentName, date, points: p.wins, wins, aa, bye, matches, normalMatches,
@@ -35,13 +37,31 @@ export async function pushSeasonUpdate(year, tournamentId, tournamentName, date,
   return ok;
 }
 
-export function computeSeasonStandings(season, bestOf) {
+const ratio = (w, m) => (m > 0 ? w / m : null);
+const entryPct = (e) => ratio(e.wins ?? e.points ?? 0, e.matches ?? 0);
+
+/** Season standings, in official order. Main order: points in the best N
+ * (`total`). Tie-breaks between players with the same total, in order:
+ * 1) points in all tournaments (`sumAll`), 2) win % in all tournaments,
+ * 3) win % in the best N only (both % compared EXACTLY, not rounded),
+ * 4) head-to-head in the season — only when exactly two players are still
+ * level after 1–3, and only when `headToHead(keyA, keyB) → { winsA, winsB }`
+ * is given. A tie that remains is a full tie: the name below keeps the
+ * table's order stable and is NOT a criterion (never shown as one).
+ * Each row gets `tie`: null, or { withNames, decidedBy, detail: { above, below } }
+ * — how the row compares with its tied neighbours (decidedBy 1..4 or "full"). */
+export function computeSeasonStandings(season, bestOf, headToHead = null) {
   // Σ1: the name shown is the person's CURRENT name in the registry (the
   // stored copy may be older, e.g. after a rename) — no Recompute needed.
-  return Object.entries(season.players)
+  const rows = Object.entries(season.players)
     .map(([key, p]) => {
       const entries = Object.entries(p.entries).map(([tid, e]) => ({ tournamentId: tid, ...e }));
-      const sorted = [...entries].sort((a, b) => b.points - a.points);
+      // Best N: on equal points, the tournament with the higher win % and
+      // then the more recent one counts (deterministic, in the player's favour).
+      const sorted = [...entries].sort((a, b) =>
+        b.points - a.points
+        || (entryPct(b) ?? -1) - (entryPct(a) ?? -1)
+        || String(b.date || "").localeCompare(String(a.date || "")));
       const counted = sorted.slice(0, bestOf);
       const countedIds = new Set(counted.map((e) => e.tournamentId));
       const total = counted.reduce((s, e) => s + e.points, 0);
@@ -52,10 +72,77 @@ export function computeSeasonStandings(season, bestOf) {
       // the Wins and Matches columns). A player who retires still has that
       // match counted against them in Matches, so it drags their % down —
       // deliberately, so retiring isn't "free" for the percentage.
-      const pct = totalMatches > 0 ? Math.round((normalWinsOnly / totalMatches) * 1000) / 10 : null;
-      return { name: displayNameFor(key, p.name), entries: sorted, countedIds, total, sumAll, totalWins: normalWinsOnly, totalMatches, pct, eventsPlayed: entries.length };
-    })
-    .sort((a, b) => b.total - a.total || (b.pct ?? -1) - (a.pct ?? -1) || a.name.localeCompare(b.name, "el"));
+      const pctExact = ratio(normalWinsOnly, totalMatches);
+      const pct = pctExact !== null ? Math.round(pctExact * 1000) / 10 : null;
+      const bestWins = counted.reduce((s, e) => s + (e.wins ?? e.points ?? 0), 0);
+      const bestMatches = counted.reduce((s, e) => s + (e.matches ?? 0), 0);
+      const pctBestExact = ratio(bestWins, bestMatches);
+      const pctBest = pctBestExact !== null ? Math.round(pctBestExact * 1000) / 10 : null;
+      return {
+        key, name: displayNameFor(key, p.name), entries: sorted, countedIds, total, sumAll,
+        totalWins: normalWinsOnly, totalMatches, pct, pctExact, pctBest, pctBestExact, eventsPlayed: entries.length, tie: null,
+      };
+    });
+
+  // Criteria 1–3: the first that tells a and b apart (> 0: a ahead), else 0.
+  const crit = [
+    (a, b) => b.sumAll - a.sumAll,
+    (a, b) => (b.pctExact ?? -1) - (a.pctExact ?? -1),
+    (a, b) => (b.pctBestExact ?? -1) - (a.pctBestExact ?? -1),
+  ];
+  const firstDiff = (a, b) => {
+    for (let i = 0; i < crit.length; i++) {
+      const d = crit[i](a, b);
+      if (d !== 0) return { by: i + 1, d };
+    }
+    return null;
+  };
+  const byName = (a, b) => a.name.localeCompare(b.name, "el");
+
+  const out = [];
+  const byTotal = {};
+  rows.forEach((r) => { (byTotal[r.total] = byTotal[r.total] || []).push(r); });
+  Object.keys(byTotal).map(Number).sort((a, b) => b - a).forEach((total) => {
+    const group = byTotal[total].sort((a, b) => (firstDiff(a, b)?.d ?? 0) || byName(a, b));
+    // Players still level after 1–3: head-to-head only for exactly two.
+    const sub = [];
+    group.forEach((r) => {
+      const last = sub[sub.length - 1];
+      if (last && !firstDiff(last[0], r)) last.push(r);
+      else sub.push([r]);
+    });
+    const h2h = new Map(); // row → { winsA (its own), winsB (the other's) }
+    sub.forEach((s) => {
+      if (s.length !== 2 || !headToHead) return;
+      const [a, b] = s;
+      const { winsA, winsB } = headToHead(a.key, b.key);
+      h2h.set(a, { own: winsA, other: winsB });
+      h2h.set(b, { own: winsB, other: winsA });
+      if (winsB > winsA) s.reverse();
+    });
+    const ordered = sub.flat();
+    if (ordered.length > 1) {
+      const compare = (r, o, sideAbove) => {
+        const f = firstDiff(r, o);
+        const values = { sumAll: [r.sumAll, o.sumAll], pct: [r.pctExact, o.pctExact], pctBest: [r.pctBestExact, o.pctBestExact] };
+        if (f) return { name: o.name, ahead: !sideAbove, decidedBy: f.by, values };
+        const hh = h2h.get(r);
+        if (hh && hh.own !== hh.other) return { name: o.name, ahead: hh.own > hh.other, decidedBy: 4, values: { ...values, h2h: [hh.own, hh.other] } };
+        return { name: o.name, ahead: null, decidedBy: "full", values, h2hApplies: sub.find((s) => s.includes(r)).length === 2 };
+      };
+      ordered.forEach((r, i) => {
+        const above = i > 0 ? compare(r, ordered[i - 1], true) : null;
+        const below = i < ordered.length - 1 ? compare(r, ordered[i + 1], false) : null;
+        r.tie = {
+          withNames: ordered.filter((o) => o !== r).map((o) => o.name),
+          decidedBy: (below || above).decidedBy,
+          detail: { above, below },
+        };
+      });
+    }
+    out.push(...ordered);
+  });
+  return out;
 }
 
 /** "YYYY-MM-DD" of an ISO timestamp, in the browser's local time (Athens). */
