@@ -23,7 +23,6 @@ export const TRANSLATIONS = {
     thRank: "Θέση", thPlayer: "Παίκτης", thEvents: "Τουρνουά", thPoints: "Πόντοι", thBest: (n) => `(καλύτερα ${n})`,
     thTotal: "Σύνολο", thAllEvents: "(όλα τα τουρνουά)", thWins: "Νίκες", thRegularOnly: "(μόνο κανονικές)", thMatches: "Αγώνες",
     // Tie-breaks (2026-10-18)
-    stCriteriaLink: "Κριτήρια ισοβαθμίας ↓",
     stCriteria: (n) => `Κριτήρια ισοβαθμίας: 1) σύνολο βαθμών σε όλα τα τουρνουά, 2) ποσοστό νικών σε όλα τα τουρνουά, 3) ποσοστό νικών στα ${n} καλύτερα, 4) μεταξύ τους αποτελέσματα στη σεζόν (μόνο για ισοβαθμία δύο παικτών).`,
     stH2hFailed: "Τα μεταξύ τους αποτελέσματα δεν φορτώθηκαν· το κριτήριο 4 δεν εφαρμόστηκε. Ανανεώστε τη σελίδα.",
     tieBadge: "Ισοβαθμία στους βαθμούς — πατήστε τη γραμμή για εξήγηση",
@@ -56,7 +55,6 @@ export const TRANSLATIONS = {
     stNoStandings: (name, elo) => `Season ${name} has no standings${elo ? "; its results count toward the National ELO Ranking." : "."}`,
     thRank: "Rank", thPlayer: "Player", thEvents: "Events", thPoints: "Points", thBest: (n) => `(best ${n})`,
     thTotal: "Total", thAllEvents: "(all events)", thWins: "Wins", thRegularOnly: "(regular only)", thMatches: "Matches",
-    stCriteriaLink: "Tie-break criteria ↓",
     stCriteria: (n) => `Tie-break criteria: 1) points in all events, 2) win % in all events, 3) win % in the best ${n}, 4) head-to-head in the season (only for a tie between two players).`,
     stH2hFailed: "Head-to-head results did not load; criterion 4 was not applied. Please reload the page.",
     tieBadge: "Level on points — tap the row for the explanation",

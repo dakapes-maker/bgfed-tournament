@@ -5655,8 +5655,7 @@ export default function TournamentManager() {
         .tie-mark { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: var(--border); color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; margin-left: 4px; vertical-align: middle; position: relative; top: -1px; cursor: help; }
         .tie-explain { font-size: 13px; color: var(--ink); padding: 0 0 8px 0; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
         .tie-explain p { margin: 0 0 2px 0; }
-        .st-criteria { font-size: 12.5px; color: var(--muted); margin: 10px 2px 0 2px; scroll-margin-top: 16px; }
-        .st-criteria-link { color: var(--accent); white-space: nowrap; margin-left: 6px; text-decoration: none; }
+        .st-criteria { font-size: 12.5px; color: var(--muted); margin: -4px 2px 12px 2px; }
         .elo-club-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; position: relative; top: -1px; }
         .entry-breakdown { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); }
         .entry-breakdown strong { color: var(--ink); font-size: 13px; }
@@ -6629,20 +6628,14 @@ export default function TournamentManager() {
             {hasRows && (
               <div className="notice">
                 <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-                <span>
-                  {L.stNotice(sn(seasonBrowseYear), rules.bestOf)}
-                  <a
-                    href="#st-criteria"
-                    className="st-criteria-link"
-                    onClick={(e) => {
-                      e.preventDefault(); // keep the #season/… link in the address bar
-                      document.getElementById("st-criteria")?.scrollIntoView({ behavior: "smooth", block: "center" });
-                    }}
-                  >
-                    {L.stCriteriaLink}
-                  </a>
-                </span>
+                <span>{L.stNotice(sn(seasonBrowseYear), rules.bestOf)}</span>
               </div>
+            )}
+            {hasRows && (
+              <p className="st-criteria">
+                {L.stCriteria(rules.bestOf)}
+                {seasonH2H.failed && <><br />{L.stH2hFailed}</>}
+              </p>
             )}
 
             {renderSeasonSchedule(seasonBrowseYear)}
@@ -6759,12 +6752,6 @@ export default function TournamentManager() {
                     </tbody>
                   </table>
                 </div>
-            )}
-            {hasRows && !loading && (
-              <p id="st-criteria" className="st-criteria">
-                {L.stCriteria(rules.bestOf)}
-                {seasonH2H.failed && <><br />{L.stH2hFailed}</>}
-              </p>
             )}
           </div>
         </>
