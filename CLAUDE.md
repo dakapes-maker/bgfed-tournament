@@ -2,7 +2,7 @@
 
 **Hellenic Backgammon Platform** — εφαρμογή διαχείρισης τουρνουά, βαθμολογιών και Πανελλήνιας Κατάταξης ELO για τους συλλόγους backgammon της Ελλάδας, με την υποστήριξη της **Ελληνικής Ομοσπονδίας Backgammon**.
 Ιδιοκτήτης ο Γιάννης (Πασιάλης)· διαχειριστές με προσωπικούς λογαριασμούς (Google ή email). Γλώσσα επικοινωνίας και UI: **Ελληνικά**.
-Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-10-19.05`.
+Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-10-19.06`.
 Διάβασέ το ολόκληρο πριν από κάθε εργασία.
 
 ---
@@ -49,7 +49,10 @@ src/
     clubs.js                σύλλογοι
     sysDocs.js              έγγραφα συστήματος: sys-state, sys-trash, sys-imports (loadSysState, saveSysState, κάδος)
     imports.js              εισαγόμενα τουρνουά: διοργάνωση, σεζόν, ημερομηνία, φύλλα πηγής, validateImport,
-                            πακέτα (validateImportBundle, saveImportBundle)
+                            πακέτα (validateImportBundle, saveImportBundle)· επανεξάγει validateMatchlist
+    matchlists.js           λίστες αγώνων bgfed-matchlist/1: isMatchlist, validateMatchlist, saveMatchlistImport,
+                            countedMatchlistMatches (σειρά ELO date+time), playerMatchlistGroups (καρτέλα παίκτη)
+    eloRanking.js           κοινή μηχανή κατατάξεων ELO (buildRankingElo)
     consistency.js          έλεγχος συνέπειας ELO/Βαθμολογίας με τον κατάλογο
     swiss.js                ζευγαρώματα Swiss, κριτήρια ισοβαθμίας τουρνουά (computeTiebreaks: Buchholz,
                             Cut-1, Median), ταξινόμηση κατάταξης με κοινές θέσεις (sortStandings)
@@ -69,6 +72,7 @@ src/
     finance.jsx (Calcutta, Έπαθλα, Side bets),
     LoginDialog.jsx (διάλογος σύνδεσης), AccountMenu.jsx (AccountMenu, AccountNotice),
     ImportBundlePreview.jsx (προεπισκόπηση πακέτου εισαγωγής: διοργάνωση, σεζόν, πίνακας τουρνουά),
+    Matchlist.jsx (λίστα αγώνων: MatchlistPreview, MatchlistTable, PlayerMatchlists),
     SeasonFilter.jsx (φίλτρο διοργάνωσης/σεζόν της Βαθμολογίας + αντιγραφή συνδέσμου),
 firestore.rules             κανόνες Firestore (δημοσιεύονται χειροκίνητα από το console)
 firebase.json               ρυθμίσεις Emulator (Firestore 8080, Auth 9099) — όχι για deploy
@@ -180,7 +184,8 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
 
 - Απομονωμένα έγγραφα `imp-…` + λίστα `sys-imports`. **Ποτέ** στον `tournamentsIndex` (δεν επηρεάζουν ELO Ομοσπονδίας / Βαθμολογία).
 - Γενικό μοντέλο: `brackets`, `matches` (`bracket`, `round`, `roundLabel`, `slot` = σειρά διεξαγωγής, `match`, `p1`, `p2`, `score1`, `score2`, `scoreRecorded`, `winner`, `method`: normal/retirement/bye, `matchLength`), `placements` (`position`, `positionLabel`, `wins`, `losses`, `matches`, `seat`), `seats` (θέση πίνακα π.χ. «Κ6» — ΔΕΝ σημαίνει σύλλογο), `personMap` (όνομα πηγής → πρόσωπο), `sourceSheetsJson`, `sourceFile`, `sourceLink`.
-- Μορφές αρχείων: `bgfed-import/1` (τουρνουά), `bgfed-import-bundle/1` (πακέτο), `bgfed-matching/1` (αποφάσεις αντιστοίχισης, με `rename` για εμπλουτισμό ονόματος), `bgfed-source/1` (αρχικό Excel).
+- Μορφές αρχείων: `bgfed-import/1` (τουρνουά), `bgfed-import-bundle/1` (πακέτο), `bgfed-matchlist/1` (λίστα αγώνων), `bgfed-matching/1` (αποφάσεις αντιστοίχισης, με `rename` για εμπλουτισμό ονόματος), `bgfed-source/1` (αρχικό Excel).
+- **Λίστα αγώνων `bgfed-matchlist/1`** (build `2026-10-19.06`, σχέδιο `docs/plan-matchlist-import-2026-10-19.md`): αγώνες συλλόγων που δεν τρέχουν τα τουρνουά τους στην εφαρμογή (π.χ. ΣΑΚΑ). `{ format, name, sourceId, organiser?, sourceName?, dateFrom?, dateTo?, players, matches: [{ id, date, time?, p1, p2, winner, score1?, score2?, matchLength?, method: "normal"|"walkover", label?, note?, dateAssumed? }], matching? }` — κάθε παιχνίδι ενός best of 3 = χωριστός αγώνας. Έλεγχος `validateMatchlist` (`lib/matchlists.js`): παίκτες στο `players`, `p1 ≠ p2`, νικητής ένας από τους δύο, `method` normal/walkover, `normal` ⇒ έγκυρη `date`, μοναδικά `id`. Εισαγωγή από την ίδια οθόνη (Διαχείριση → Εισαγωγές): **διοργάνωση υποχρεωτική, χωρίς σεζόν**· αποθήκευση ως `imp-…` με `kind: "matchlist"`, `competitionId`, `dateFrom/dateTo` (χωρίς `seasonYear`· `importSeason` → null), εγγραφή στο `sys-imports`· ίδιο `sourceId` **αντικαθιστά** την παλιά (η αντιστοίχιση ξαναγίνεται)· το `matching` δεν αποθηκεύεται, ανοίγει η αντιστοίχιση με τις αποφάσεις φορτωμένες. **Μετράει μόνο σε ELO και στατιστικά παικτών:** σε κάθε κατάταξη ELO που περιέχει τη διοργάνωση (μετά από Recompute), **κάθε αγώνας `normal` ως χωριστό γεγονός στη δική του `date`+`time`** (χωρίς ώρα = 12:00, μετά σειρά αρχείου), χρονολογικά μαζί με όλα τα άλλα· `impWins/impGames` όπως οι εισαγωγές· «Πώς προέκυψε η ELO» με πηγή «όνομα λίστας» και φάση το `label` (χωρίς σύνδεσμο)· Head-to-Head/στατιστικά παίκτη ανά αγώνα· καρτέλα παίκτη: ενότητα «Αγώνες: {όνομα}». **Όχι** σε Βαθμολογία, λίστα τουρνουά, τίτλους, νικητές ημέρας, πρωτοπορία, σερί, στατιστικά σεζόν. **`walkover` δεν μετράει πουθενά** — φαίνεται μόνο στο ιστορικό του παίκτη ως «χωρίς αγώνα». Στη μέτρηση «Τουρνουά» της διοργάνωσης 1 λίστα = 1 εισαγωγή (σε καμία σεζόν).
 - **Πακέτο `bgfed-import-bundle/1`** (build `2026-10-15.01`, σχέδιο `docs/plan-import-bundle-2026-10-15.md`): `{ format, title?, tournaments: [<bgfed-import/1>, …], matching?: <bgfed-matching/1> }`. Η εισαγωγή (Διαχείριση → Εισαγωγές, υπερ-διαχειριστής) δέχεται πακέτο ή μονό `bgfed-import/1` (= πακέτο ενός)· προεπισκόπηση με μία γραμμή ανά τουρνουά· «Εισαγωγή όλων (N)» **όλα ή τίποτα** (κανένα πρόβλημα σε κανένα τουρνουά ή στο πακέτο, π.χ. διπλό link πηγής). Αποθήκευση διαδοχικά με ένδειξη «k/N»· η λίστα `sys-imports` γράφεται **μία φορά** στο τέλος (σε αποτυχία: σταματά, αναφέρει ποια αποθηκεύτηκαν, και η λίστα γράφεται με αυτά — κανένα «ορφανό» έγγραφο· το ξανανέβασμα τα αντικαθιστά μέσω του ίδιου `sourceUrl`). Αν το πακέτο έχει `matching`, μετά την εισαγωγή ανοίγει η αντιστοίχιση με τις αποφάσεις φορτωμένες — **δεν** εφαρμόζονται αυτόματα.
 - **Κανόνας: οι νέες εισαγωγές δεν παίρνουν ποτέ σιωπηλά διοργάνωση.** Ο διαχειριστής επιλέγει ρητά **διοργάνωση** (όσες `canEditCompetition`) και **σεζόν** (μόνο της επιλεγμένης διοργάνωσης, `seasonsOfCompetition`)· αρχικές τιμές μόνο από `competitionId`/`seasonYear` του πρώτου τουρνουά του αρχείου (αν υπάρχουν εδώ) ή από την τελευταία επιλογή της επίσκεψης. Κάθε έγγραφο και κάθε εγγραφή της λίστας `sys-imports` παίρνει `competitionId` και `seasonYear` (= **id σεζόν**, αριθμός· εμφανίζεται με το όνομά της, `seasonName`). Το fallback του `importCompetitionId` («Πρωτάθλημα…» → `final-phase`, αλλιώς `cup`) μένει **μόνο** για εισαγωγές αποθηκευμένες πριν από αυτό.
 - Ids διοργανώσεων (πίνακας Διοργανώσεων, με αντιγραφή) και σεζόν (σελίδα διοργάνωσης) εμφανίζονται μικρά/γκρι, όπως των συλλόγων· στη λίστα εισαγωγών στήλη «Διοργάνωση · Σεζόν».
@@ -234,5 +239,6 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
 - **Διαφάνεια κριτηρίων ισοβαθμίας τουρνουά** (build `2026-10-19.03`, επίπεδο 2, βλ. §6): στο branch της συνεδρίας `claude/tiebreak-transparency-2026-r1ueti`, PR προς έγκριση. Έλεγχος λογικής (βήμα 0): κανένα σφάλμα στη σειρά του `sortStandings` (3.000 τυχαία τουρνουά: κοινή θέση μόνο με ίσα BH, BH-1, Med και χωρίς απόφαση «μεταξύ τους»)· η παλιά επεξήγηση κοινής θέσης έδειχνε μόνο το Buchholz — τώρα όλη την αλυσίδα. Σειρά, ζευγαρώσεις, ELO, Βαθμολογία σεζόν, αποθηκευμένα δεδομένα: αμετάβλητα.
 - **Πλαίσιο κριτηρίων ισοβαθμίας** (build `2026-10-19.04`, επίπεδο 1, σχέδιο `docs/plan-tournament-criteria-notice-2026-10-19.md`, βλ. §6): απευθείας στο `main`. Μόνο εμφάνιση· σειρά, υπολογισμοί και δεδομένα αμετάβλητα.
 - **Διάταξη κατάταξης τουρνουά** (build `2026-10-19.05`, επίπεδο 1, σχέδιο `docs/plan-standings-layout-2026-10-19.md`, βλ. §6): απευθείας στο `main`. Μόνο εμφάνιση· σειρά, υπολογισμοί και δεδομένα αμετάβλητα.
+- **Λίστα αγώνων** (build `2026-10-19.06`, επίπεδο 2, σχέδιο `docs/plan-matchlist-import-2026-10-19.md`, βλ. §7): στο branch της συνεδρίας `claude/matchlist-import-plan-iiyqt2`, PR προς έγκριση. Κανόνες Firestore αμετάβλητοι. Η διοργάνωση «Αγώνες ΣΑΚΑ» στήνεται από την οθόνη (Διοργανώσεις → «Νέα διοργάνωση», σύλλογος ΣΑΚΑ· «Βαθμολογία» = όχι εξ ορισμού· Κατατάξεις ELO → επεξεργασία της κύριας → τικ). Μετά το merge: Export All Data → διοργάνωση → ανέβασμα → Εισαγωγή → αντιστοίχιση → Recompute ELO.
 - **Εκκρεμότητες εκτός κώδικα:** ο admin του bgfed.gr να επιβεβαιώσει την ανάκληση του WordPress Application Password (βλ. §8).
 - **Μικρά υπόλοιπα:** τα περισσότερα διορθώθηκαν στο Σ1 (`.13`). Μένει: το `eslint@9.39.5` δεν υποστηρίζεται πια (μόνο εργαλείο ελέγχου).

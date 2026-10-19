@@ -2,12 +2,15 @@ import { applyEloRoundBatch, ELO_INITIAL, eloWinProbability, eloPointsAtStake, i
 import { normalizeName } from "./persons.js";
 import { importCompetitionId, importDateIso } from "./imports.js";
 import { DEFAULT_COMPETITION_ID } from "./competitions.js";
+import { isMatchlist, countedMatchlistMatches } from "./matchlists.js";
 
 /* ---------------------------------------------------------------------- */
 /* 5D: one engine for every ELO ranking                                   */
 /* ---------------------------------------------------------------------- */
 /* Replays, in date order, the official in-app tournaments and the imported
- * tournaments of the ranking's member competitions. Used by Recompute (to
+ * tournaments of the ranking's member competitions — and every counted match
+ * of their match lists (bgfed-matchlist/1) at its own date + time, as an
+ * event of its own; walkovers never count. Used by Recompute (to
  * build what is stored) and, with withLedger, by the player card ("how this
  * rating was reached") — so the two can never disagree.
  *
@@ -34,8 +37,14 @@ export async function buildRankingElo({ members, catalogue, importIds, loadTourn
   for (const id of importIds || []) {
     const doc = await loadImport(id);
     if (!doc || !doc.personMap || !members.has(importCompetitionId(doc))) continue;
+    if (isMatchlist(doc)) {
+      countedMatchlistMatches(doc).forEach((m) => events.push({ kind: "listMatch", id, name: doc.name, date: m.iso, doc, m }));
+      continue;
+    }
     events.push({ kind: "import", id, name: doc.name, date: importDateIso(doc.date) || doc.importedAt, doc });
   }
+  // Stable sort: same moment → in-app first, then imports in list order
+  // (the matches of a list already in play order).
   events.sort((a, b) => new Date(a.date) - new Date(b.date));
 
   // One batch of simultaneous matches: rows for the ledger use the ratings
@@ -96,6 +105,16 @@ export async function buildRankingElo({ members, catalogue, importIds, loadTourn
         });
         applyBatch(batch, ml, { date: ev.date, tournamentId: ev.id, tournamentName: ev.name, round: entry.round ?? idx + 1 }, participants);
       });
+    } else if (ev.kind === "listMatch") {
+      const d = ev.doc;
+      const m = ev.m;
+      appliedImports[ev.id] = { name: d.name, kind: "matchlist", at: builtAt };
+      const W = registry.players[d.personMap[m.winner]];
+      const Lp = registry.players[d.personMap[m.winner === m.p1 ? m.p2 : m.p1]];
+      if (W && Lp) {
+        const ml = Number(m.matchLength || d.matchLength || 7);
+        applyBatch([{ w: W.name, l: Lp.name, ret: false }], ml, { date: ev.date, tournamentId: ev.id, tournamentName: d.name, round: m.label || "", imported: true, matchlist: true }, participants);
+      }
     } else {
       const d = ev.doc;
       appliedImports[ev.id] = { name: d.name, at: builtAt };

@@ -1,3 +1,6 @@
+import { isMatchlist } from "./matchlists.js";
+export { validateMatchlist, isMatchlist, MATCHLIST_FORMAT } from "./matchlists.js";
+
 /** Competition of an imported tournament (older files only name it). */
 export function importCompetitionId(doc) {
   if (doc && doc.competitionId) return doc.competitionId;
@@ -29,13 +32,15 @@ export function sourceSheetsOf(doc) {
  * their own year, e.g. the 2025 final played in January 2026), otherwise
  * the calendar year of its date. */
 export function importSeason(doc) {
+  if (isMatchlist(doc)) return null; // a match list has no season
   if (doc && Number(doc.seasonYear)) return Number(doc.seasonYear);
   const y = Number(String(doc?.date || "").slice(0, 4));
   return y || null;
 }
 
 /** How many imported tournaments of the list (sys-imports) belong to a
- * competition — and, if seasonId is given, to that season of it. */
+ * competition — and, if seasonId is given, to that season of it (a match
+ * list counts as one, in no season). */
 export function importsCountFor(list, compId, seasonId) {
   return (list || []).filter((t) => importCompetitionId(t) === compId && (seasonId == null || importSeason(t) === Number(seasonId))).length;
 }
