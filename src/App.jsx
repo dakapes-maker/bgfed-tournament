@@ -128,7 +128,9 @@ import {
 import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay, clubColor } from "./lib/clubs.js";
 import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
 import { importCompetitionId, importsCountFor, sourceSheetsOf, importSeason, importDateIso, validateImportBundle, saveImportBundle } from "./lib/imports.js";
+import { MATCHLIST_FORMAT, isMatchlist, validateMatchlist, saveMatchlistImport, countedMatchlistMatches, playerMatchlistGroups } from "./lib/matchlists.js";
 import { ImportBundlePreview } from "./components/ImportBundlePreview.jsx";
+import { MatchlistPreview, MatchlistTable, PlayerMatchlists } from "./components/Matchlist.jsx";
 import { SeasonFilter } from "./components/SeasonFilter.jsx";
 import {
   competitionSlug,
@@ -2216,7 +2218,7 @@ export default function TournamentManager() {
     });
     // imported tournaments the person played in (Build 4B)
     Object.entries(importDocs).forEach(([id, doc]) => {
-      if (!doc.personMap) return;
+      if (!doc.personMap || isMatchlist(doc)) return; // match lists: own section on the card
       const names = Object.entries(doc.personMap).filter(([, k]) => k === key).map(([n]) => n);
       if (names.length === 0) return;
       const pl = (doc.placements || []).find((p) => names.includes(p.name));
@@ -3277,7 +3279,11 @@ export default function TournamentManager() {
               {[...rows].reverse().map((r, i) => (
                 <tr key={i}>
                   <td>
-                    <button className="history-link" onClick={() => (r.imported ? openImportPublic(r.tournamentId, { kind: "player", key }) : openTournamentFromPlayer(r.tournamentId, key))}>{r.imported ? r.tournamentName : shortTournamentLabel(r.tournamentName)}</button>
+                    {r.matchlist ? (
+                      <span>{r.tournamentName}</span>
+                    ) : (
+                      <button className="history-link" onClick={() => (r.imported ? openImportPublic(r.tournamentId, { kind: "player", key }) : openTournamentFromPlayer(r.tournamentId, key))}>{r.imported ? r.tournamentName : shortTournamentLabel(r.tournamentName)}</button>
+                    )}
                     <span className="cal-note"> · {formatDate(r.date)}</span>
                   </td>
                   <td>{r.round}</td>
@@ -3422,7 +3428,8 @@ export default function TournamentManager() {
     return { competitionId: "", seasonYear: "" };
   }
 
-  /** bgfed-import-bundle/1, or a single bgfed-import/1 as a bundle of one. */
+  /** bgfed-import-bundle/1, or a single bgfed-import/1 as a bundle of one;
+   * or a match list (bgfed-matchlist/1). */
   function onImportFile(e) {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -3434,6 +3441,15 @@ export default function TournamentManager() {
         data = JSON.parse(String(reader.result));
       } catch {
         showToast("Το αρχείο δεν διαβάζεται (δεν είναι έγκυρο JSON).");
+        return;
+      }
+      if (data && data.format === MATCHLIST_FORMAT) {
+        // A match list replaces the one with the same sourceId.
+        const checked = validateMatchlist(data);
+        const existing = (importsList || []).find((t) => t.kind === "matchlist" && data.sourceId && t.sourceId === data.sourceId);
+        setImportView(null);
+        setImportTarget(initialImportTarget([{ doc: data }]));
+        setImportPreview({ kind: "matchlist", doc: data, ...checked, replaceId: existing ? existing.id : null, matching: data.matching && data.matching.format === "bgfed-matching/1" ? data.matching : null, fileName: file.name });
         return;
       }
       const checked = validateImportBundle(data);
@@ -3463,6 +3479,7 @@ export default function TournamentManager() {
    * with them loaded — nothing is applied without the admin. */
   async function confirmImport() {
     if (!importPreview || !importsList || importBusy) return;
+    if (importPreview.kind === "matchlist") return confirmMatchlistImport();
     const { items, problems, matching } = importPreview;
     if (!importTarget.competitionId || !importTarget.seasonYear) return;
     if (problems.length > 0 || items.length === 0 || items.some((it) => it.problems.length > 0)) return;
@@ -3494,6 +3511,35 @@ export default function TournamentManager() {
     } finally {
       setImportBusy(false);
       setImportProgress("");
+    }
+  }
+
+  /** A match list: competition required, no season. The document, then the
+   * list of imports; then the matching, as with a bundle. */
+  async function confirmMatchlistImport() {
+    const { doc, summary, problems, replaceId, matching } = importPreview;
+    if (!importTarget.competitionId || problems.length > 0 || !summary) return;
+    setImportBusy(true);
+    try {
+      const res = await saveMatchlistImport(doc, summary, { competitionId: importTarget.competitionId, importsList, replaceId }, {
+        newId: () => `imp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+        now: () => new Date().toISOString(),
+        saveDoc: (id, d) => saveTournamentData(id, d),
+        saveList: (l) => saveImportList(l),
+      });
+      lastImportTargetRef.current = { ...importTarget };
+      if (!res.ok) {
+        reportSaveFailure(res.docSaved ? "Εισαγωγή λίστας αγώνων — η λίστα γράφτηκε, αλλά η λίστα εισαγωγών δεν αποθηκεύτηκε. Ανέβασε ξανά το αρχείο." : "Εισαγωγή λίστας αγώνων — δεν αποθηκεύτηκε");
+        setImportPreview(null);
+        refreshImports();
+        return;
+      }
+      setImportPreview(null);
+      showToast(`Η λίστα αγώνων εισήχθη (${summary.counted} αγώνες). Μετά την αντιστοίχιση: Recompute της κατάταξης ELO.`);
+      refreshImports();
+      if (matching) await buildMatchPlan(matching, res.list);
+    } finally {
+      setImportBusy(false);
     }
   }
 
@@ -4012,6 +4058,37 @@ export default function TournamentManager() {
   }
 
   function renderImportsTab() {
+    if (importView && isMatchlist(importView.doc)) {
+      const { doc } = importView;
+      const counted = (doc.matches || []).filter((m) => m.method === "normal").length;
+      return (
+        <div className="card control-section">
+          <button className="btn-ghost" onClick={() => setImportView(null)} style={{ marginBottom: 8 }}>
+            <ArrowLeft size={14} /> Πίσω στις εισαγωγές
+          </button>
+          <h2 className="control-h">{doc.name} <span className="status-chip imported" style={{ marginLeft: 6 }}>Λίστα αγώνων</span></h2>
+          <p className="control-sub">
+            {importDateLabel({ date: doc.dateFrom, dateEnd: doc.dateTo })} · {competitionName(competitionsFrom(sysState), importCompetitionId(doc))} · {[doc.organiser, doc.sourceName].filter(Boolean).join(" · ") || "εξωτερική πηγή"}
+          </p>
+          <p style={{ fontSize: 13, margin: "0 0 6px 0" }}>
+            {(doc.players || []).length} παίκτες · {counted} αγώνες μετράνε · {(doc.matches || []).length - counted} χωρίς αγώνα · {doc.personMap ? "αντιστοιχισμένη" : "χωρίς αντιστοίχιση παικτών (δεν μετράει ακόμα)"} · εισαγωγή {doc.importedAt ? formatDate(doc.importedAt) : "—"}
+          </p>
+          <p className="cal-note" style={{ margin: 0 }}>Μετράει μόνο στην ELO (κατατάξεις που περιέχουν τη διοργάνωση, μετά από Recompute) και στα στατιστικά των παικτών· όχι σε Βαθμολογία, λίστα τουρνουά ή τίτλους.</p>
+          <MatchlistTable matches={doc.matches} nameOf={(n) => renderImportedName(doc, n)} />
+          <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+            {!importConfirmDelete ? (
+              <button className="btn-ghost" onClick={() => setImportConfirmDelete(true)}><Trash2 size={14} /> Διαγραφή εισαγωγής</button>
+            ) : (
+              <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 14 }}>
+                Οριστική διαγραφή του «{doc.name}»; (Μετά: Recompute της κατάταξης ELO.)
+                <button className="btn-ghost" onClick={() => setImportConfirmDelete(false)}>Άκυρο</button>
+                <button className="btn-secondary" onClick={deleteImport}>Ναι, διαγραφή</button>
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
     if (importView) {
       const { doc } = importView;
       return (
@@ -4032,7 +4109,7 @@ export default function TournamentManager() {
       <div className="card control-section">
         <h2 className="control-h">Εισαγωγές (δοκιμαστικά)</h2>
         <p className="control-sub">
-          Τουρνουά που έγιναν εκτός εφαρμογής (π.χ. DrawBoss), μόνο για προβολή. Είναι εντελώς απομονωμένα: δεν μπαίνουν στον κατάλογο τουρνουά και δεν μετράνε σε Βαθμολογία, ELO, Στατιστικά ή μητρώο παικτών. Φαίνονται μόνο εδώ.
+          Τουρνουά που έγιναν εκτός εφαρμογής (π.χ. DrawBoss) και λίστες αγώνων άλλων συλλόγων. Δεν μπαίνουν στον κατάλογο τουρνουά και δεν μετράνε σε Βαθμολογία· μετράνε στις κατατάξεις ELO που περιέχουν τη διοργάνωσή τους (μετά από Recompute) και στα στατιστικά των παικτών. Αρχεία: τουρνουά ή πακέτο τουρνουά (bgfed-import/1, bgfed-import-bundle/1) ή λίστα αγώνων (bgfed-matchlist/1).
         </p>
         {importsList === null ? (
           <button className="btn-secondary" onClick={loadImportsList}>Φόρτωση</button>
@@ -4044,11 +4121,14 @@ export default function TournamentManager() {
             <tbody>
               {[...importsList].sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((t) => (
                 <tr key={t.id}>
-                  <td><button className="history-link" onClick={() => openImport(t.id)}>{t.name}</button></td>
+                  <td>
+                    <button className="history-link" onClick={() => openImport(t.id)}>{t.name}</button>
+                    {t.kind === "matchlist" && <span className="status-chip imported" style={{ marginLeft: 6 }}>Λίστα αγώνων</span>}
+                  </td>
                   <td>{competitionName(competitionsFrom(sysState), importCompetitionId(t))} · {importSeason(t) ? sn(importSeason(t)) : "—"}</td>
                   <td>{importDateLabel(t)}</td>
                   <td>{t.players}</td>
-                  <td>{t.matches}</td>
+                  <td>{t.matches}{t.walkovers ? <span className="cal-note"> + {t.walkovers} χωρίς αγώνα</span> : null}</td>
                   <td>{t.winner}</td>
                 </tr>
               ))}
@@ -4062,7 +4142,18 @@ export default function TournamentManager() {
         )}
         <input type="file" accept="application/json,.json" ref={importFileRef} onChange={onImportFile} style={{ display: "none" }} />
         {importsList && importsList.length > 0 && !importPreview && renderMatchingCard()}
-        {importPreview && (
+        {importPreview && importPreview.kind === "matchlist" && (
+          <MatchlistPreview
+            preview={importPreview}
+            competitions={competitionsFrom(sysState).filter((c) => canEditCompetition(c.id))}
+            target={importTarget}
+            onTarget={setImportTarget}
+            busy={importBusy}
+            onCancel={() => setImportPreview(null)}
+            onConfirm={confirmImport}
+          />
+        )}
+        {importPreview && importPreview.kind !== "matchlist" && (
           <ImportBundlePreview
             preview={importPreview}
             competitions={competitionsFrom(sysState).filter((c) => canEditCompetition(c.id))}
@@ -4105,7 +4196,8 @@ export default function TournamentManager() {
 
   /** Imported tournaments as rows of the tournaments list. */
   function importedCatalogue() {
-    return Object.entries(importDocs).map(([id, doc]) => {
+    // Match lists are not tournaments: never in the tournaments list.
+    return Object.entries(importDocs).filter(([, doc]) => !isMatchlist(doc)).map(([id, doc]) => {
       const date = importDateIso(doc.date) || doc.importedAt;
       return {
         id, name: doc.name, date, status: "Completed", isOfficial: true, imported: true,
@@ -4116,7 +4208,7 @@ export default function TournamentManager() {
 
   function openImportPublic(id, back) {
     const doc = importDocs[id];
-    if (!doc) return;
+    if (!doc || isMatchlist(doc)) return;
     setImportReturn(back || { kind: "archive" });
     const b0 = doc.brackets && doc.brackets.length ? doc.brackets[0].id : "main";
     setImportView({ id, doc, tab: "standings", bracket: b0, round: Math.min(...(doc.matches || []).filter((m) => (m.bracket || "main") === b0).map((m) => m.round)) });
@@ -4141,10 +4233,18 @@ export default function TournamentManager() {
     const out = [];
     Object.values(importDocs).forEach((doc) => {
       if (!doc.personMap) return;
+      if (competition !== "all" && importCompetitionId(doc) !== competition) return;
+      // Match lists: every counted match at its own date (walkovers never).
+      if (isMatchlist(doc)) {
+        countedMatchlistMatches(doc).forEach((m) => {
+          if (!tournamentInScope({ date: m.iso }, scope)) return;
+          out.push({ date: m.iso, tournamentName: doc.name, p1Key: doc.personMap[m.p1], p2Key: doc.personMap[m.p2], winnerKey: doc.personMap[m.winner], method: "normal" });
+        });
+        return;
+      }
       const date = importDateIso(doc.date) || doc.importedAt;
       const t = { date, seasonYear: importSeason(doc) };
       if (!tournamentInScope(t, scope)) return;
-      if (competition !== "all" && importCompetitionId(doc) !== competition) return;
       (doc.matches || []).forEach((m) => {
         if (m.method === "bye" || !m.p2) return;
         out.push({ date, tournamentName: doc.name, p1Key: doc.personMap[m.p1], p2Key: doc.personMap[m.p2], winnerKey: doc.personMap[m.winner], method: m.method });
@@ -7422,9 +7522,9 @@ export default function TournamentManager() {
                   {playerHistoryCache[key] && playerHistoryCache[key].length === 0 && (
                     <p style={{ fontSize: 13, color: "var(--muted)" }}>No tournaments recorded yet.</p>
                   )}
-                  {playerHistoryCache[key] && new Set(playerHistoryCache[key].map((h) => h.competitionId)).size > 1 && (
+                  {playerHistoryCache[key] && new Set([...playerHistoryCache[key].map((h) => h.competitionId), ...playerMatchlistGroups(importDocs, key).map((g) => g.competitionId)]).size > 1 && (
                     <div className="round-pills" style={{ margin: "6px 0 8px 0" }}>
-                      {["", ...new Set(playerHistoryCache[key].map((h) => h.competitionId))].map((c) => (
+                      {["", ...new Set([...playerHistoryCache[key].map((h) => h.competitionId), ...playerMatchlistGroups(importDocs, key).map((g) => g.competitionId)])].map((c) => (
                         <button key={c || "all"} className={`round-pill ${historyCompetition === c ? "active" : ""}`} onClick={() => setHistoryCompetition(c)}>
                           {c ? competitionName(competitionsFrom(sysState), c) : "Όλες"}
                         </button>
@@ -7454,6 +7554,17 @@ export default function TournamentManager() {
                       ))}
                     </div>
                   )}
+
+                  <PlayerMatchlists
+                    groups={playerMatchlistGroups(importDocs, key).filter((g) => !historyCompetition || g.competitionId === historyCompetition)}
+                    competitionLabel={(c) => competitionName(competitionsFrom(sysState), c)}
+                    nameOf={(k, n) => {
+                      const q = k ? registry.players[k] : null;
+                      if (!q) return n;
+                      if (q.guest) return <span>{q.name}<span className="cal-note"> · φιλοξ.</span></span>;
+                      return <button className="history-link" onClick={() => openPlayerDetail(k)} title="Καρτέλα παίκτη">{formatNameForDisplay(q.name, nameDisplayMode)}</button>;
+                    }}
+                  />
                 </div>
               )}
             </div>
