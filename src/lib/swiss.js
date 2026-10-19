@@ -145,27 +145,139 @@ export function replayPlayersFromHistory(basePlayers, history) {
   return Object.values(byId);
 }
 
-export function computeBuchholz(players) {
-  const finalWins = {};
-  players.forEach((p) => (finalWins[p.id] = p.wins));
-  const buchholz = {};
+/* ---- Tournament tie-breaks (build 2026-10-19.02) -------------------------
+ * Order: 1) wins, 2) Buchholz, 3) Buchholz Cut-1, 4) Median Buchholz,
+ * 5) head-to-head — only when exactly two players are level after 1–4 and
+ * they played each other (a win by retirement counts, a double retirement
+ * doesn't), 6) otherwise a shared place ("3=", "3=", then 5). The name is
+ * used only as a technical, stable order inside a shared place — never a
+ * criterion. Computed from the current wins, so it works while the
+ * tournament runs too; pairings don't use it. */
+
+/** Per player: { buchholz, cut1, median, oppValues: [{ round, opponentId
+ * (null for a bye), opponentName, value }] }. An opponent's value is their
+ * (current) wins; a bye counts the player's own wins; retirements and double
+ * retirements count the opponent normally. */
+export function computeTiebreaks(players) {
+  const byId = {};
+  players.forEach((p) => (byId[p.id] = p));
+  const out = {};
   players.forEach((p) => {
-    let total = 0;
-    p.matchLog.forEach((m) => {
-      if (m.method === "bye") total += finalWins[p.id];
-      else total += finalWins[m.opponentId] || 0;
+    const oppValues = (p.matchLog || []).map((m) => {
+      if (m.method === "bye") return { round: m.round, opponentId: null, opponentName: null, value: p.wins };
+      const o = byId[m.opponentId];
+      return { round: m.round, opponentId: m.opponentId, opponentName: o ? o.name : "?", value: o ? o.wins : 0 };
     });
-    buchholz[p.id] = total;
+    const values = oppValues.map((v) => v.value).sort((a, b) => a - b);
+    const buchholz = values.reduce((s, v) => s + v, 0);
+    const cut1 = values.length ? buchholz - values[0] : 0;
+    const median = values.length >= 3 ? cut1 - values[values.length - 1] : cut1;
+    out[p.id] = { buchholz, cut1, median, oppValues };
   });
+  return out;
+}
+
+/** Plain Buchholz per player id (kept for older callers). */
+export function computeBuchholz(players) {
+  const tb = computeTiebreaks(players);
+  const buchholz = {};
+  Object.keys(tb).forEach((id) => (buchholz[id] = tb[id].buchholz));
   return buchholz;
 }
 
-export function sortStandings(players, buchholz) {
-  return [...players].sort((a, b) => {
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    const bb = buchholz ? buchholz[b.id] || 0 : 0;
-    const ba = buchholz ? buchholz[a.id] || 0 : 0;
-    if (bb !== ba) return bb - ba;
-    return a.name.localeCompare(b.name, "en");
+/** a's head-to-head against b in this tournament: { own, other, rounds:
+ * [{ round, won, retirement }] } (double retirements left out). */
+function headToHead(a, b) {
+  const rounds = (a.matchLog || [])
+    .filter((m) => m.opponentId === b.id && m.method !== "double_retirement" && m.method !== "bye")
+    .map((m) => ({ round: m.round, won: m.result === "win", retirement: m.method === "retirement_win" || m.method === "retirement_loss" }));
+  const own = rounds.filter((r) => r.won).length;
+  return { own, other: rounds.length - own, rounds };
+}
+
+/** The standings, best first. Each row is a copy of the player with
+ * `rank` (shared places get the same number), `shared` (bool) and `tie`
+ * (null unless level on wins with someone): { withNames, decidedBy:
+ * "buchholz"|"cut1"|"median"|"h2h"|"shared", sharedNames, detail: { above,
+ * below } } — above/below compare with the neighbour on that side when it
+ * has the same wins. With no result at all yet, every rank is null. */
+export function sortStandings(players, tiebreaks) {
+  const tb = tiebreaks || computeTiebreaks(players);
+  const val = (p) => tb[p.id] || { buchholz: 0, cut1: 0, median: 0, oppValues: [] };
+  const keys = ["buchholz", "cut1", "median"];
+  const firstDiff = (a, b) => {
+    for (const k of keys) {
+      const d = val(b)[k] - val(a)[k];
+      if (d !== 0) return { by: k, d };
+    }
+    return null;
+  };
+  const technical = (a, b) => String(a.name).localeCompare(String(b.name), "el");
+  const anyResult = players.some((p) => (p.matchLog || []).length > 0);
+
+  const out = [];
+  const byWins = {};
+  players.forEach((p) => { (byWins[p.wins] = byWins[p.wins] || []).push({ ...p, rank: null, shared: false, tie: null }); });
+  Object.keys(byWins).map(Number).sort((a, b) => b - a).forEach((wins) => {
+    const group = byWins[wins].sort((a, b) => (firstDiff(a, b)?.d ?? 0) || technical(a, b));
+    // Still level after 1–4 → sub-groups; head-to-head only for exactly two.
+    const sub = [];
+    group.forEach((r) => {
+      const last = sub[sub.length - 1];
+      if (last && !firstDiff(last[0], r)) last.push(r);
+      else sub.push([r]);
+    });
+    const h2h = new Map(); // row → its head-to-head with the other one
+    const sharedSubs = new Set();
+    sub.forEach((s) => {
+      if (s.length === 1) return;
+      if (s.length === 2) {
+        const [a, b] = s;
+        const ha = headToHead(a, b);
+        h2h.set(a, ha);
+        h2h.set(b, headToHead(b, a));
+        if (ha.own !== ha.other) {
+          if (ha.other > ha.own) s.reverse();
+          return;
+        }
+      }
+      sharedSubs.add(s);
+    });
+    const ordered = [];
+    sub.forEach((s) => {
+      const startRank = out.length + ordered.length + 1;
+      s.forEach((r, k) => {
+        r.shared = anyResult && sharedSubs.has(s);
+        r.rank = !anyResult ? null : r.shared ? startRank : startRank + k;
+        r.sub = s;
+        ordered.push(r);
+      });
+    });
+    if (anyResult && ordered.length > 1) {
+      const compare = (r, o, sideAbove) => {
+        const vr = val(r);
+        const vo = val(o);
+        const values = { buchholz: [vr.buchholz, vo.buchholz], cut1: [vr.cut1, vo.cut1], median: [vr.median, vo.median] };
+        const f = firstDiff(r, o);
+        if (f) return { name: o.name, ahead: !sideAbove, decidedBy: f.by, values };
+        const hh = h2h.get(r);
+        if (r.sub === o.sub && hh && hh.own !== hh.other) return { name: o.name, ahead: hh.own > hh.other, decidedBy: "h2h", values, h2h: hh };
+        const reason = r.sub.length > 2 ? "many" : hh && hh.rounds.length ? "even" : "notPlayed";
+        return { name: o.name, ahead: null, decidedBy: "shared", values, reason };
+      };
+      ordered.forEach((r, i) => {
+        const above = i > 0 ? compare(r, ordered[i - 1], true) : null;
+        const below = i < ordered.length - 1 ? compare(r, ordered[i + 1], false) : null;
+        r.tie = {
+          withNames: ordered.filter((o) => o !== r).map((o) => o.name),
+          decidedBy: r.shared ? "shared" : (below || above).decidedBy,
+          sharedNames: r.shared ? r.sub.filter((o) => o !== r).map((o) => o.name) : [],
+          detail: { above, below },
+        };
+      });
+    }
+    ordered.forEach((r) => delete r.sub);
+    out.push(...ordered);
   });
+  return out;
 }
