@@ -5753,8 +5753,15 @@ export default function TournamentManager() {
         .wins-highlight { display: inline-block; min-width: 26px; font-family: 'Fraunces', serif; font-weight: 700; font-size: 16px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 2px 8px; }
         .buchholz-header { color: var(--muted); font-weight: 400; }
         .buchholz-cell { color: var(--muted); font-size: 13px; }
-        .tt-toggle { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
-        .tt-toggle.on { background: var(--border); color: var(--ink); }
+        .crit-col { background: var(--bg); padding-left: 6px; padding-right: 6px; }
+        .crit-col.crit-first { border-left: 1px solid var(--border); }
+        .crit-col.crit-last { border-right: 1px solid var(--border); }
+        .crit-group { background: var(--bg); border: 1px solid var(--border); border-bottom: none; text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: none; letter-spacing: 0.02em; }
+        .crit-decided { color: var(--accent); font-weight: 500; }
+        .rounds-seq { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; font-size: 14px; font-weight: 700; }
+        .rounds-seq .round-cell { display: inline-block; width: 1.6em; text-align: left; font-size: inherit; }
+        .rounds-seq .round-cell.bye { font-size: inherit; }
+        .withdrawn-note { display: block; font-size: 12px; color: var(--muted); font-weight: 400; }
 
         .delete-control { display: flex; justify-content: flex-end; margin-bottom: 12px; }
         .recompute-panel { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -8572,7 +8579,7 @@ export default function TournamentManager() {
               </>
             )}
 
-            {view === "standings" && <StandingsTable standings={standings} tiebreaks={tiebreaks} L={L} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
+            {view === "standings" && <StandingsTable standings={standings} tiebreaks={tiebreaks} L={L} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} inProgress onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
             {view === "finance" && isAdmin && tFin.enabled && (
               <FinanceTab
               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
