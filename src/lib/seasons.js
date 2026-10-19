@@ -3,7 +3,12 @@ import { saveSeason, loadSeasonStrict } from "../firebase.js";
 import { normalizeName, displayNameFor } from "./persons.js";
 import { DEFAULT_COMPETITION_ID } from "./competitions.js";
 
-export async function pushSeasonUpdate(year, tournamentId, tournamentName, date, playersList) {
+/** Writes this tournament's entries into the season (one entry per player,
+ * keyed by tournamentId — so a later write replaces the earlier one).
+ * `opts.live`: a «live» write while the tournament runs (2026-10-19) — marks
+ * the tournament in `season.live` with the time of the write (the «● Live»
+ * sign of the Standings page); any other write clears that mark. */
+export async function pushSeasonUpdate(year, tournamentId, tournamentName, date, playersList, opts = {}) {
   // Strict read: if the season cannot be read, write nothing. Writing onto
   // an empty stand-in would replace the whole season with this tournament.
   let season;
@@ -33,6 +38,11 @@ export async function pushSeasonUpdate(year, tournamentId, tournamentName, date,
       tournamentName, date, points: p.wins, wins, aa, bye, matches, normalMatches,
     };
   });
+  const live = { ...(season.live || {}) };
+  if (opts.live) live[tournamentId] = new Date().toISOString();
+  else delete live[tournamentId];
+  if (Object.keys(live).length > 0) season.live = live;
+  else delete season.live;
   const ok = await saveSeason(year, season);
   return ok;
 }

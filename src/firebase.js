@@ -7,6 +7,7 @@ import {
   deleteDoc,
   collection,
   getDocs,
+  onSnapshot,
 } from "firebase/firestore";
 import { can, currentPermissionUser } from "./lib/permissions.js";
 
@@ -251,6 +252,17 @@ export async function loadSeason(year) {
 export async function loadSeasonStrict(year) {
   const data = await getDocDataStrict("seasons", seasonDocId(year));
   return data || { players: {} };
+}
+
+/** Listens to a season's standings (2026-10-19, live Standings page):
+ * onData(season) on every change, onError() if the listener fails (the
+ * caller then falls back to a single read). Returns the unsubscribe. */
+export function watchSeason(year, onData, onError) {
+  return onSnapshot(
+    doc(db, "seasons", seasonDocId(year)),
+    (snap) => onData(snap.exists() ? { players: {}, ...snap.data() } : { players: {} }),
+    () => onError()
+  );
 }
 
 export async function saveSeason(year, data) {

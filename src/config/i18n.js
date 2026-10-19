@@ -25,6 +25,7 @@ export const TRANSLATIONS = {
     // Tie-breaks (2026-10-18)
     stCriteria: (n) => `Κριτήρια ισοβαθμίας: 1) σύνολο βαθμών σε όλα τα τουρνουά, 2) ποσοστό νικών σε όλα τα τουρνουά, 3) ποσοστό νικών στα ${n} καλύτερα, 4) μεταξύ τους αποτελέσματα στη σεζόν (μόνο για ισοβαθμία δύο παικτών).`,
     stH2hFailed: "Τα μεταξύ τους αποτελέσματα δεν φορτώθηκαν· το κριτήριο 4 δεν εφαρμόστηκε. Ανανεώστε τη σελίδα.",
+    stLive: (time) => `Ζωντανά · τελευταία ενημέρωση ${time}`,
     tieBadge: "Ισοβαθμία στους βαθμούς — πατήστε τη γραμμή για εξήγηση",
     tieWith: (names, total) => `Ισοβαθμία με ${names} (${total} β.).`,
     tieVs: (name) => `Έναντι ${name}: `,
@@ -57,6 +58,7 @@ export const TRANSLATIONS = {
     thTotal: "Total", thAllEvents: "(all events)", thWins: "Wins", thRegularOnly: "(regular only)", thMatches: "Matches",
     stCriteria: (n) => `Tie-break criteria: 1) points in all events, 2) win % in all events, 3) win % in the best ${n}, 4) head-to-head in the season (only for a tie between two players).`,
     stH2hFailed: "Head-to-head results did not load; criterion 4 was not applied. Please reload the page.",
+    stLive: (time) => `Live · last update ${time}`,
     tieBadge: "Level on points — tap the row for the explanation",
     tieWith: (names, total) => `Level with ${names} (${total} pts).`,
     tieVs: (name) => `Against ${name}: `,

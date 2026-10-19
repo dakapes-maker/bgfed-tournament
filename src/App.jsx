@@ -42,6 +42,7 @@ import {
   fetchTournamentData,
   deleteTournamentData,
   loadSeason,
+  watchSeason,
   saveSeason,
   listSeasonYears,
   loadFeedItemsStrict,
@@ -95,6 +96,7 @@ import { seasonCompetitionId, seasonsOfCompetition, currentSeasonId, seasonName,
 import { buildRankingElo } from "./lib/eloRanking.js";
 import { addTournamentHeadToHead, headToHeadFrom, buildSeasonHeadToHead, loadTournamentForDisplay } from "./lib/headToHead.js";
 import { tieExplanation } from "./lib/seasonTiebreakText.js";
+import { livePlayers, createSerialWriter, removeTournamentFromSeason, clearLiveMark, liveSeasonUpdatedAt } from "./lib/liveSeason.js";
 import {
   newCalendarEntryId,
   todayYMD,
@@ -713,14 +715,25 @@ export default function TournamentManager() {
       const all = [...new Set([seasonBrowseYear, ...years, ...opened])].sort((a, b) => b - a);
       setSeasonYearsAvailable(all);
     });
+    // 2026-10-19: the page listens to the season and refreshes by itself;
+    // if listening isn't possible, a single read as before.
     let cancelled = false;
-    loadSeason(seasonBrowseYear).then((d) => {
+    let unsubscribe = null;
+    const y = seasonBrowseYear;
+    const apply = (d) => {
       if (cancelled) return;
       setSeasonData(d);
-      setSeasonDataYear(seasonBrowseYear);
-    });
+      setSeasonDataYear(y);
+    };
+    const readOnce = () => { if (!cancelled) loadSeason(y).then(apply); };
+    try {
+      unsubscribe = watchSeason(y, apply, readOnce);
+    } catch {
+      readOnce();
+    }
     return () => {
       cancelled = true;
+      if (unsubscribe) unsubscribe();
     };
   }, [phase, seasonBrowseYear]);
 
@@ -816,6 +829,43 @@ export default function TournamentManager() {
       saveIndexChecked(next);
       return next;
     });
+  }
+
+  // Live standings per result (2026-10-19): every season write of a running
+  // tournament goes through one serial writer (read-change-write of the
+  // whole season document — never two at once).
+  const liveSeasonWriterRef = useRef(null);
+  if (!liveSeasonWriterRef.current) {
+    liveSeasonWriterRef.current = createSerialWriter({
+      delay: 1000,
+      onFailure: () => showToast("Η ζωντανή Βαθμολογία δεν ενημερώθηκε· θα ξαναδοκιμάσει στο επόμενο αποτέλεσμα ή στο κλείσιμο του γύρου."),
+    });
+  }
+
+  function liveSeasonActive() {
+    return liveStandingsEnabled && competitionHasStandings(competitionById(competitionId));
+  }
+
+  /** A season write of this tournament's players, tried twice (saveSeason
+   * honestly reports success/failure). */
+  function seasonWriteJob(playersNow, live) {
+    const write = () => pushSeasonUpdate(seasonYear, tournamentId, tournamentName || "Untitled", createdAt, playersNow, { live });
+    return async () => {
+      let ok = await write();
+      if (!ok) {
+        await new Promise((r) => setTimeout(r, 800));
+        ok = await write();
+      }
+      return ok;
+    };
+  }
+
+  /** With live update on: the standings as they are right now (finished
+   * rounds + the current round's results so far + its bye), written ~1 s
+   * later; a newer result replaces a write still waiting. */
+  function scheduleLiveSeason(nextPlayers, nextHistory, nextRound, nextPairing) {
+    if (!liveSeasonActive()) return;
+    liveSeasonWriterRef.current.schedule(seasonWriteJob(livePlayers(nextPlayers, nextHistory, nextRound, nextPairing), true));
   }
 
   /* ---- setup phase ---- */
@@ -1111,6 +1161,8 @@ export default function TournamentManager() {
     setPhase("tournament");
     setView("pairings");
     persistCurrent("tournament", 1, players, pairing, []);
+    // The bye (and any pair already decided by the draw) counts from the start of the round.
+    if (pairing.bye || pairing.pairs.some((pr) => pr.result)) scheduleLiveSeason(players, [], 1, pairing);
   }
 
   /* ---- tournament phase ---- */
@@ -1122,6 +1174,7 @@ export default function TournamentManager() {
     };
     setCurrentPairings(updatedPairing);
     persistCurrent(phase, round, players, updatedPairing, history);
+    scheduleLiveSeason(players, history, round, updatedPairing);
   }
 
   function clearResult(pairIndex) {
@@ -1131,6 +1184,7 @@ export default function TournamentManager() {
     };
     setCurrentPairings(updatedPairing);
     persistCurrent(phase, round, players, updatedPairing, history);
+    scheduleLiveSeason(players, history, round, updatedPairing);
   }
 
   function setHistoricalResult(roundNumber, pairIndex, winnerId, loserId, method) {
@@ -1144,6 +1198,7 @@ export default function TournamentManager() {
     setHistory(updatedHistory);
     setPlayers(recomputed);
     persistCurrent(phase, round, recomputed, currentPairings, updatedHistory);
+    if (phase === "tournament") scheduleLiveSeason(recomputed, updatedHistory, round, currentPairings);
     setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα «Recompute» στη Διαχείριση → Κατατάξεις ELO (και, για τη Βαθμολογία, «Recompute Βαθμολογίας» στη σελίδα της διοργάνωσης) για να συγχρονιστεί.");
   }
 
@@ -1158,6 +1213,7 @@ export default function TournamentManager() {
     setHistory(updatedHistory);
     setPlayers(recomputed);
     persistCurrent(phase, round, recomputed, currentPairings, updatedHistory);
+    if (phase === "tournament") scheduleLiveSeason(recomputed, updatedHistory, round, currentPairings);
     setNotice("Η διόρθωση αποθηκεύτηκε στη βαθμολογία του τουρνουά — αλλά το ELO ΔΕΝ ενημερώθηκε αυτόματα. Πάτα «Recompute» στη Διαχείριση → Κατατάξεις ELO (και, για τη Βαθμολογία, «Recompute Βαθμολογίας» στη σελίδα της διοργάνωσης) για να συγχρονιστεί.");
   }
 
@@ -1173,6 +1229,12 @@ export default function TournamentManager() {
       setCurrentPairings(null);
       setPhase("setup");
       persistCurrent("setup", 1, players, null, []);
+      // Back to Setup: take back whatever the live update wrote for round 1.
+      if (liveSeasonActive()) {
+        liveSeasonWriterRef.current
+          .now(() => removeTournamentFromSeason(seasonYear, tournamentId))
+          .then((ok) => { if (!ok) showToast("Η ζωντανή Βαθμολογία δεν καθαρίστηκε· τρέξε «Recompute Βαθμολογίας» στη σελίδα της διοργάνωσης."); });
+      }
       return;
     }
     const lastEntry = history[history.length - 1];
@@ -1185,6 +1247,7 @@ export default function TournamentManager() {
     setRound(lastEntry.round);
     setCurrentPairings(restoredPairing);
     persistCurrent(phase, lastEntry.round, recomputed, restoredPairing, remainingHistory);
+    scheduleLiveSeason(recomputed, remainingHistory, lastEntry.round, restoredPairing);
     setNotice("Ο γύρος αναιρέθηκε — αλλά το ELO ΔΕΝ αναιρέθηκε αυτόματα μαζί του. Πάτα «Recompute» στη Διαχείριση → Κατατάξεις ELO (και, για τη Βαθμολογία, «Recompute Βαθμολογίας» στη σελίδα της διοργάνωσης) για να συγχρονιστεί, μόλις τελειώσεις τις διορθώσεις.");
   }
 
@@ -1260,14 +1323,10 @@ export default function TournamentManager() {
 
     // Retries once on failure — saveSeason now honestly reports success/failure
     // instead of silently swallowing a storage hiccup, so we can tell the
-    // person plainly if the season really didn't update.
-    async function pushSeasonUpdateWithRetry() {
-      let ok = await pushSeasonUpdate(seasonYear, tournamentId, tournamentName || "Untitled", createdAt, updatedPlayers);
-      if (!ok) {
-        await new Promise((r) => setTimeout(r, 800));
-        ok = await pushSeasonUpdate(seasonYear, tournamentId, tournamentName || "Untitled", createdAt, updatedPlayers);
-      }
-      return ok;
+    // person plainly if the season really didn't update. Through the serial
+    // writer, after any live write still waiting or running (2026-10-19).
+    function pushSeasonUpdateWithRetry(playersNow = updatedPlayers, live = false) {
+      return liveSeasonWriterRef.current.now(seasonWriteJob(playersNow, live));
     }
 
     let noticeMsg =
@@ -1304,6 +1363,11 @@ export default function TournamentManager() {
             "Warning: couldn't save to Season Standings after two tries. Mark this tournament \"Official League day\" (if it should count) and use «Recompute Βαθμολογίας» on the competition's page (Διαχείριση → Διοργανώσεις) to pick it up.",
           ].filter(Boolean).join(" ");
         }
+      } else if (liveStandingsEnabled && standingsCount) {
+        // The results are already in the standings (live update per result);
+        // only the «live» mark goes.
+        liveSeasonWriterRef.current.now(() => clearLiveMark(seasonYear, tournamentId));
+        noticeMsg = [noticeMsg, "Το τουρνουά τελείωσε. Η Βαθμολογία έχει ήδη τα αποτελέσματα από τη ζωντανή ενημέρωση (και η ELO από κάθε γύρο)· για να μη μετρήσει το τουρνουά: κάδος και «Recompute Βαθμολογίας» στη σελίδα της διοργάνωσης."].filter(Boolean).join(" ");
       } else if (!ratingsCount && !standingsCount) {
         noticeMsg = [noticeMsg, `Το τουρνουά τελείωσε. Ως «${competitionName(competitionsFrom(sysState), competitionId)}» δεν μετράει σε ELO και Βαθμολογία.`].filter(Boolean).join(" ");
       } else {
@@ -1321,7 +1385,8 @@ export default function TournamentManager() {
       setCurrentPairings(nextPairing);
       await persistCurrent("tournament", nextRound, updatedPlayers, nextPairing, newHistory);
       if (liveStandingsEnabled && standingsCount) {
-        const seasonOk = await pushSeasonUpdateWithRetry();
+        // Includes the next round's bye: it counts from the start of the round.
+        const seasonOk = await pushSeasonUpdateWithRetry(livePlayers(updatedPlayers, newHistory, nextRound, nextPairing), true);
         noticeMsg = [
           noticeMsg,
           seasonOk
@@ -5656,6 +5721,10 @@ export default function TournamentManager() {
         .tie-explain { font-size: 13px; color: var(--ink); padding: 0 0 8px 0; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
         .tie-explain p { margin: 0 0 2px 0; }
         .st-criteria { font-size: 12.5px; color: var(--muted); margin: -4px 2px 12px 2px; }
+        .st-live { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); margin: -4px 2px 10px 2px; }
+        .st-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; animation: st-live-pulse 2s ease-in-out infinite; }
+        @keyframes st-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+        @media (prefers-reduced-motion: reduce) { .st-live-dot { animation: none; } }
         .elo-club-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; position: relative; top: -1px; }
         .entry-breakdown { display: flex; gap: 10px; align-items: center; font-size: 12px; color: var(--muted); }
         .entry-breakdown strong { color: var(--ink); font-size: 13px; }
@@ -6519,7 +6588,7 @@ export default function TournamentManager() {
                 const elo = competitionInMainRanking(competitionId);
                 const st = competitionHasStandings(competitionById(competitionId));
                 if (!elo && !st) return "Η διοργάνωση δεν μετράει στην Πανελλήνια ELO ούτε έχει Βαθμολογία σεζόν· το τουρνουά απλώς ολοκληρώνεται, ό,τι κι αν απαντήσεις.";
-                if (liveStandingsEnabled) return st ? "Ενημέρωση της Βαθμολογίας με το τελικό αποτέλεσμα; (Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο, λόγω live ενημέρωσης.)" : "Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο (live ενημέρωση). Ολοκλήρωση;";
+                if (liveStandingsEnabled) return st ? "Οριστική ενημέρωση της Βαθμολογίας με το τελικό αποτέλεσμα; (Η Βαθμολογία έχει ήδη ενημερωθεί με κάθε αποτέλεσμα και η ELO σε κάθε γύρο, λόγω live ενημέρωσης.)" : "Η ELO έχει ήδη ενημερωθεί σε κάθε γύρο (live ενημέρωση). Ολοκλήρωση;";
                 return `Ενημέρωση ${[elo && "της Πανελλήνιας ELO", st && "της Βαθμολογίας"].filter(Boolean).join(" και ")} με τα αποτελέσματα αυτού του τουρνουά;`;
               })()}
             </p>
@@ -6602,6 +6671,8 @@ export default function TournamentManager() {
         const hasImports = Object.values(importDocs).some((d) => importSeason(d) === seasonBrowseYear && importCompetitionId(d) === seasonBrowseComp);
         const isCurrent = seasonBrowseYear === currentSeasonId(sysState, seasonBrowseComp, seasonYearsAvailable);
         const noStandings = !loading && !hasRows && !seasonHasStandings(archive, seasonBrowseYear) && (hasImports || !isCurrent);
+        // 2026-10-19: «● Live» while a tournament of this season writes live.
+        const liveAt = loading ? null : liveSeasonUpdatedAt(seasonData, archive);
         return (
         <>
           <div className="header">
@@ -6635,6 +6706,12 @@ export default function TournamentManager() {
               <p className="st-criteria">
                 {L.stCriteria(rules.bestOf)}
                 {seasonH2H.failed && <><br />{L.stH2hFailed}</>}
+              </p>
+            )}
+            {liveAt && (
+              <p className="st-live">
+                <span className="st-live-dot" aria-hidden="true" />
+                {L.stLive(liveAt.toLocaleTimeString(lang === "en" ? "en-GB" : "el-GR", { hour: "2-digit", minute: "2-digit" }))}
               </p>
             )}
 
