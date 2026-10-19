@@ -5747,6 +5747,8 @@ export default function TournamentManager() {
         .wins-highlight { display: inline-block; min-width: 26px; font-family: 'Fraunces', serif; font-weight: 700; font-size: 16px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 2px 8px; }
         .buchholz-header { color: var(--muted); font-weight: 400; }
         .buchholz-cell { color: var(--muted); font-size: 13px; }
+        .tt-toggle { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
+        .tt-toggle.on { background: var(--border); color: var(--ink); }
 
         .delete-control { display: flex; justify-content: flex-end; margin-bottom: 12px; }
         .recompute-panel { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; flex-wrap: wrap; }

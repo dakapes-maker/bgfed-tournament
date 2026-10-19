@@ -1,47 +1,75 @@
-/* Explanation of a tie in a tournament's standings (build 2026-10-19.02):
- * from the `tie` of sortStandings (lib/swiss.js) and the player's
- * tie-break values. Never mentions how a shared place is ordered. */
+/* Explanation of a tie in a tournament's standings (builds 2026-10-19.02,
+ * 2026-10-19.03): from the `tie` of sortStandings (lib/swiss.js) and the
+ * player's tie-break values. Transparency rule: every criterion is shown in
+ * order, with both players' values, up to the one that decided (or all of
+ * them for a shared place). Never mentions how a shared place is ordered. */
 
-/** "Α 3, Β 4, bye 3" — the values behind the player's Buchholz. */
-function opponentsLine(tb, L) {
-  if (!tb || !tb.oppValues.length) return null;
-  const parts = [...tb.oppValues]
-    .sort((a, b) => a.round - b.round)
-    .map((v) => (v.opponentId === null ? L.ttBye(v.value) : `${v.opponentName} ${v.value}`));
-  return L.ttOpponents(parts.join(", "));
-}
+const KEYS = ["buchholz", "cut1", "median"];
 
-function sentence(cmp, L) {
-  const lead = L.tieAhead(cmp.ahead);
-  const v = cmp.values;
-  if (cmp.decidedBy === "buchholz") return L.ttByBuchholz(lead, v.buchholz[0], v.buchholz[1]);
-  if (cmp.decidedBy === "cut1") return L.ttByCut1(lead, v.buchholz[0], v.cut1[0], v.cut1[1]);
-  if (cmp.decidedBy === "median") return L.ttByMedian(lead, v.buchholz[0], v.cut1[0], v.median[0], v.median[1]);
+/** "1) Buchholz: 12 – 12 (ίσο) · 2) Buchholz Cut-1: 12 – 11 → προηγείται." */
+function chain(cmp, L) {
+  const steps = [];
+  for (let i = 0; i < KEYS.length; i++) {
+    const [a, b] = cmp.values[KEYS[i]];
+    const head = `${i + 1}) ${L.ttLabels[KEYS[i]]}: ${a} – ${b} `;
+    if (a !== b) {
+      steps.push(head + L.ttLead(cmp.ahead));
+      return steps.join(" · ") + ".";
+    }
+    steps.push(head + L.ttEqual);
+  }
+  const hh = cmp.h2h;
+  let h2h;
   if (cmp.decidedBy === "h2h") {
-    const r = cmp.h2h.rounds.find((x) => x.won === cmp.ahead) || cmp.h2h.rounds[0];
-    return L.ttByH2h(cmp.ahead, cmp.name, r.round, r.retirement);
-  }
-  return null;
+    const r = hh.rounds.find((x) => x.won === cmp.ahead) || hh.rounds[0];
+    h2h = `${L.ttH2hGame(cmp.ahead, cmp.name, r.round, r.retirement)} ${L.ttLead(cmp.ahead)}`;
+  } else if (cmp.reason === "many") h2h = L.ttH2hMany(cmp.count);
+  else if (cmp.reason === "even") h2h = L.ttH2hEven(hh.own, hh.other);
+  else h2h = L.ttH2hNotPlayed;
+  steps.push(`4) ${L.ttLabels.h2h}: ${h2h}`);
+  return steps.join(" · ") + ".";
 }
 
-/** The lines explaining a row's tie, or [] when it is not level on wins. */
+const label = (v) => `${v.opponentId === null ? "bye" : v.opponentName} ${v.value}`;
+
+/** The opponents with their wins and what each criterion leaves out:
+ * ["Αντίπαλοι (νίκες τους): Α 4 · Γ 3 · bye 3 (bye = 3, …).",
+ *  "BH = 10 · BH-1 = 10 (χωρίς Ζ 0) · Med = 6 (χωρίς Ζ 0 και Α 4)."] */
+export function opponentsBreakdown(tb, L) {
+  if (!tb || !tb.oppValues.length) return [];
+  const list = [...tb.oppValues].sort((a, b) => b.value - a.value || a.round - b.round);
+  const bye = list.find((v) => v.opponentId === null);
+  const lowest = list[list.length - 1];
+  const highest = list[0];
+  const few = list.length < 3;
+  return [
+    L.ttOpponents(list.map(label).join(" · "), bye ? bye.value : null),
+    `BH = ${tb.buchholz} · BH-1 = ${tb.cut1} (${L.ttWithout([label(lowest)])}) · Med = ${tb.median} (${few ? L.ttFewGames : L.ttWithout([label(lowest), label(highest)])}).`,
+  ];
+}
+
+/** The lines explaining a row: its tie (when level on wins with someone)
+ * and the breakdown of its opponents. */
 export function tournamentTieExplanation(row, tb, L) {
+  const lines = [];
   const tie = row && row.tie;
-  if (!tie) return [];
-  const lines = [L.ttWith(tie.withNames, row.wins)];
-  if (row.shared) {
-    const cmp = [tie.detail.above, tie.detail.below].find((c) => c && c.decidedBy === "shared");
-    lines.push(L.ttShared(tie.sharedNames.join(", "), cmp ? cmp.reason : "many", (tb && tb.buchholz) ?? 0));
+  if (tie) {
+    lines.push(L.ttWith(tie.withNames, row.wins));
+    const many = tie.withNames.length > 1;
+    const cmps = [tie.detail.above, tie.detail.below].filter(Boolean);
+    const sharedCmp = cmps.find((c) => c.decidedBy === "shared");
+    if (row.shared && sharedCmp) lines.push(L.ttSharedWith(tie.sharedNames.join(", ")) + chain(sharedCmp, L));
+    cmps.filter((c) => c.decidedBy !== "shared").forEach((cmp) => {
+      lines.push((many ? L.tieVs(cmp.name) : "") + chain(cmp, L));
+    });
   }
-  const many = tie.withNames.length > 1;
-  [tie.detail.above, tie.detail.below].filter((c) => c && c.decidedBy !== "shared").forEach((cmp) => {
-    const s = sentence(cmp, L);
-    if (many) lines.push(L.tieVs(cmp.name) + s.charAt(0).toLocaleLowerCase() + s.slice(1));
-    else lines.push(s);
-  });
-  const opp = opponentsLine(tb, L);
-  if (opp) lines.push(opp);
-  return lines;
+  return lines.concat(opponentsBreakdown(tb, L));
+}
+
+/** True when head-to-head decided this row's place against a neighbour. */
+export function decidedByH2h(row) {
+  const d = row && row.tie && row.tie.detail;
+  return !!d && [d.above, d.below].some((c) => c && c.decidedBy === "h2h");
 }
 
 /** One line for the winner banner: how first place was decided, or null. */

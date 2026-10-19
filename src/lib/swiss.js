@@ -200,7 +200,9 @@ function headToHead(a, b) {
  * (null unless level on wins with someone): { withNames, decidedBy:
  * "buchholz"|"cut1"|"median"|"h2h"|"shared", sharedNames, detail: { above,
  * below } } — above/below compare with the neighbour on that side when it
- * has the same wins. With no result at all yet, every rank is null. */
+ * has the same wins: { name, ahead, decidedBy, values (both sides' BH,
+ * Cut-1, Median), h2h, and for a shared place reason ("many"|"even"|
+ * "notPlayed") and count (players in it) }. With no result at all yet, every rank is null. */
 export function sortStandings(players, tiebreaks) {
   const tb = tiebreaks || computeTiebreaks(players);
   const val = (p) => tb[p.id] || { buchholz: 0, cut1: 0, median: 0, oppValues: [] };
@@ -263,7 +265,7 @@ export function sortStandings(players, tiebreaks) {
         const hh = h2h.get(r);
         if (r.sub === o.sub && hh && hh.own !== hh.other) return { name: o.name, ahead: hh.own > hh.other, decidedBy: "h2h", values, h2h: hh };
         const reason = r.sub.length > 2 ? "many" : hh && hh.rounds.length ? "even" : "notPlayed";
-        return { name: o.name, ahead: null, decidedBy: "shared", values, reason };
+        return { name: o.name, ahead: null, decidedBy: "shared", values, reason, count: r.sub.length, h2h: hh };
       };
       ordered.forEach((r, i) => {
         const above = i > 0 ? compare(r, ordered[i - 1], true) : null;
