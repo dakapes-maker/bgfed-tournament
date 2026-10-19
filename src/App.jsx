@@ -142,7 +142,8 @@ import {
   initialSeasonView,
 } from "./lib/seasonView.js";
 import { buildConsistencyReport, describeStaleReasons, shortTournamentLabel } from "./lib/consistency.js";
-import { generatePairings, replayPlayersFromHistory, computeBuchholz, sortStandings } from "./lib/swiss.js";
+import { generatePairings, replayPlayersFromHistory, computeTiebreaks, sortStandings } from "./lib/swiss.js";
+import { winnerTieLine } from "./lib/tournamentTiebreakText.js";
 import { buildXlsx } from "./lib/xlsx.js";
 import { isEmbeddedOnFederationSite, formatDate } from "./lib/utils.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
@@ -2929,8 +2930,7 @@ export default function TournamentManager() {
         // Tournament title — only for tournaments that have actually
         // finished; an in-progress test tournament has no real winner yet.
         if (data.phase === "finished") {
-          const buch = computeBuchholz(tPlayers);
-          const standings = sortStandings(tPlayers, buch);
+          const standings = sortStandings(tPlayers);
           if (standings.length > 0) {
             const winner = standings[0];
             const key = normalizeName(winner.name);
@@ -3093,7 +3093,9 @@ export default function TournamentManager() {
   /* ---------------------------------------------------------------------- */
 
   // #region Παράγωγες τιμές για τις οθόνες
-  const buchholz = phase === "finished" ? computeBuchholz(players) : null;
+  // Tie-breaks (build 2026-10-19.02): Buchholz, Cut-1, Median, head-to-head,
+  // shared place — also while the tournament runs (pairings don't use them).
+  const tiebreaks = computeTiebreaks(players);
 
   // Shared, visible "recompute" panel — used on both Season Standings and
   // ELO Ratings so admins actually notice it, instead of a small hidden
@@ -3214,7 +3216,7 @@ export default function TournamentManager() {
       {consistencyReport && <ConsistencyReportView report={consistencyReport} onClose={() => setConsistencyReport(null)} />}
       </>
   );
-  const standings = sortStandings(players, buchholz);
+  const standings = sortStandings(players, tiebreaks);
   const byId = {};
   players.forEach((p) => (byId[p.id] = p));
 
@@ -8562,7 +8564,7 @@ export default function TournamentManager() {
               </>
             )}
 
-            {view === "standings" && <StandingsTable standings={standings} buchholz={null} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
+            {view === "standings" && <StandingsTable standings={standings} tiebreaks={tiebreaks} L={L} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
             {view === "finance" && isAdmin && tFin.enabled && (
               <FinanceTab
               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
@@ -8606,10 +8608,8 @@ export default function TournamentManager() {
             <div className="winner-banner">
               <Trophy size={34} className="trophy" />
               <p className="sub">Tournament Winner</p>
-              <p className="name">{standings[0]?.name}</p>
-              {standings.length > 1 && buchholz && standings[0].wins === standings[1].wins && (
-                <p className="sub">Decided by Buchholz (tie on wins)</p>
-              )}
+              <p className="name">{standings[0]?.shared ? standings.filter((p) => p.rank === 1).map((p) => p.name).join(" · ") : standings[0]?.name}</p>
+              {winnerTieLine(standings, L) && <p className="sub">{winnerTieLine(standings, L)}</p>}
             </div>
 
             {isAdmin && (
@@ -8757,7 +8757,7 @@ export default function TournamentManager() {
               </>
             )}
 
-            {view === "standings" && <StandingsTable standings={standings} buchholz={buchholz} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
+            {view === "standings" && <StandingsTable standings={standings} tiebreaks={tiebreaks} L={L} totalRounds={totalRounds} sideBets={tFin.enabled ? sideBets : []} isAdmin={isAdmin} onToggleExclusion={toggleExclusion} onOpenPlayer={(k) => registry.players[k] && openPlayerDetail(k)} />}
             {view === "finance" && isAdmin && tFin.enabled && (
               <FinanceTab
               players={players} totalRounds={totalRounds} isAdmin={isAdmin}
