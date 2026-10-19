@@ -4,6 +4,7 @@ import { Check } from "lucide-react";
 import { TIEBREAK_COLUMNS_KEY } from "../config/constants.js";
 import { normalizeName } from "../lib/persons.js";
 import { tournamentTieExplanation, decidedByH2h } from "../lib/tournamentTiebreakText.js";
+import { CriteriaNotice } from "./CriteriaNotice.jsx";
 
 /* ---------------------------------------------------------------------- */
 /* Standings table                                                        */
@@ -53,6 +54,10 @@ export function StandingsTable({ standings, tiebreaks, L, totalRounds, sideBets,
   // 5B.4: side bets are financial information — only the admin sees them.
   const showSideBets = !!isAdmin && (sideBets || []).length > 0;
   return (
+    <>
+    {tiebreaks && (
+      <CriteriaNotice summary={L.ttSummary} moreLabel={L.critMore} lessLabel={L.critLess} definitions={L.ttDefs} closing={L.ttHowTo} />
+    )}
     <div className="card" style={{ padding: 0, overflowX: "auto" }}>
       {tiebreaks && (
         <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 12px 0 12px" }}>
@@ -139,14 +144,10 @@ export function StandingsTable({ standings, tiebreaks, L, totalRounds, sideBets,
           })}
         </tbody>
       </table>
-      <p style={{ fontSize: 12, color: "var(--muted)", padding: "8px 12px 0 12px", margin: 0 }}>
+      <p style={{ fontSize: 12, color: "var(--muted)", padding: "8px 12px 12px 12px", margin: 0 }}>
         {L.ttRetirementNote}
       </p>
-      {tiebreaks && (
-        <p style={{ fontSize: 12, color: "var(--muted)", padding: "4px 12px 12px 12px", margin: 0 }}>
-          {L.ttCriteria}
-        </p>
-      )}
     </div>
+    </>
   );
 }

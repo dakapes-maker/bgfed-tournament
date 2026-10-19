@@ -148,6 +148,7 @@ import { buildXlsx } from "./lib/xlsx.js";
 import { isEmbeddedOnFederationSite, formatDate } from "./lib/utils.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { StandingsTable } from "./components/StandingsTable.jsx";
+import { CriteriaNotice } from "./components/CriteriaNotice.jsx";
 import { CalendarPage } from "./components/CalendarPage.jsx";
 import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
 import { PlayerTrendCharts } from "./components/charts.jsx";
@@ -5722,7 +5723,12 @@ export default function TournamentManager() {
         .tie-mark { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%; background: var(--border); color: var(--muted); font-size: 10px; font-weight: 700; line-height: 1; margin-left: 4px; vertical-align: middle; position: relative; top: -1px; cursor: help; }
         .tie-explain { font-size: 13px; color: var(--ink); padding: 0 0 8px 0; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
         .tie-explain p { margin: 0 0 2px 0; }
-        .st-criteria { font-size: 12.5px; color: var(--muted); margin: -4px 2px 12px 2px; }
+        .crit-notice { flex: 1; min-width: 0; }
+        .crit-notice p { margin: 0; }
+        .crit-notice p + p, .crit-notice .crit-defs + p { margin-top: 6px; }
+        .crit-more { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; white-space: nowrap; }
+        .crit-defs { margin: 6px 0 0 0; padding-left: 18px; }
+        .crit-defs li { margin: 3px 0; }
         .st-live { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); margin: -4px 2px 10px 2px; }
         .st-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; animation: st-live-pulse 2s ease-in-out infinite; }
         @keyframes st-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
@@ -6701,16 +6707,16 @@ export default function TournamentManager() {
             />
 
             {hasRows && (
-              <div className="notice">
-                <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-                <span>{L.stNotice(sn(seasonBrowseYear), rules.bestOf)}</span>
-              </div>
-            )}
-            {hasRows && (
-              <p className="st-criteria">
-                {L.stCriteria(rules.bestOf)}
-                {seasonH2H.failed && <><br />{L.stH2hFailed}</>}
-              </p>
+              <CriteriaNotice
+                lead={L.stNotice(sn(seasonBrowseYear), rules.bestOf)}
+                summary={L.stSummary(rules.bestOf)}
+                moreLabel={L.critMore}
+                lessLabel={L.critLess}
+                definitions={L.stDefs(rules.bestOf)}
+                closing={L.stHowTo}
+              >
+                {seasonH2H.failed && <p>{L.stH2hFailed}</p>}
+              </CriteriaNotice>
             )}
             {liveAt && (
               <p className="st-live">
