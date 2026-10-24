@@ -46,6 +46,9 @@ export const TRANSLATIONS = {
     // Tournament tie-breaks (2026-10-19)
     ttSummary: "Κατάταξη με βάση τις νίκες. Σε ισοβαθμία: 1) Buchholz, 2) Buchholz Cut-1, 3) Median Buchholz, 4) μεταξύ τους αγώνας (μόνο για δύο παίκτες). Αλλιώς κοινή θέση.",
     critMore: "Τι σημαίνουν ▾", critLess: "Τι σημαίνουν ▴",
+    // Players page count (2026-10-24)
+    pcPlayers: (n) => (n === 1 ? "παίκτης" : "παίκτες"), pcOf: "από", pcClub: "Σύλλογος", pcSearch: "αναζήτηση", pcNoClub: "Χωρίς σύλλογο",
+    pcNone: "Κανένας παίκτης δεν ταιριάζει στα φίλτρα",
     ttDefs: [
       { term: "Buchholz (BH)", text: "το άθροισμα των νικών όλων των αντιπάλων του παίκτη στο τουρνουά. Δείχνει πόσο δυνατούς αντιπάλους αντιμετώπισε. Το bye μετρά με τις νίκες του ίδιου του παίκτη." },
       { term: "Buchholz Cut-1 (BH-1)", text: "το ίδιο, χωρίς τον πιο αδύναμο αντίπαλο." },
@@ -120,6 +123,9 @@ export const TRANSLATIONS = {
     // Tournament tie-breaks (2026-10-19)
     ttSummary: "Ranked by wins. On a tie: 1) Buchholz, 2) Buchholz Cut-1, 3) Median Buchholz, 4) head-to-head (only for two players). Otherwise a shared place.",
     critMore: "What they mean ▾", critLess: "What they mean ▴",
+    // Players page count (2026-10-24)
+    pcPlayers: (n) => (n === 1 ? "player" : "players"), pcOf: "of", pcClub: "Club", pcSearch: "search", pcNoClub: "No club",
+    pcNone: "No player matches the filters",
     ttDefs: [
       { term: "Buchholz (BH)", text: "the sum of the wins of all the player's opponents in the tournament. It shows how strong the opponents were. A bye counts the player's own wins." },
       { term: "Buchholz Cut-1 (BH-1)", text: "the same, without the weakest opponent." },

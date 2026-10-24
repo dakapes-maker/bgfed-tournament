@@ -157,6 +157,7 @@ import { isEmbeddedOnFederationSite, formatDate } from "./lib/utils.js";
 import { ConfirmDialog } from "./components/ConfirmDialog.jsx";
 import { StandingsTable } from "./components/StandingsTable.jsx";
 import { CriteriaNotice } from "./components/CriteriaNotice.jsx";
+import { PlayersCount } from "./components/PlayersCount.jsx";
 import { CalendarPage } from "./components/CalendarPage.jsx";
 import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
 import { PlayerTrendCharts } from "./components/charts.jsx";
@@ -6343,6 +6344,9 @@ export default function TournamentManager() {
         .cal-table tr.cal-live td { font-weight: 700; }
         .cal-table tr.cal-missed td { color: #9a5b00; }
         .cal-note { color: var(--muted); font-size: 13px; }
+        .players-count { margin: 0 0 10px; font-size: 15px; color: var(--muted); }
+        .players-count strong { color: var(--ink); font-size: 17px; font-variant-numeric: tabular-nums; }
+        .players-count-note { font-size: 13px; }
         .control-h { font-size: 19px; margin: 0 0 8px 0; }
         .control-sub { font-size: 13px; color: var(--muted); margin: 0 0 10px 0; }
         .control-sub-card { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
@@ -7469,8 +7473,9 @@ export default function TournamentManager() {
             </div>
 
             {(() => {
-              const allPlayers = Object.entries(registry.players || {})
-                .filter(([, p]) => showGuests || !p.guest)
+              const unfiltered = Object.entries(registry.players || {})
+                .filter(([, p]) => showGuests || !p.guest);
+              const allPlayers = unfiltered
                 .filter(([, p]) => !registryClubFilter || (registryClubFilter === "none" ? !p.clubId : p.clubId === registryClubFilter))
                 .filter(([, p]) => {
                       if (!registrySearch) return true;
@@ -7480,17 +7485,31 @@ export default function TournamentManager() {
                     })
                 .sort((a, b) => a[1].name.localeCompare(b[1].name, "en"));
               const currentYear = new Date().getFullYear();
+              const countLine = (
+                <PlayersCount
+                  L={L}
+                  shown={allPlayers.length}
+                  total={unfiltered.length}
+                  clubLabel={registryClubFilter === "none" ? L.pcNoClub : registryClubFilter ? clubDisplay(sysState, registryClubFilter) || registryClubFilter : ""}
+                  search={registrySearch.trim()}
+                />
+              );
 
               if (allPlayers.length === 0) {
                 return (
-                  <div className="empty-state">
-                    <Users size={20} style={{ marginBottom: 6 }} />
-                    <p>No players found.</p>
-                  </div>
+                  <>
+                    {countLine}
+                    <div className="empty-state">
+                      <Users size={20} style={{ marginBottom: 6 }} />
+                      <p>{L.pcNone}</p>
+                    </div>
+                  </>
                 );
               }
 
               return (
+                <>
+                {countLine}
                 <div className="card" style={{ padding: 0 }}>
                   <table>
                     <thead>
@@ -7532,6 +7551,7 @@ export default function TournamentManager() {
                     </tbody>
                   </table>
                 </div>
+                </>
               );
             })()}
           </div>
