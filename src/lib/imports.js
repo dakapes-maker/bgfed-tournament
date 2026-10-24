@@ -1,4 +1,5 @@
 import { isMatchlist } from "./matchlists.js";
+import { competitionById, competitionHasStandings } from "./competitions.js";
 export { validateMatchlist, isMatchlist, MATCHLIST_FORMAT } from "./matchlists.js";
 
 /** Competition of an imported tournament (older files only name it). */
@@ -36,6 +37,18 @@ export function importSeason(doc) {
   if (doc && Number(doc.seasonYear)) return Number(doc.seasonYear);
   const y = Number(String(doc?.date || "").slice(0, 4));
   return y || null;
+}
+
+/** countsInStandings (build 2026-10-24.01): an imported tournament counts
+ * toward its season's standings only when the flag is set (absence = false,
+ * so every earlier import stays out), it is not a match list, its
+ * competition keeps standings and — with `matchedOnly` — every player is
+ * matched (personMap). Works on a document or on an entry of sys-imports. */
+export function importCountsInStandings(doc, { matchedOnly = false } = {}) {
+  if (!doc || doc.countsInStandings !== true || isMatchlist(doc)) return false;
+  if (!competitionHasStandings(competitionById(importCompetitionId(doc)))) return false;
+  if (matchedOnly && (!doc.personMap || (doc.players || []).some((n) => !doc.personMap[n]))) return false;
+  return true;
 }
 
 /** How many imported tournaments of the list (sys-imports) belong to a
@@ -128,15 +141,19 @@ export function validateImportBundle(input) {
  * io: { newId(), now(), saveDoc(id, doc) → bool, saveList(list) → bool,
  *       onProgress(k, n) }.
  * Returns { ok, saved: [names], failed: name | null, listSaved, list }. */
-export async function saveImportBundle(items, { competitionId, seasonYear, importsList }, io) {
+export async function saveImportBundle(items, { competitionId, seasonYear, countsInStandings, importsList }, io) {
   let list = [...(importsList || [])];
   const saved = [];
   let failed = null;
   for (let k = 0; k < items.length; k++) {
-    const { doc, summary, replaceId } = items[k];
+    const { doc, summary, replaceId, calendarEntryId } = items[k];
     io.onProgress(k + 1, items.length);
     const id = replaceId || io.newId();
-    const stored = { ...doc, competitionId, seasonYear: Number(seasonYear), importedAt: io.now() };
+    // The file's own countsInStandings / calendarEntryId never pass through
+    // unchecked: the preview's choices replace them.
+    const { countsInStandings: _c, calendarEntryId: _e, ...rest } = doc;
+    const extra = { countsInStandings: !!countsInStandings, ...(calendarEntryId ? { calendarEntryId } : {}) };
+    const stored = { ...rest, competitionId, seasonYear: Number(seasonYear), ...extra, importedAt: io.now() };
     if (!(await io.saveDoc(id, stored))) {
       failed = doc.name || `#${k + 1}`;
       break;
@@ -145,7 +162,7 @@ export async function saveImportBundle(items, { competitionId, seasonYear, impor
     const entry = {
       id, name: doc.name, date: doc.date || "", dateEnd: doc.dateEnd || "", dateAssumed: !!doc.dateAssumed,
       competition: doc.competition || "", organiser: doc.organiser || "", sourceUrl: doc.sourceUrl || "",
-      competitionId, seasonYear: Number(seasonYear),
+      competitionId, seasonYear: Number(seasonYear), ...extra,
       players: summary.players, matches: summary.matches, winner: summary.winner, importedAt: stored.importedAt,
     };
     list = [...list.filter((t) => t.id !== id), entry];

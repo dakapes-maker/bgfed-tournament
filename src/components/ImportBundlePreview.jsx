@@ -2,12 +2,18 @@
  * or a single bgfed-import/1 as a bundle of one). One row per tournament,
  * and above it the competition and season every tournament will get —
  * chosen explicitly, never guessed. «Εισαγωγή όλων» only when everything
- * checks out (all or nothing). */
-export function ImportBundlePreview({ preview, competitions, seasonsOf, target, onTarget, busy, progress, onCancel, onConfirm, dateLabel }) {
+ * checks out (all or nothing).
+ * 2026-10-24.01: `standings` = { available (the competition keeps standings),
+ * locked (the season is locked) } — the switch «Μετράει στη Βαθμολογία της
+ * σεζόν» (target.countsInStandings); `calendar` = { options, links,
+ * duplicates, label(entry) } (importCalendarLinks) — the calendar day each
+ * tournament is linked to, changed with onItemCalendar(i, entryId | ""). */
+export function ImportBundlePreview({ preview, competitions, seasonsOf, target, onTarget, busy, progress, onCancel, onConfirm, dateLabel, standings, calendar, onItemCalendar }) {
   const { items, problems, matching, title, fileName } = preview;
   const seasons = target.competitionId ? seasonsOf(target.competitionId) : [];
   const withProblems = items.filter((it) => it.problems.length > 0).length;
-  const ready = !!target.competitionId && !!target.seasonYear && withProblems === 0 && problems.length === 0 && items.length > 0;
+  const showCalendar = !!target.seasonYear && calendar && (calendar.options.length > 0 || calendar.links.some(Boolean));
+  const ready = !!target.competitionId && !!target.seasonYear && withProblems === 0 && problems.length === 0 && items.length > 0 && !(calendar && calendar.duplicates);
   const sel = { width: "100%", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface, #fff)" };
   return (
     <div className="control-sub-card">
@@ -31,6 +37,29 @@ export function ImportBundlePreview({ preview, competitions, seasonsOf, target, 
           </select>
         </div>
       </div>
+      {standings && standings.available && target.seasonYear && (
+        <div style={{ marginTop: 10 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, cursor: standings.locked ? "default" : "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!!target.countsInStandings && !standings.locked}
+              disabled={standings.locked}
+              onChange={(e) => onTarget({ ...target, countsInStandings: e.target.checked })}
+              data-testid="import-counts-standings"
+            />
+            Μετράει στη Βαθμολογία της σεζόν
+          </label>
+          {standings.locked ? (
+            <p className="field-warning">Η σεζόν είναι κλειδωμένη· οι εισαγωγές της δεν μπορούν να μετρήσουν στη Βαθμολογία.</p>
+          ) : (
+            <p className="cal-note" style={{ margin: "2px 0 0 26px" }}>
+              {target.countsInStandings
+                ? "Κάθε τουρνουά του αρχείου θα μετρήσει στη Βαθμολογία όπως ένα τουρνουά της εφαρμογής, μόλις ολοκληρωθεί η αντιστοίχιση των παικτών."
+                : "Τα τουρνουά θα μετρήσουν μόνο στην ELO και στα στατιστικά των παικτών."}
+            </p>
+          )}
+        </div>
+      )}
       {target.competitionId && seasons.length === 0 && (
         <p className="field-warning">Η διοργάνωση δεν έχει σεζόν. Άνοιξε πρώτα σεζόν από τη σελίδα της διοργάνωσης (Διαχείριση → Διοργανώσεις).</p>
       )}
@@ -44,7 +73,7 @@ export function ImportBundlePreview({ preview, competitions, seasonsOf, target, 
         <div style={{ overflowX: "auto", marginTop: 10 }}>
           <table className="cal-table" data-testid="import-bundle-table">
             <thead>
-              <tr><th>#</th><th>Τουρνουά</th><th>Ημερομηνία</th><th>Παίκτες</th><th>Αγώνες</th><th>Νικητής</th><th>Έλεγχος</th></tr>
+              <tr><th>#</th><th>Τουρνουά</th><th>Ημερομηνία</th><th>Παίκτες</th><th>Αγώνες</th><th>Νικητής</th>{showCalendar && <th>Ημερολόγιο</th>}<th>Έλεγχος</th></tr>
             </thead>
             <tbody>
               {items.map((it, i) => (
@@ -58,6 +87,22 @@ export function ImportBundlePreview({ preview, competitions, seasonsOf, target, 
                   <td>{it.summary ? it.summary.players : "—"}</td>
                   <td>{it.summary ? `${it.summary.matches} + ${it.summary.byes} bye` : "—"}</td>
                   <td>{it.summary ? it.summary.winner : "—"}</td>
+                  {showCalendar && (
+                    <td>
+                      <select
+                        value={calendar.links[i] || ""}
+                        onChange={(e) => onItemCalendar(i, e.target.value)}
+                        style={{ fontSize: 13, padding: "4px 6px", border: "1px solid var(--border)", borderRadius: 6, maxWidth: 260 }}
+                        data-testid="import-calendar-link"
+                      >
+                        <option value="">— χωρίς σύνδεση —</option>
+                        {calendar.options.map((e) => <option key={e.id} value={e.id}>{calendar.label(e)}</option>)}
+                      </select>
+                      {calendar.links[i] && (
+                        <div className="cal-note">Συνδέεται με: {calendar.label(calendar.options.find((e) => e.id === calendar.links[i]) || { id: calendar.links[i] })}</div>
+                      )}
+                    </td>
+                  )}
                   <td>
                     {it.problems.length === 0 ? (
                       <span style={{ color: "var(--win)" }}>✓</span>
@@ -79,6 +124,7 @@ export function ImportBundlePreview({ preview, competitions, seasonsOf, target, 
           ✓ Οι έλεγχοι πέρασαν: κανείς δεν παίζει δύο φορές στον ίδιο γύρο, και οι νίκες κάθε παίκτη συμφωνούν με την κατάταξη της πηγής.
         </p>
       )}
+      {calendar && calendar.duplicates && <p className="field-warning">Δύο τουρνουά συνδέονται με την ίδια αγωνιστική του Ημερολογίου — άλλαξε τη μία σύνδεση.</p>}
       {withProblems > 0 && <p className="field-warning">{withProblems === 1 ? "Ένα τουρνουά έχει" : `${withProblems} τουρνουά έχουν`} προβλήματα — η εισαγωγή γίνεται μόνο όταν περνούν όλα.</p>}
       <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
         <button className="btn-secondary" onClick={onCancel} disabled={busy}>Άκυρο</button>

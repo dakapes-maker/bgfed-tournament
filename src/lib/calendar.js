@@ -8,9 +8,39 @@ import { seasonCompetitionId, seasonName } from "./seasonRegistry.js";
  * A tournament is linked to an entry either by the entry's tournamentId
  * (filled from existing tournaments) or by the tournament's own
  * calendarEntryId (tournaments created from the calendar). A linked
- * tournament that is moved to the trash simply stops counting. */
+ * tournament that is moved to the trash simply stops counting.
+ * Since 2026-10-24.01 an imported tournament can be linked too, by its own
+ * calendarEntryId (chosen in the import preview): `imports` = [{ id, name,
+ * date (ISO), calendarEntryId }] — it shows as a finished tournament with
+ * `imported: true`. */
 export function newCalendarEntryId() {
   return `cal_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+/** Calendar links of the tournaments of an import bundle (2026-10-24.01).
+ * `view` = buildCalendarView of the chosen season; items: [{ doc, replaceId,
+ * calendarChoice }] — calendarChoice undefined = the suggestion (an open day
+ * on the import's own date), "" = no link, else an entry id. Open days are
+ * those without a tournament (or linked to an import this bundle replaces).
+ * Returns { options, links: [entryId | null], duplicates: bool }. */
+export function importCalendarLinks(view, items) {
+  const replaced = new Set((items || []).map((it) => it.replaceId).filter(Boolean));
+  const options = (view || []).filter((e) => !e.tournament || (e.tournament.imported && replaced.has(e.tournament.id)));
+  const chosen = new Set((items || []).map((it) => it.calendarChoice).filter(Boolean));
+  const used = new Set();
+  let duplicates = false;
+  const links = (items || []).map((it) => {
+    let id = null;
+    if (it.calendarChoice !== undefined) id = it.calendarChoice || null;
+    else {
+      const sug = options.find((e) => e.date === (it.doc && it.doc.date) && !used.has(e.id) && !chosen.has(e.id));
+      id = sug ? sug.id : null;
+    }
+    if (id && used.has(id)) duplicates = true;
+    if (id) used.add(id);
+    return id;
+  });
+  return { options, links, duplicates };
 }
 
 export function todayYMD() {
@@ -19,12 +49,13 @@ export function todayYMD() {
 
 /** The calendar of a season, ordered and enriched for display:
  * { ...entry, day (Premier League only), tournament, status, effectiveDate }. */
-export function buildCalendarView(sys, year, archive) {
+export function buildCalendarView(sys, year, archive, imports = []) {
   const entries = ((sys && sys.seasonCalendars && sys.seasonCalendars[String(year)]) || []).map((e) => {
+    const imp = (imports || []).find((i) => i.calendarEntryId === e.id);
     const t =
       (e.tournamentId && archive.find((a) => a.id === e.tournamentId)) ||
       archive.find((a) => a.calendarEntryId === e.id) ||
-      null;
+      (imp ? { ...imp, status: "Completed", imported: true } : null);
     const effectiveDate = t ? isoToLocalYMD(t.date) || e.date : e.date;
     let status;
     if (t) status = t.status === "Completed" ? "done" : "live";

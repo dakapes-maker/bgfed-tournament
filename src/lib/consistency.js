@@ -9,8 +9,11 @@ export function shortTournamentLabel(name) {
 
 /** Compares what is stored (ELO, season standings) with the tournament
  * catalogue. Read-only: it never changes anything. */
-export function buildConsistencyReport({ elo, seasons, index, display }) {
+export function buildConsistencyReport({ elo, seasons, index, display, standingsImports = [] }) {
   const idx = new Map(index.map((t) => [t.id, t]));
+  // 2026-10-24.01: imports with countsInStandings are season entries too
+  // (counted apart; never compared with the ELO, which holds them as impWins).
+  const imports = new Map(standingsImports.map((t) => [t.id, t]));
   const finishedOfficial = index.filter((t) => countsTowardRatings(t) && t.status === "Completed");
   // 5B.3: the standings follow their own rule (official + competition keeps standings).
   const finishedStandings = index.filter((t) => countsTowardStandings(t) && t.status === "Completed");
@@ -49,8 +52,10 @@ export function buildConsistencyReport({ elo, seasons, index, display }) {
       });
     });
   });
+  report.seasonImports = [...seasonIds.keys()].filter((id) => imports.has(id)).length;
   seasonIds.forEach((info, id) => {
     const t = idx.get(id);
+    if (!t && imports.has(id)) return;
     if (!t) report.seasonExtra.push({ id, name: info.name, year: info.year, reason: "missing" });
     else if (!countsTowardStandings(t)) report.seasonExtra.push({ id, name: t.name, year: info.year, reason: "unofficial" });
   });

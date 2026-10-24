@@ -17,6 +17,7 @@ export function ConsistencyReportView({ report, onClose }) {
   if (seasonUnofficial.length) findings.push({ level: "warn", title: "Η Βαθμολογία περιλαμβάνει δοκιμαστικά ή εκτός Premier League τουρνουά", items: cap(seasonUnofficial, (x) => x.name) });
   if (seasonGone.length) findings.push({ level: "warn", title: "Η Βαθμολογία περιλαμβάνει τουρνουά που δεν υπάρχουν πια", items: cap(seasonGone, (x) => x.name) });
   if (report.seasonMissing.length) findings.push({ level: "warn", title: "Επίσημα τουρνουά που δεν έχουν περαστεί στη Βαθμολογία", items: cap(report.seasonMissing, (x) => x.name) });
+  if (report.seasonImports) findings.push({ level: "info", title: `Η Βαθμολογία περιλαμβάνει και ${report.seasonImports === 1 ? "1 εισαγόμενη αγωνιστική" : `${report.seasonImports} εισαγόμενες αγωνιστικές`} (μετράνε στη Βαθμολογία της σεζόν τους· δεν συγκρίνονται με την ELO)`, items: [] });
   if (report.eloOnly.length) findings.push({ level: "warn", title: "Παίκτες στο ELO που δεν υπάρχουν στη Βαθμολογία", items: cap(report.eloOnly, (x) => `${x.name} (${x.games} αγώνες)`) });
   if (report.winsMismatch.length) findings.push({ level: "warn", title: "Παίκτες με διαφορετικές νίκες σε ELO και Βαθμολογία", items: cap(report.winsMismatch, (x) => `${x.name}: ELO ${x.elo} · Βαθμολογία ${x.season}`) });
   if (report.seasonOnly.length) findings.push({ level: "info", title: "Παίκτες στη Βαθμολογία χωρίς ELO (π.χ. μόνο bye ή Α.Α.)", items: cap(report.seasonOnly, (x) => x.name) });

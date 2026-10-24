@@ -1,6 +1,7 @@
 import { competitionsFrom, competitionHasStandings, countsTowardStandings } from "./competitions.js";
 import { seasonsOfCompetition, currentSeasonId } from "./seasonRegistry.js";
 import { seasonForDate } from "./seasons.js";
+import { importCountsInStandings, importSeason } from "./imports.js";
 import { SEASON_VIEW_KEY } from "../config/constants.js";
 
 /* ---------------------------------------------------------------------- */
@@ -61,21 +62,22 @@ function seasonOfEntry(t) {
 }
 
 /** Does a season have standings: at least one official in-app tournament
- * that counts toward standings (imported tournaments never do). From the
- * catalogue already in memory — no extra read. */
-export function seasonHasStandings(archive, seasonId) {
+ * that counts toward standings, or (2026-10-24.01) an imported tournament
+ * with countsInStandings (`imports`: documents in memory). No extra read. */
+export function seasonHasStandings(archive, seasonId, imports = []) {
   const id = Number(seasonId);
-  return (archive || []).some((t) => countsTowardStandings(t) && seasonOfEntry(t) === id);
+  return (archive || []).some((t) => countsTowardStandings(t) && seasonOfEntry(t) === id)
+    || (imports || []).some((d) => importCountsInStandings(d) && importSeason(d) === id);
 }
 
 /** Seasons offered on the standings page for a competition, newest first:
  * every season with standings, the current season, any later season, and
  * the one being shown (reached by a link or a remembered choice). Past
  * seasons without standings are left out. */
-export function standingsSeasonOptions(sys, compId, extraIds, archive, selectedId) {
+export function standingsSeasonOptions(sys, compId, extraIds, archive, selectedId, imports = []) {
   const current = currentSeasonId(sys, compId, extraIds);
   return seasonsOfCompetition(sys, compId, extraIds)
-    .filter((s) => s.id === current || s.id === Number(selectedId) || s.id > current || seasonHasStandings(archive, s.id))
+    .filter((s) => s.id === current || s.id === Number(selectedId) || s.id > current || seasonHasStandings(archive, s.id, imports))
     .sort((a, b) => b.id - a.id);
 }
 

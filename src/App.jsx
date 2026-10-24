@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   Trophy,
   Plus,
@@ -80,6 +80,8 @@ import {
 import { nameSkeletons, skeletonsMinDistance, sourceSurname, titleCaseName } from "./lib/nameSkeleton.js";
 import {
   pushSeasonUpdate,
+  seasonEntryFromMatchLog,
+  seasonEntriesFromImport,
   computeSeasonStandings,
   isoToLocalYMD,
   withLocalDate,
@@ -94,7 +96,7 @@ import {
 } from "./lib/seasons.js";
 import { seasonCompetitionId, seasonsOfCompetition, currentSeasonId, seasonName, nextSeasonId } from "./lib/seasonRegistry.js";
 import { buildRankingElo } from "./lib/eloRanking.js";
-import { addTournamentHeadToHead, headToHeadFrom, buildSeasonHeadToHead, loadTournamentForDisplay } from "./lib/headToHead.js";
+import { addTournamentHeadToHead, headToHeadFrom, buildSeasonHeadToHead, loadTournamentForDisplay, loadStandingsImports } from "./lib/headToHead.js";
 import { tieExplanation } from "./lib/seasonTiebreakText.js";
 import { livePlayers, createSerialWriter, removeTournamentFromSeason, clearLiveMark, liveSeasonUpdatedAt } from "./lib/liveSeason.js";
 import {
@@ -103,6 +105,7 @@ import {
   buildCalendarView,
   calendarProgress,
   calendarEntryTitle,
+  importCalendarLinks,
   CAL_STATUS_LABEL,
   formatYMD,
 } from "./lib/calendar.js";
@@ -127,7 +130,7 @@ import {
 } from "./lib/competitions.js";
 import { normClubKey, newClubId, clubsFrom, clubsActive, clubDisplay, clubColor } from "./lib/clubs.js";
 import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState } from "./lib/sysDocs.js";
-import { importCompetitionId, importsCountFor, sourceSheetsOf, importSeason, importDateIso, validateImportBundle, saveImportBundle } from "./lib/imports.js";
+import { importCompetitionId, importsCountFor, sourceSheetsOf, importSeason, importDateIso, validateImportBundle, saveImportBundle, importCountsInStandings } from "./lib/imports.js";
 import { MATCHLIST_FORMAT, isMatchlist, validateMatchlist, saveMatchlistImport, countedMatchlistMatches, playerMatchlistGroups } from "./lib/matchlists.js";
 import { ImportBundlePreview } from "./components/ImportBundlePreview.jsx";
 import { MatchlistPreview, MatchlistTable, PlayerMatchlists } from "./components/Matchlist.jsx";
@@ -299,6 +302,13 @@ export default function TournamentManager() {
   const sourceFileRef = useRef(null);
   const [sourceLinkDraft, setSourceLinkDraft] = useState(null); // admin: link to the original file (e.g. Google Drive)
   const [importDocs, setImportDocs] = useState({}); // id -> imported tournament (public view, history, statistics)
+  // The same, as documents with their id (head-to-head of the standings).
+  const importDocsList = useMemo(() => Object.entries(importDocs).map(([id, d]) => ({ ...d, id })), [importDocs]);
+  // 2026-10-24.01: imports linked to a calendar day (their calendarEntryId).
+  const calendarImports = useMemo(
+    () => importDocsList.filter((d) => d.calendarEntryId && !isMatchlist(d)).map((d) => ({ id: d.id, name: d.name, date: importDateIso(d.date), calendarEntryId: d.calendarEntryId })),
+    [importDocsList]
+  );
   const [importReturn, setImportReturn] = useState(null); // where the public imported view goes back to
   const [historyCompetition, setHistoryCompetition] = useState(""); // player card history filter
   const [statsCompetition, setStatsCompetition] = useState("all");
@@ -747,14 +757,14 @@ export default function TournamentManager() {
     if (phase !== "season") return;
     let cancelled = false;
     const y = seasonBrowseYear;
-    buildSeasonHeadToHead(archive, y, loadTournamentForDisplay).then(
+    buildSeasonHeadToHead(archive, y, loadTournamentForDisplay, null, importDocsList).then(
       (fn) => { if (!cancelled) setSeasonH2H({ year: y, fn, failed: false }); },
       () => { if (!cancelled) setSeasonH2H({ year: y, fn: null, failed: true }); }
     );
     return () => {
       cancelled = true;
     };
-  }, [phase, seasonBrowseYear, archive]);
+  }, [phase, seasonBrowseYear, archive, importDocsList]);
 
   // Imported tournaments are public (read-only): load them once for everyone.
   useEffect(() => {
@@ -769,7 +779,7 @@ export default function TournamentManager() {
   // A calendar link that no longer fits the chosen season is dropped.
   useEffect(() => {
     if (phase !== "setup" || !calendarEntryId) return;
-    if (!buildCalendarView(sysState, seasonYear, archive).some((e) => e.id === calendarEntryId)) setCalendarEntryId(null);
+    if (!buildCalendarView(sysState, seasonYear, archive, calendarImports).some((e) => e.id === calendarEntryId)) setCalendarEntryId(null);
   }, [phase, seasonYear]);
 
   useEffect(() => {
@@ -902,7 +912,7 @@ export default function TournamentManager() {
     const cur = currentSeasonId(sysState, startComp);
     const later = seasonsOfCompetition(sysState, startComp).map((s) => s.id).filter((id) => id > cur);
     for (const y of [cur, ...later]) {
-      const view = buildCalendarView(sysState, y, archive);
+      const view = buildCalendarView(sysState, y, archive, calendarImports);
       const open = view.find((e) => !e.tournament && e.status === "scheduled");
       if (open) {
         applyCalendarEntry(open, y);
@@ -1513,7 +1523,7 @@ export default function TournamentManager() {
         const season = await loadSeasonStrict(y);
         const bestOfY = rulesForSeason(sysState, y).bestOf;
         seasonBestOf.push(`${y}: ${bestOfY}`);
-        const standings = computeSeasonStandings(season, bestOfY, await buildSeasonHeadToHead(index, y, fetchTournamentDataStrict));
+        const standings = computeSeasonStandings(season, bestOfY, await buildSeasonHeadToHead(index, y, fetchTournamentDataStrict, null, await loadStandingsImports(y, fetchTournamentDataStrict)));
         seasonPlayerCounts.push(`${y}: ${standings.length}`);
         const rows = [["Rank", "Παίκτης", "Events", `Points (best ${bestOfY})`, "Total (all events)", "Wins (regular)", "Matches", "%"]];
         standings.forEach((p, i) => rows.push([i + 1, p.name, p.eventsPlayed, p.total, p.sumAll, p.totalWins, p.totalMatches, p.pct]));
@@ -2038,7 +2048,9 @@ export default function TournamentManager() {
     const seasons = {};
     for (const y of years) seasons[y] = await loadSeasonStrict(y);
     const index = Array.isArray(indexOverride) ? indexOverride : await loadIndexStrict();
-    return { elo, seasons, index, display: new Map(PERSON_DISPLAY) };
+    const imp = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
+    const standingsImports = (imp && Array.isArray(imp.list) ? imp.list : []).filter((t) => importCountsInStandings(t));
+    return { elo, seasons, index, display: new Map(PERSON_DISPLAY), standingsImports };
   }
 
   async function refreshHealth(indexOverride) {
@@ -2333,18 +2345,45 @@ export default function TournamentManager() {
           const key = normalizeName(p.name);
           if (!season.players[key]) season.players[key] = { name: displayNameFor(key, p.name), entries: {} };
           season.players[key].name = displayNameFor(key, p.name);
-          const wins = p.matchLog.filter((m) => m.method === "normal" && m.result === "win").length;
-          const aa = p.matchLog.filter((m) => m.method === "retirement_win").length;
-          const bye = p.matchLog.filter((m) => m.method === "bye").length;
-          // Retirement wins don't count toward the winner's matches-played total
-    // (they get the standings point, but the match itself doesn't "count"
-    // for them); a retirement loss, a double retirement, and every normal
-    // match do count, for whoever played them.
-    const matches = p.matchLog.filter((m) => m.method !== "bye" && m.method !== "retirement_win").length;
-          const normalMatches = p.matchLog.filter((m) => m.method === "normal").length;
-          season.players[key].entries[t.id] = {
-            tournamentName: data.tournamentName, date: data.createdAt, points: p.wins, wins, aa, bye, matches, normalMatches,
-          };
+          season.players[key].entries[t.id] = { tournamentName: data.tournamentName, date: data.createdAt, ...seasonEntryFromMatchLog(p) };
+        });
+      }
+    }
+    // 2026-10-24.01: imported tournaments with countsInStandings (fully
+    // matched) — the same entries, with the import's id. Strict reads: if
+    // the list or one of them cannot be read, nothing is written.
+    const seasonImports = {}; // year -> count
+    if (doSeasons) {
+      let lst;
+      try {
+        lst = await loadStrict(SYS_IMPORTS_ID);
+      } catch {
+        setNotice("");
+        reportSaveFailure("Recompute — η λίστα εισαγωγών δεν διαβάστηκε· ΔΕΝ γράφτηκε τίποτα. Δοκίμασε ξανά.");
+        return;
+      }
+      const counting = (lst && Array.isArray(lst.list) ? lst.list : [])
+        .filter((it) => importCountsInStandings(it) && importSeason(it) && (seasonOnly === null || importSeason(it) === seasonOnly));
+      for (const it of counting) {
+        let d;
+        try {
+          d = await loadStrict(it.id);
+        } catch {
+          setNotice("");
+          reportSaveFailure(`Recompute — η εισαγωγή «${it.name}» δεν διαβάστηκε· ΔΕΝ γράφτηκε τίποτα. Δοκίμασε ξανά.`);
+          return;
+        }
+        if (!d || !importCountsInStandings(d, { matchedOnly: true })) continue; // not matched yet: counts after the matching
+        const byPerson = seasonEntriesFromImport(d);
+        const year = importSeason(d);
+        if (!byPerson || !year) continue;
+        if (!seasonsBuilt[year]) seasonsBuilt[year] = { players: {} };
+        seasonImports[year] = (seasonImports[year] || 0) + 1;
+        const season = seasonsBuilt[year];
+        Object.entries(byPerson).forEach(([key, v]) => {
+          if (!season.players[key]) season.players[key] = { name: v.name, entries: {} };
+          season.players[key].name = displayNameFor(key, season.players[key].name);
+          season.players[key].entries[it.id] = v.entry;
         });
       }
     }
@@ -2392,7 +2431,7 @@ export default function TournamentManager() {
       matches: matchesCounted,
       players: Object.keys(elo.players).length,
       seasons: Object.fromEntries(
-        yearsToWrite.map((y) => [String(y), { tournaments: seasonTournaments[y] || 0, players: Object.keys(seasonsBuilt[y]?.players || {}).length }])
+        yearsToWrite.map((y) => [String(y), { tournaments: seasonTournaments[y] || 0, ...(seasonImports[y] ? { imports: seasonImports[y] } : {}), players: Object.keys(seasonsBuilt[y]?.players || {}).length }])
       ),
     };
     eloSaved = await saveEloChecked(elo);
@@ -2419,7 +2458,7 @@ export default function TournamentManager() {
       setPlayerMatchStatsCache({});
     }
     if (doSeasons && (seasonOnly === null || seasonOnly === seasonBrowseYear)) setSeasonData(seasonsBuilt[seasonBrowseYear] || { players: {} });
-    const perSeason = yearsToWrite.map((y) => `${sn(y)}: ${seasonTournaments[y] || 0} τουρνουά`).join(" · ");
+    const perSeason = yearsToWrite.map((y) => `${sn(y)}: ${seasonTournaments[y] || 0} τουρνουά${seasonImports[y] ? ` + ${seasonImports[y]} ${seasonImports[y] === 1 ? "εισαγωγή" : "εισαγωγές"}` : ""}`).join(" · ");
     showToast(doElo && !doSeasons ? `Η κατάταξη ELO ξαναχτίστηκε (${matchesCounted} αγώνες).` : `Recompute ολοκληρώθηκε — ${perSeason || "Βαθμολογία"}`);
     refreshHealth(catalogue);
   }
@@ -2464,10 +2503,10 @@ export default function TournamentManager() {
       // 2. Season Standings: compare with vs. without this tournament's entries.
       const seasonFull = await loadSeason(seasonYear);
       const recapBestOf = rulesForSeason(sysState, seasonYear).bestOf;
-      const afterStandings = computeSeasonStandings(seasonFull, recapBestOf, await buildSeasonHeadToHead(archive, seasonYear, loadTournamentForDisplay));
+      const afterStandings = computeSeasonStandings(seasonFull, recapBestOf, await buildSeasonHeadToHead(archive, seasonYear, loadTournamentForDisplay, null, importDocsList));
       const seasonBefore = JSON.parse(JSON.stringify(seasonFull));
       Object.values(seasonBefore.players).forEach((p) => { delete p.entries[tournamentId]; });
-      const beforeStandings = computeSeasonStandings(seasonBefore, recapBestOf, await buildSeasonHeadToHead(archive, seasonYear, loadTournamentForDisplay, tournamentId));
+      const beforeStandings = computeSeasonStandings(seasonBefore, recapBestOf, await buildSeasonHeadToHead(archive, seasonYear, loadTournamentForDisplay, tournamentId, importDocsList));
       const beforeRank = {};
       beforeStandings.forEach((p, i) => { beforeRank[p.name] = i + 1; });
       const top5Season = afterStandings.slice(0, 5).map((p, i) => {
@@ -3176,7 +3215,7 @@ export default function TournamentManager() {
             <p style={{ fontSize: 12, color: "var(--muted)", margin: "4px 0 0 0" }}>
               Τελευταίο Recompute: {formatDate(builtFrom.at)} — {builtFrom.tournaments} τουρνουά, {builtFrom.matches} αγώνες, {builtFrom.players} παίκτες.
               {builtFrom.seasons && (
-                  <> Ανά σεζόν: {Object.entries(builtFrom.seasons).map(([y, v]) => `${sn(y)}: ${v.tournaments} τουρνουά, ${v.players} παίκτες`).join(" · ")}.</>
+                  <> Ανά σεζόν: {Object.entries(builtFrom.seasons).map(([y, v]) => `${sn(y)}: ${v.tournaments} τουρνουά${v.imports ? ` + ${v.imports} εισαγωγές` : ""}, ${v.players} παίκτες`).join(" · ")}.</>
                 )}
             </p>
           )}
@@ -3457,8 +3496,11 @@ export default function TournamentManager() {
         const existing = (importsList || []).find((t) => it.doc && t.sourceUrl && t.sourceUrl === it.doc.sourceUrl);
         return { ...it, replaceId: existing ? existing.id : null };
       });
+      // countsInStandings of the file (the bundle's, or of its tournaments)
+      // is only the switch's starting value.
+      const fileCounts = data.countsInStandings === true || items.some((it) => it.doc && it.doc.countsInStandings === true);
       setImportView(null);
-      setImportTarget(initialImportTarget(items));
+      setImportTarget({ ...initialImportTarget(items), countsInStandings: fileCounts });
       setImportPreview({ ...checked, items, fileName: file.name });
     };
     reader.readAsText(file);
@@ -3473,6 +3515,28 @@ export default function TournamentManager() {
     return false;
   }
 
+  /** The preview's standings switch and calendar links (2026-10-24.01):
+   * countsInStandings only for a competition with standings and a season
+   * that is not locked; the links from the chosen season's calendar. */
+  function importBundlePlan() {
+    const sid = Number(importTarget.seasonYear);
+    const comp = competitionsFrom(sysState).find((c) => c.id === importTarget.competitionId);
+    const available = !!comp && competitionHasStandings(comp);
+    const locked = !!sid && seasonLocked(sysState, sid);
+    const items = (importPreview && importPreview.items) || [];
+    const view = sid ? buildCalendarView(sysState, sid, archive, calendarImports) : [];
+    const calendar = {
+      ...importCalendarLinks(view, items),
+      label: (e) => {
+        if (!e.date) return "—";
+        const [y, m, d] = e.date.split("-").map(Number);
+        const day = e.day ? calendarEntryTitle(e, sid, competitionsFrom(sysState), sysState).replace(/^.* - /, "") : (e.note || "Αγωνιστική");
+        return `${day} — ${d}/${m}/${y}`;
+      },
+    };
+    return { standings: { available, locked }, countsInStandings: available && !locked && !!importTarget.countsInStandings, calendar };
+  }
+
   /** «Εισαγωγή όλων»: every tournament with the chosen competition and
    * season, one after the other ("k/N"); the list of imports once at the
    * end. Then, if the bundle carries matching decisions, the matching opens
@@ -3485,7 +3549,9 @@ export default function TournamentManager() {
     if (problems.length > 0 || items.length === 0 || items.some((it) => it.problems.length > 0)) return;
     setImportBusy(true);
     try {
-      const res = await saveImportBundle(items, { ...importTarget, importsList }, {
+      const plan = importBundlePlan();
+      if (plan.calendar.duplicates) return;
+      const res = await saveImportBundle(items.map((it, i) => ({ ...it, calendarEntryId: plan.calendar.links[i] })), { ...importTarget, countsInStandings: plan.countsInStandings, importsList }, {
         newId: () => `imp-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
         now: () => new Date().toISOString(),
         saveDoc: (id, d) => saveTournamentData(id, d),
@@ -3505,7 +3571,10 @@ export default function TournamentManager() {
         return;
       }
       setImportPreview(null);
-      showToast(items.length === 1 ? "Το τουρνουά εισήχθη." : `Εισήχθησαν ${items.length} τουρνουά.`);
+      showToast(
+        (items.length === 1 ? "Το τουρνουά εισήχθη." : `Εισήχθησαν ${items.length} τουρνουά.`) +
+        (plan.countsInStandings ? " Μετά την αντιστοίχιση των παικτών η Βαθμολογία της σεζόν ενημερώνεται μόνη της." : "")
+      );
       refreshImports();
       if (matching) await buildMatchPlan(matching, res.list);
     } finally {
@@ -3570,15 +3639,18 @@ export default function TournamentManager() {
     }
     const list = importsList.map((t) => (t.id === importView.id ? { ...t, date: doc.date, dateEnd: doc.dateEnd, dateAssumed: doc.dateAssumed, seasonYear: doc.seasonYear } : t));
     if (await saveImportList(list)) {
+      const before = importView.doc;
       setImportView({ ...importView, doc });
       setImportDateDraft(null);
       showToast("Οι ημερομηνίες αποθηκεύτηκαν.");
       refreshImports();
+      if (importCountsInStandings(doc)) await offerStandingsRecompute([importSeason(before), importSeason(doc)], "Η εισαγωγή μετράει στη Βαθμολογία.");
     }
   }
 
   async function deleteImport() {
     if (!importView || !importsList) return;
+    const counted = importCountsInStandings(importView.doc) ? importSeason(importView.doc) : null;
     const list = importsList.filter((t) => t.id !== importView.id);
     if (!(await saveImportList(list))) return;
     await deleteTournamentData(importView.id);
@@ -3586,6 +3658,49 @@ export default function TournamentManager() {
     setImportConfirmDelete(false);
     showToast("Το εισαγόμενο τουρνουά διαγράφηκε.");
       refreshImports();
+    if (counted) await offerStandingsRecompute([counted], "Η εισαγωγή μετρούσε στη Βαθμολογία.");
+  }
+
+  /** After a change to an import that counts toward the standings (switch,
+   * season, deletion): offers the Recompute of the season(s) — as the trash
+   * does for our tournaments. */
+  async function offerStandingsRecompute(years, why) {
+    const ys = [...new Set((years || []).filter(Boolean).map(Number))].sort((a, b) => a - b);
+    if (ys.length === 0) return;
+    if (!window.confirm(`${why} Recompute της Βαθμολογίας της σεζόν ${ys.map(sn).join(", ")} τώρα; (Η ELO δεν αλλάζει.)`)) return;
+    for (const y of ys) await recomputeEloAndSeasonFromScratch(undefined, { scope: { season: y } });
+  }
+
+  /** Admin: «Μετράει στη Βαθμολογία της σεζόν» of an imported tournament
+   * (2026-10-24.01) — the document and the list of imports, then the offer
+   * of a Recompute of its season. Not allowed in a locked season. */
+  async function setImportCountsInStandings(on) {
+    if (!importView || !importsList) return;
+    const sid = importSeason(importView.doc);
+    if (seasonLocked(sysState, sid)) {
+      showToast("Η σεζόν είναι κλειδωμένη — η επιλογή δεν αλλάζει.");
+      return;
+    }
+    let cur;
+    try {
+      cur = await fetchTournamentDataStrict(importView.id);
+    } catch {
+      cur = null;
+    }
+    if (!cur) {
+      showToast("Το τουρνουά δεν διαβάστηκε — δοκίμασε ξανά.");
+      return;
+    }
+    const next = { ...cur, countsInStandings: on };
+    if (!(await saveTournamentData(importView.id, next))) {
+      reportSaveFailure("Εισαγωγές — η επιλογή «Μετράει στη Βαθμολογία» δεν αποθηκεύτηκε");
+      return;
+    }
+    const list = importsList.map((t) => (t.id === importView.id ? { ...t, countsInStandings: on } : t));
+    if (!(await saveImportList(list))) return;
+    setImportView({ ...importView, doc: next });
+    refreshImports();
+    await offerStandingsRecompute([sid], on ? "Η εισαγωγή θα μετράει στη Βαθμολογία." : "Η εισαγωγή δεν θα μετράει στη Βαθμολογία.");
   }
 
   function importDateLabel(t) {
@@ -3997,6 +4112,11 @@ export default function TournamentManager() {
                 <dt>Ημερομηνίες</dt><dd>{importDateLabel(doc)}{doc.venue ? ` · ${doc.venue}` : ""}</dd>
                 <dt>Σεζόν</dt><dd>{importSeason(doc) ? sn(importSeason(doc)) : "—"}</dd>
                 <dt>Διοργάνωση</dt><dd>{competitionName(competitionsFrom(sysState), importCompetitionId(doc))}</dd>
+                {importCountsInStandings(doc) && (<><dt>Βαθμολογία</dt><dd>Μετράει στη Βαθμολογία της σεζόν{doc.personMap ? "" : " (μετά την αντιστοίχιση των παικτών)"}</dd></>)}
+                {doc.calendarEntryId && (() => {
+                  const e = buildCalendarView(sysState, importSeason(doc), archive, calendarImports).find((x) => x.id === doc.calendarEntryId);
+                  return (<><dt>Ημερολόγιο</dt><dd>{e ? `${calendarEntryTitle(e, importSeason(doc), competitionsFrom(sysState), sysState)} · ${formatYMD(e.date)}` : "αγωνιστική που δεν υπάρχει πια στο Ημερολόγιο"}</dd></>);
+                })()}
                 <dt>Διοργανωτής</dt><dd>{doc.organiser || "—"}</dd>
                 <dt>Σύστημα</dt><dd>{doc.system || "—"}</dd>
                 <dt>Μήκος αγώνα</dt><dd>{doc.matchLength ? `${doc.matchLength} πόντοι` : "—"}</dd>
@@ -4005,6 +4125,12 @@ export default function TournamentManager() {
                 {doc.sourceLink && (<><dt>Αρχικό αρχείο</dt><dd><a href={doc.sourceLink} target="_blank" rel="noreferrer">Άνοιγμα σε νέα καρτέλα</a></dd></>)}
                 <dt>Εισαγωγή</dt><dd>{doc.importedAt ? formatDate(doc.importedAt) : "—"}</dd>
               </dl>
+              {adminMode && competitionHasStandings(competitionById(importCompetitionId(doc))) && (
+                <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, marginTop: 12 }}>
+                  <input type="checkbox" checked={doc.countsInStandings === true} disabled={seasonLocked(sysState, importSeason(doc))} onChange={(e) => setImportCountsInStandings(e.target.checked)} />
+                  Μετράει στη Βαθμολογία της σεζόν{seasonLocked(sysState, importSeason(doc)) ? " (κλειδωμένη σεζόν)" : ""}
+                </label>
+              )}
               {adminMode && (importDateDraft ? (
                 <div className="row" style={{ marginTop: 12, alignItems: "flex-end" }}>
                   <div style={{ width: 160 }}><label>Από</label><input type="date" value={importDateDraft.date} onChange={(e) => setImportDateDraft({ ...importDateDraft, date: e.target.value })} /></div>
@@ -4045,7 +4171,7 @@ export default function TournamentManager() {
                   <button className="btn-ghost" onClick={() => setImportConfirmDelete(true)}><Trash2 size={14} /> Διαγραφή εισαγωγής</button>
                 ) : (
                   <span style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 14 }}>
-                    Οριστική διαγραφή του «{doc.name}»; (Δεν επηρεάζει τίποτα άλλο.)
+                    Οριστική διαγραφή του «{doc.name}»; {importCountsInStandings(doc) ? "(Μετράει στη Βαθμολογία: μετά θα προταθεί Recompute της σεζόν.)" : "(Δεν επηρεάζει τίποτα άλλο.)"}
                     <button className="btn-ghost" onClick={() => setImportConfirmDelete(false)}>Άκυρο</button>
                     <button className="btn-secondary" onClick={deleteImport}>Ναι, διαγραφή</button>
                   </span>
@@ -4109,7 +4235,7 @@ export default function TournamentManager() {
       <div className="card control-section">
         <h2 className="control-h">Εισαγωγές (δοκιμαστικά)</h2>
         <p className="control-sub">
-          Τουρνουά που έγιναν εκτός εφαρμογής (π.χ. DrawBoss) και λίστες αγώνων άλλων συλλόγων. Δεν μπαίνουν στον κατάλογο τουρνουά και δεν μετράνε σε Βαθμολογία· μετράνε στις κατατάξεις ELO που περιέχουν τη διοργάνωσή τους (μετά από Recompute) και στα στατιστικά των παικτών. Αρχεία: τουρνουά ή πακέτο τουρνουά (bgfed-import/1, bgfed-import-bundle/1) ή λίστα αγώνων (bgfed-matchlist/1).
+          Τουρνουά που έγιναν εκτός εφαρμογής (π.χ. DrawBoss) και λίστες αγώνων άλλων συλλόγων. Δεν μπαίνουν στον κατάλογο τουρνουά και δεν μετράνε σε Βαθμολογία, εκτός αν επιλεγεί «Μετράει στη Βαθμολογία της σεζόν» στην εισαγωγή· μετράνε στις κατατάξεις ELO που περιέχουν τη διοργάνωσή τους (μετά από Recompute) και στα στατιστικά των παικτών. Αρχεία: τουρνουά ή πακέτο τουρνουά (bgfed-import/1, bgfed-import-bundle/1) ή λίστα αγώνων (bgfed-matchlist/1).
         </p>
         {importsList === null ? (
           <button className="btn-secondary" onClick={loadImportsList}>Φόρτωση</button>
@@ -4124,6 +4250,7 @@ export default function TournamentManager() {
                   <td>
                     <button className="history-link" onClick={() => openImport(t.id)}>{t.name}</button>
                     {t.kind === "matchlist" && <span className="status-chip imported" style={{ marginLeft: 6 }}>Λίστα αγώνων</span>}
+                    {importCountsInStandings(t) && <span className="status-chip imported" style={{ marginLeft: 6 }} title="Μετράει στη Βαθμολογία της σεζόν">Βαθμολογία</span>}
                   </td>
                   <td>{competitionName(competitionsFrom(sysState), importCompetitionId(t))} · {importSeason(t) ? sn(importSeason(t)) : "—"}</td>
                   <td>{importDateLabel(t)}</td>
@@ -4159,7 +4286,16 @@ export default function TournamentManager() {
             competitions={competitionsFrom(sysState).filter((c) => canEditCompetition(c.id))}
             seasonsOf={(cid) => seasonsOfCompetition(sysState, cid, controlSeasons)}
             target={importTarget}
-            onTarget={setImportTarget}
+            onTarget={(t) => {
+              // another season: the calendar links start again from the suggestions
+              if (String(t.seasonYear) !== String(importTarget.seasonYear)) {
+                setImportPreview((pv) => (pv ? { ...pv, items: pv.items.map(({ calendarChoice: _c, ...it }) => it) } : pv));
+              }
+              setImportTarget(t);
+            }}
+            standings={importBundlePlan().standings}
+            calendar={importBundlePlan().calendar}
+            onItemCalendar={(i, v) => setImportPreview((pv) => ({ ...pv, items: pv.items.map((it, j) => (j === i ? { ...it, calendarChoice: v } : it)) }))}
             busy={importBusy}
             progress={importProgress}
             onCancel={() => setImportPreview(null)}
@@ -4215,10 +4351,20 @@ export default function TournamentManager() {
     setPhase("imported");
   }
 
+  /** A calendar day's tournament: an imported one opens in the public
+   * import view, an app tournament as before. */
+  function openCalendarTournament(t, back) {
+    if (!t) return;
+    if (t.imported) openImportPublic(t.id, back || { kind: "archive" });
+    else openArchived(t.id);
+  }
+
   function backFromImport() {
     const r = importReturn;
     setImportView(null);
-    if (r && r.kind === "player" && registry.players[r.key]) {
+    if (r && (r.kind === "season" || r.kind === "calendar")) {
+      setPhase(r.kind);
+    } else if (r && r.kind === "player" && registry.players[r.key]) {
       setExpandedRegistryPlayer(r.key);
       setPlayerDetailTab("stats");
       setPhase("playerDetail");
@@ -4467,6 +4613,7 @@ export default function TournamentManager() {
       if (!(await saveRegistryChecked(nextRegistry))) return;
       setPersonLookup(nextRegistry);
       setRegistry(nextRegistry);
+      const standingsSeasons = new Set(); // seasons whose standings include one of these imports
       for (const imp of matchPlan.imports) {
         let d;
         try {
@@ -4483,6 +4630,7 @@ export default function TournamentManager() {
           reportSaveFailure(`Αντιστοίχιση — το «${imp.name}» δεν αποθηκεύτηκε`);
           return;
         }
+        if (importCountsInStandings(d) && importSeason(d)) standingsSeasons.add(importSeason(d));
       }
       const record = { at: new Date().toISOString(), created, linked, renamed, imports: matchPlan.imports.map((i) => i.id) };
       const patch = { importMatching: [...(sysState.importMatching || []), record] };
@@ -4491,6 +4639,9 @@ export default function TournamentManager() {
       setMatchPlan(null);
       showToast(`Αντιστοίχιση: ${created.length} νέα πρόσωπα, ${Object.keys(linked).length} υπάρχοντα.`);
       refreshImports();
+      // 2026-10-24.01: imports that count toward the standings — the
+      // season's standings are rebuilt now, without a manual step.
+      for (const y of [...standingsSeasons].sort((a, b) => a - b)) await recomputeEloAndSeasonFromScratch(undefined, { scope: { season: y } });
     } finally {
       setMatchBusy(false);
     }
@@ -4520,6 +4671,7 @@ export default function TournamentManager() {
       if (!(await saveRegistryChecked(nextRegistry))) return;
       setPersonLookup(nextRegistry);
       setRegistry(nextRegistry);
+      const standingsSeasons = new Set();
       for (const id of rec.imports) {
         let d;
         try {
@@ -4531,6 +4683,7 @@ export default function TournamentManager() {
         if (d && d.personMap) {
           const { personMap: _drop, ...rest } = d;
           if (!(await saveTournamentData(id, rest))) reportSaveFailure(`Εισαγωγή «${d.name || id}» — καθάρισμα αντιστοίχισης`);
+          else if (importCountsInStandings(d) && importSeason(d)) standingsSeasons.add(importSeason(d));
         }
       }
       const patch = { importMatching: all.slice(0, -1) };
@@ -4538,6 +4691,8 @@ export default function TournamentManager() {
       else reportSaveFailure("Ρυθμίσεις — το ιστορικό αντιστοιχίσεων δεν ενημερώθηκε"); // Σ1
       showToast(kept.length ? `Αναιρέθηκε. Κρατήθηκαν (έχουν παίξει από τότε): ${kept.join(", ")}` : "Η αντιστοίχιση αναιρέθηκε.");
       refreshImports();
+      // the unlinked imports leave their seasons' standings
+      for (const y of [...standingsSeasons].sort((a, b) => a - b)) await recomputeEloAndSeasonFromScratch(undefined, { scope: { season: y } });
     } finally {
       setMatchBusy(false);
     }
@@ -4733,7 +4888,7 @@ export default function TournamentManager() {
   /** Admin: closing and locking a season (Σεζόν tab). */
   function renderSeasonCloseCard(year) {
     const locked = seasonLocked(sysState, year);
-    const prog = calendarProgress(buildCalendarView(sysState, year, archive));
+    const prog = calendarProgress(buildCalendarView(sysState, year, archive, calendarImports));
     // Σεζόν πριν το 5B έχουν id το έτος· οι νέες (id ≥ 100001) δεν έχουν ημερομηνίες — μόνο το ημερολόγιο.
     const ended = Number(year) < 100000 && todayYMD() > `${year}-12-31`;
     const calendarDone = prog.total > 0 && prog.done === prog.total;
@@ -5078,7 +5233,7 @@ export default function TournamentManager() {
   async function fillCalendarFromTournaments(year) {
     const entries = calendarOf(year);
     const linked = new Set(entries.map((e) => e.tournamentId).filter(Boolean));
-    const view = buildCalendarView(sysState, year, archive);
+    const view = buildCalendarView(sysState, year, archive, calendarImports);
     view.forEach((e) => e.tournament && linked.add(e.tournament.id));
     const toAdd = archive
       .filter((t) => Number(t.seasonYear) === Number(year) && t.isOfficial && !linked.has(t.id))
@@ -5279,7 +5434,7 @@ export default function TournamentManager() {
   /** Admin: calendar card of one season (inside the admin page). */
   function renderCalendarCard(year) {
     const comps = competitionsFrom(sysState);
-    const view = buildCalendarView(sysState, year, archive);
+    const view = buildCalendarView(sysState, year, archive, calendarImports);
     const prog = calendarProgress(view);
     const editing = calDraft && calDraft.year === year;
     const unlinkedOfficial = archive.filter(
@@ -5307,7 +5462,7 @@ export default function TournamentManager() {
                     <td>{competitionName(comps, e.competitionId)}</td>
                     <td>
                       {e.tournament ? (
-                        <button className="history-link" onClick={() => openArchived(e.tournament.id)}>{CAL_STATUS_LABEL[e.status]}</button>
+                        <button className="history-link" onClick={() => openCalendarTournament(e.tournament)}>{CAL_STATUS_LABEL[e.status]}{e.tournament.imported ? " (εισαγωγή)" : ""}</button>
                       ) : (
                         CAL_STATUS_LABEL[e.status]
                       )}
@@ -5371,7 +5526,7 @@ export default function TournamentManager() {
 
   /** Visitors and admin: progress line + collapsible schedule (Season page). */
   function renderSeasonSchedule(year) {
-    const view = buildCalendarView(sysState, year, archive);
+    const view = buildCalendarView(sysState, year, archive, calendarImports);
     if (view.length === 0) return null;
     const prog = calendarProgress(view);
     const comps = competitionsFrom(sysState);
@@ -5403,7 +5558,7 @@ export default function TournamentManager() {
                     <td>{formatYMD(e.effectiveDate)}</td>
                     <td>
                       {e.tournament && e.status === "done" ? (
-                        <button className="history-link" onClick={() => openArchived(e.tournament.id)}>Αποτελέσματα</button>
+                        <button className="history-link" onClick={() => openCalendarTournament(e.tournament)}>Αποτελέσματα</button>
                       ) : (
                         CAL_STATUS_LABEL[e.status]
                       )}
@@ -6748,7 +6903,7 @@ export default function TournamentManager() {
             </div>
           </div>
           <div className="content">
-            <CalendarPage sys={sysState} archive={archive} onOpenTournament={(id) => openArchived(id)} />
+            <CalendarPage sys={sysState} archive={archive} imports={calendarImports} onOpenTournament={(t) => openCalendarTournament(t, { kind: "calendar" })} />
           </div>
         </>
       )}
@@ -6757,7 +6912,7 @@ export default function TournamentManager() {
         // 2026-10-15: filter at the top of the content, qualification zones
         // per season (rules.qualZones), seasons without standings.
         const stComps = standingsCompetitions(sysState);
-        const stSeasons = standingsSeasonOptions(sysState, seasonBrowseComp, seasonYearsAvailable, archive, seasonBrowseYear);
+        const stSeasons = standingsSeasonOptions(sysState, seasonBrowseComp, seasonYearsAvailable, archive, seasonBrowseYear, importDocsList);
         const chooseComp = (compId) => {
           const y = currentSeasonId(sysState, compId, seasonYearsAvailable);
           setSeasonBrowseComp(compId);
@@ -6787,7 +6942,7 @@ export default function TournamentManager() {
         // with nothing yet shows the «no data yet» message instead.
         const hasImports = Object.values(importDocs).some((d) => importSeason(d) === seasonBrowseYear && importCompetitionId(d) === seasonBrowseComp);
         const isCurrent = seasonBrowseYear === currentSeasonId(sysState, seasonBrowseComp, seasonYearsAvailable);
-        const noStandings = !loading && !hasRows && !seasonHasStandings(archive, seasonBrowseYear) && (hasImports || !isCurrent);
+        const noStandings = !loading && !hasRows && !seasonHasStandings(archive, seasonBrowseYear, importDocsList) && (hasImports || !isCurrent);
         // 2026-10-19: «● Live» while a tournament of this season writes live.
         const liveAt = loading ? null : liveSeasonUpdatedAt(seasonData, archive);
         return (
@@ -6923,7 +7078,9 @@ export default function TournamentManager() {
                                   >
                                     <span>
                                       {p.countedIds.has(e.tournamentId) ? <Check size={12} style={{ marginRight: 6 }} color="var(--win)" /> : null}
-                                      {e.tournamentName} <span style={{ color: "var(--muted)", fontWeight: 400 }}>({formatDate(e.date)})</span>
+                                      {importDocs[e.tournamentId] ? (
+                                        <button className="history-link" style={{ fontWeight: "inherit" }} onClick={() => openImportPublic(e.tournamentId, { kind: "season" })} title="Εισαγόμενο τουρνουά — άνοιγμα">{e.tournamentName}</button>
+                                      ) : e.tournamentName}{" "}<span style={{ color: "var(--muted)", fontWeight: 400 }}>({formatDate(e.date)})</span>
                                     </span>
                                     <span className="entry-breakdown">
                                       {e.wins !== undefined && (
@@ -7731,7 +7888,7 @@ export default function TournamentManager() {
                     <dt>Τρέχουσα σεζόν</dt>
                     <dd>{sn(current)}{seasonLocked(sysState, current) ? " 🔒" : ""}</dd>
                     {(() => {
-                      const prog = calendarProgress(buildCalendarView(sysState, current, archive));
+                      const prog = calendarProgress(buildCalendarView(sysState, current, archive, calendarImports));
                       return (
                         <>
                           <dt>Πρόοδος σεζόν</dt>
@@ -7883,7 +8040,7 @@ export default function TournamentManager() {
                         {competitionHasStandings(comp) && (
                           <td>
                             <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Ξαναχτίζει τη Βαθμολογία αυτής της σεζόν από τα επίσημα τουρνουά της· η ELO δεν αλλάζει" onClick={() => {
-                              if (window.confirm(`Recompute της Βαθμολογίας της σεζόν ${s.name}: ξαναχτίζεται από τα επίσημα τουρνουά της. Η ELO δεν αλλάζει. Συνέχεια;`)) recomputeEloAndSeasonFromScratch(undefined, { scope: { season: s.id } });
+                              if (window.confirm(`Recompute της Βαθμολογίας της σεζόν ${s.name}: ξαναχτίζεται από τα επίσημα τουρνουά της (και τις εισαγωγές που μετράνε στη Βαθμολογία). Η ELO δεν αλλάζει. Συνέχεια;`)) recomputeEloAndSeasonFromScratch(undefined, { scope: { season: s.id } });
                             }}><RefreshCw size={13} /> Recompute Βαθμολογίας</button>
                           </td>
                         )}
@@ -8300,7 +8457,7 @@ export default function TournamentManager() {
             )}
             <div className="card">
               {(() => {
-                const view = buildCalendarView(sysState, seasonYear, archive);
+                const view = buildCalendarView(sysState, seasonYear, archive, calendarImports);
                 const options = view.filter((e) => !e.tournament || e.id === calendarEntryId);
                 if (view.length === 0) return null;
                 return (
