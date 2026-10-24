@@ -11,7 +11,7 @@ import { seasonCompetitionId, seasonName } from "../lib/seasonRegistry.js";
 const MONTHS = ["Ιανουάριος", "Φεβρουάριος", "Μάρτιος", "Απρίλιος", "Μάιος", "Ιούνιος", "Ιούλιος", "Αύγουστος", "Σεπτέμβριος", "Οκτώβριος", "Νοέμβριος", "Δεκέμβριος"];
 const WEEKDAYS = ["Κυρ", "Δευ", "Τρί", "Τετ", "Πέμ", "Παρ", "Σάβ"];
 
-export function CalendarPage({ sys, archive, onOpenTournament }) {
+export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
   const [clubFilter, setClubFilter] = useState([]); // empty = all clubs
   const [compFilter, setCompFilter] = useState("all");
   const [showPast, setShowPast] = useState(false);
@@ -22,7 +22,7 @@ export function CalendarPage({ sys, archive, onOpenTournament }) {
     Object.keys(sys?.seasonCalendars || {}).forEach((sid) => {
       const seasonId = Number(sid);
       if (!Number.isInteger(seasonId)) return;
-      buildCalendarView(sys, seasonId, archive || []).forEach((e) => {
+      buildCalendarView(sys, seasonId, archive || [], imports || []).forEach((e) => {
         const compId = e.competitionId || seasonCompetitionId(sys, seasonId);
         const comp = comps.find((c) => c.id === compId);
         out.push({
@@ -37,7 +37,7 @@ export function CalendarPage({ sys, archive, onOpenTournament }) {
       });
     });
     return out.sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : a.effectiveDate > b.effectiveDate ? 1 : 0));
-  }, [sys, archive, comps]);
+  }, [sys, archive, imports, comps]);
 
   const today = todayYMD();
   const clubsInUse = clubsFrom(sys).filter((c) => items.some((i) => i.clubId === c.id));
@@ -114,7 +114,7 @@ export function CalendarPage({ sys, archive, onOpenTournament }) {
               return (
                 <div
                   key={`${i.seasonId}-${i.id}`}
-                  onClick={canOpen ? () => onOpenTournament(i.tournament.id) : undefined}
+                  onClick={canOpen ? () => onOpenTournament(i.tournament) : undefined}
                   style={{ display: "flex", gap: 12, alignItems: "center", padding: "8px 10px", margin: "4px 0", background: "var(--surface, #fff)", borderRadius: 8, borderLeft: `5px solid ${col}`, opacity: past ? 0.6 : 1, cursor: canOpen ? "pointer" : "default", boxShadow: "0 1px 0 var(--border)" }}
                 >
                   <div style={{ width: 44, textAlign: "center", flexShrink: 0 }}>

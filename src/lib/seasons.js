@@ -2,6 +2,61 @@ import { saveSeason, loadSeasonStrict } from "../firebase.js";
 
 import { normalizeName, displayNameFor } from "./persons.js";
 import { DEFAULT_COMPETITION_ID } from "./competitions.js";
+import { importDateIso } from "./imports.js";
+
+/** A player's season entry from their match log in one tournament — the
+ * one rule for every season entry (app tournaments, Recompute, imports):
+ * points = every win (regular + bye + win by retirement); wins = regular
+ * wins; matches = everything but a bye and a win by retirement (they get
+ * the standings point, but the match itself doesn't "count" for them; a
+ * retirement loss, a double retirement and every normal match do count);
+ * normalMatches = matches decided on the board only (kept in the season
+ * data; not used for the win % since build 2026-09-22.07). */
+export function seasonEntryFromMatchLog(p) {
+  const log = p.matchLog || [];
+  return {
+    points: p.wins,
+    wins: log.filter((m) => m.method === "normal" && m.result === "win").length,
+    aa: log.filter((m) => m.method === "retirement_win").length,
+    bye: log.filter((m) => m.method === "bye").length,
+    matches: log.filter((m) => m.method !== "bye" && m.method !== "retirement_win").length,
+    normalMatches: log.filter((m) => m.method === "normal").length,
+  };
+}
+
+/** Season entries of an imported tournament (countsInStandings, build
+ * 2026-10-24.01), by person: { <personKey>: { name, entry } } — the same
+ * rule as seasonEntryFromMatchLog, from the import's matches: normal → a
+ * normal match; bye → bye; retirement / walkover → a win / loss by
+ * retirement. null while the players are not all matched (personMap). */
+export function seasonEntriesFromImport(doc) {
+  const map = doc && doc.personMap;
+  if (!map || (doc.players || []).some((n) => !map[n])) return null;
+  const acc = {};
+  const add = (name, f) => {
+    const key = map[name];
+    if (!key) return;
+    if (!acc[key]) acc[key] = { name, entry: { tournamentName: doc.name || "", date: importDateIso(doc.date), points: 0, wins: 0, aa: 0, bye: 0, matches: 0, normalMatches: 0 } };
+    f(acc[key].entry);
+  };
+  (doc.matches || []).forEach((m) => {
+    const winner = m.winner || m.p1;
+    if (m.method === "bye" || !m.p2) {
+      add(winner, (e) => { e.points++; e.bye++; });
+      return;
+    }
+    const loser = winner === m.p1 ? m.p2 : m.p1;
+    if (m.method === "retirement" || m.method === "walkover") {
+      add(winner, (e) => { e.points++; e.aa++; });
+      add(loser, (e) => { e.matches++; });
+      return;
+    }
+    add(winner, (e) => { e.points++; e.wins++; e.matches++; e.normalMatches++; });
+    add(loser, (e) => { e.matches++; e.normalMatches++; });
+  });
+  Object.entries(acc).forEach(([key, v]) => { v.name = displayNameFor(key, v.name); });
+  return acc;
+}
 
 /** Writes this tournament's entries into the season (one entry per player,
  * keyed by tournamentId — so a later write replaces the earlier one).
@@ -21,22 +76,7 @@ export async function pushSeasonUpdate(year, tournamentId, tournamentName, date,
     const key = normalizeName(p.name);
     if (!season.players[key]) season.players[key] = { name: displayNameFor(key, p.name), entries: {} };
     season.players[key].name = displayNameFor(key, p.name); // keep the person's current name
-    const wins = p.matchLog.filter((m) => m.method === "normal" && m.result === "win").length;
-    const aa = p.matchLog.filter((m) => m.method === "retirement_win").length;
-    const bye = p.matchLog.filter((m) => m.method === "bye").length;
-    // Retirement wins don't count toward the winner's matches-played total
-    // (they get the standings point, but the match itself doesn't "count"
-    // for them); a retirement loss, a double retirement, and every normal
-    // match do count, for whoever played them.
-    const matches = p.matchLog.filter((m) => m.method !== "bye" && m.method !== "retirement_win").length;
-    // Matches actually decided on the board — excludes bye AND any match
-    // ended by a retirement, whether won or lost. Kept in the season data
-    // only; not used for the win % since build 2026-09-22.07 (% = wins ÷
-    // matches).
-    const normalMatches = p.matchLog.filter((m) => m.method === "normal").length;
-    season.players[key].entries[tournamentId] = {
-      tournamentName, date, points: p.wins, wins, aa, bye, matches, normalMatches,
-    };
+    season.players[key].entries[tournamentId] = { tournamentName, date, ...seasonEntryFromMatchLog(p) };
   });
   const live = { ...(season.live || {}) };
   if (opts.live) live[tournamentId] = new Date().toISOString();
