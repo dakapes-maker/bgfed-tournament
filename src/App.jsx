@@ -134,6 +134,8 @@ import { SYS_TRASH_ID, SYS_STATE_ID, SYS_IMPORTS_ID, saveSysTrash, saveSysState 
 import { importCompetitionId, importsCountFor, sourceSheetsOf, importSeason, importDateIso, validateImportBundle, saveImportBundle, importCountsInStandings } from "./lib/imports.js";
 import { MATCHLIST_FORMAT, isMatchlist, validateMatchlist, saveMatchlistImport, countedMatchlistMatches, playerMatchlistGroups } from "./lib/matchlists.js";
 import { ImportBundlePreview } from "./components/ImportBundlePreview.jsx";
+import { OrphanPersonsCard } from "./components/OrphanPersonsCard.jsx";
+import { remapImportsPerson, orphanPersonMapEntries, suggestPersonFor } from "./lib/personMapRepair.js";
 import { MatchlistPreview, MatchlistTable, PlayerMatchlists } from "./components/Matchlist.jsx";
 import { SeasonFilter } from "./components/SeasonFilter.jsx";
 import {
@@ -303,6 +305,8 @@ export default function TournamentManager() {
   const sourceFileRef = useRef(null);
   const [sourceLinkDraft, setSourceLinkDraft] = useState(null); // admin: link to the original file (e.g. Google Drive)
   const [importDocs, setImportDocs] = useState({}); // id -> imported tournament (public view, history, statistics)
+  const [orphanChoices, setOrphanChoices] = useState({}); // "<importId>|<source name>" -> person (repair card)
+  const [orphanBusy, setOrphanBusy] = useState(false);
   // The same, as documents with their id (head-to-head of the standings).
   const importDocsList = useMemo(() => Object.entries(importDocs).map(([id, d]) => ({ ...d, id })), [importDocs]);
   // 2026-10-24.01: imports linked to a calendar day (their calendarEntryId).
@@ -1922,6 +1926,8 @@ export default function TournamentManager() {
       hasDiscount: !!(keep.hasDiscount || absorb.hasDiscount),
       discountAmount: keep.discountAmount ?? absorb.discountAmount ?? 32,
       needsInfo: !!(keep.needsInfo && absorb.needsInfo),
+      // 2026-10-24.03: the spellings of external sources stay with the person
+      ...((keep.extNames || absorb.extNames) ? { extNames: [...new Set([...(keep.extNames || []), ...(absorb.extNames || [])])] } : {}),
     };
     const nextPlayers = { ...registry.players, [keepKey]: merged };
     delete nextPlayers[absorbKey];
@@ -1930,7 +1936,16 @@ export default function TournamentManager() {
     setMergeTarget("");
     setExpandedRegistryPlayer(keepKey);
     showToast(`Ενώθηκαν: «${absorb.name}» → «${keep.name}».`);
+    // 2026-10-24.03: the imports that point to the absorbed person now point
+    // to the one kept (before any Recompute, which reads them).
+    const remap = await remapImportsPerson(absorbKey, keepKey, { load: fetchTournamentDataStrict, save: saveTournamentData });
+    if (remap.failed.length) reportSaveFailure(`Ένωση προσώπων — δεν ενημερώθηκαν οι εισαγωγές: ${remap.failed.join(", ")}. Διόρθωση από Διαχείριση → Εισαγωγές.`);
+    if (remap.changed.length) refreshImports();
     if (runRecompute) await recomputeEloAndSeasonFromScratch();
+    else {
+      const ys = [...new Set(remap.changed.filter((c) => importCountsInStandings(c.doc)).map((c) => importSeason(c.doc)).filter(Boolean))];
+      for (const y of ys) await recomputeEloAndSeasonFromScratch(undefined, { scope: { season: y } });
+    }
   }
   // #endregion Μητρώο & μόνιμα ID (μετάπτωση, ένωση προσώπων)
 
@@ -4330,6 +4345,7 @@ export default function TournamentManager() {
           </button>
         )}
         <input type="file" accept="application/json,.json" ref={importFileRef} onChange={onImportFile} style={{ display: "none" }} />
+        {importsList && importsList.length > 0 && !importPreview && renderOrphanCard()}
         {importsList && importsList.length > 0 && !importPreview && renderMatchingCard()}
         {importPreview && importPreview.kind === "matchlist" && (
           <MatchlistPreview
@@ -4758,6 +4774,72 @@ export default function TournamentManager() {
     } finally {
       setMatchBusy(false);
     }
+  }
+
+  /** Rows of the repair card: imports whose person is missing from the
+   * registry, each with the likely person (suggestPersonFor). */
+  function orphanRows() {
+    return orphanPersonMapEntries(importDocsList, registry.players).map((o) => {
+      const d = importDocs[o.importId];
+      const exclude = new Set(Object.values((d && d.personMap) || {}));
+      const comp = competitionById(importCompetitionId(d));
+      const sug = suggestPersonFor(o.sourceName, registry.players, { exclude, clubId: comp ? comp.ownerClubId : null });
+      return { ...o, id: `${o.importId}|${o.sourceName}`, candidates: sug.candidates, suggested: sug.key };
+    });
+  }
+
+  /** «Εφαρμογή» of the repair card: each import is re-read strictly and
+   * saved with the chosen persons; then the standings of the seasons where
+   * such an import counts are rebuilt. */
+  async function applyOrphanFix(rows, choices) {
+    if (orphanBusy) return;
+    setOrphanBusy(true);
+    try {
+      const seasons = new Set();
+      for (const importId of [...new Set(rows.map((r) => r.importId))]) {
+        let d;
+        try {
+          d = await fetchTournamentDataStrict(importId);
+        } catch {
+          d = null;
+        }
+        if (!d || !d.personMap) {
+          reportSaveFailure(`Εισαγωγές — το «${importId}» δεν διαβάστηκε· δεν διορθώθηκε`);
+          continue;
+        }
+        const personMap = { ...d.personMap };
+        rows.filter((r) => r.importId === importId).forEach((r) => {
+          if (personMap[r.sourceName] === r.key && choices[r.id]) personMap[r.sourceName] = choices[r.id];
+        });
+        if (!(await saveTournamentData(importId, { ...d, personMap }))) {
+          reportSaveFailure(`Εισαγωγές — το «${d.name || importId}» δεν αποθηκεύτηκε`);
+          continue;
+        }
+        if (importCountsInStandings(d) && importSeason(d)) seasons.add(importSeason(d));
+      }
+      setOrphanChoices({});
+      refreshImports();
+      showToast("Οι εισαγωγές διορθώθηκαν. Μετά: Recompute της κατάταξης ELO.");
+      for (const y of [...seasons].sort((a, b) => a - b)) await recomputeEloAndSeasonFromScratch(undefined, { scope: { season: y } });
+    } finally {
+      setOrphanBusy(false);
+    }
+  }
+
+  function renderOrphanCard() {
+    const rows = orphanRows();
+    if (rows.length === 0) return null;
+    const choices = Object.fromEntries(rows.map((r) => [r.id, orphanChoices[r.id] ?? r.suggested ?? ""]));
+    return (
+      <OrphanPersonsCard
+        rows={rows}
+        players={registry.players}
+        choices={choices}
+        onChoice={(id, k) => setOrphanChoices((c) => ({ ...c, [id]: k }))}
+        busy={orphanBusy}
+        onApply={() => applyOrphanFix(rows, choices)}
+      />
+    );
   }
 
   function renderMatchingCard() {
