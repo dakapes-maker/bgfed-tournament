@@ -106,6 +106,7 @@ import {
   calendarProgress,
   calendarEntryTitle,
   importCalendarLinks,
+  importCalendarOptions,
   CAL_STATUS_LABEL,
   formatYMD,
 } from "./lib/calendar.js";
@@ -3674,6 +3675,42 @@ export default function TournamentManager() {
   /** Admin: «Μετράει στη Βαθμολογία της σεζόν» of an imported tournament
    * (2026-10-24.01) — the document and the list of imports, then the offer
    * of a Recompute of its season. Not allowed in a locked season. */
+  /** Admin: the calendar day of an imported tournament (2026-10-24.02) —
+   * linked, changed or removed after the import; the document and the list
+   * of imports. Not in a locked season (its calendar is read-only). */
+  async function setImportCalendarEntry(entryId) {
+    if (!importView || !importsList) return;
+    if (seasonLocked(sysState, importSeason(importView.doc))) {
+      showToast("Η σεζόν είναι κλειδωμένη — το Ημερολόγιό της δεν αλλάζει.");
+      return;
+    }
+    let cur;
+    try {
+      cur = await fetchTournamentDataStrict(importView.id);
+    } catch {
+      cur = null;
+    }
+    if (!cur) {
+      showToast("Το τουρνουά δεν διαβάστηκε — δοκίμασε ξανά.");
+      return;
+    }
+    const { calendarEntryId: _old, ...rest } = cur;
+    const next = entryId ? { ...rest, calendarEntryId: entryId } : rest;
+    if (!(await saveTournamentData(importView.id, next))) {
+      reportSaveFailure("Εισαγωγές — η σύνδεση με το Ημερολόγιο δεν αποθηκεύτηκε");
+      return;
+    }
+    const list = importsList.map((t) => {
+      if (t.id !== importView.id) return t;
+      const { calendarEntryId: _e, ...r } = t;
+      return entryId ? { ...r, calendarEntryId: entryId } : r;
+    });
+    if (!(await saveImportList(list))) return;
+    setImportView({ ...importView, doc: next });
+    refreshImports();
+    showToast(entryId ? "Η εισαγωγή συνδέθηκε με την αγωνιστική." : "Η σύνδεση με το Ημερολόγιο αφαιρέθηκε.");
+  }
+
   async function setImportCountsInStandings(on) {
     if (!importView || !importsList) return;
     const sid = importSeason(importView.doc);
@@ -4131,6 +4168,31 @@ export default function TournamentManager() {
                   Μετράει στη Βαθμολογία της σεζόν{seasonLocked(sysState, importSeason(doc)) ? " (κλειδωμένη σεζόν)" : ""}
                 </label>
               )}
+              {adminMode && importSeason(doc) && (() => {
+                const sid = importSeason(doc);
+                const options = importCalendarOptions(buildCalendarView(sysState, sid, archive, calendarImports), importView.id);
+                if (options.length === 0 && !doc.calendarEntryId) return null;
+                const locked = seasonLocked(sysState, sid);
+                return (
+                  <div style={{ marginTop: 12 }}>
+                    <label>Αγωνιστική Ημερολογίου</label>
+                    <select
+                      value={doc.calendarEntryId || ""}
+                      disabled={locked}
+                      onChange={(e) => setImportCalendarEntry(e.target.value)}
+                      style={{ fontSize: 14, padding: "6px 8px", border: "1px solid var(--border)", borderRadius: 6, maxWidth: 360 }}
+                    >
+                      <option value="">— χωρίς σύνδεση —</option>
+                      {options.map((e) => (
+                        <option key={e.id} value={e.id}>{calendarEntryTitle(e, sid, competitionsFrom(sysState), sysState)} · {formatYMD(e.date)}</option>
+                      ))}
+                    </select>
+                    <div className="cal-note">
+                      {locked ? "Κλειδωμένη σεζόν: η σύνδεση δεν αλλάζει." : "Οι αγωνιστικές με τουρνουά της εφαρμογής δεν εμφανίζονται· για να συνδεθεί μια τέτοια, μετακίνησε πρώτα το τουρνουά της στον κάδο."}
+                    </div>
+                  </div>
+                );
+              })()}
               {adminMode && (importDateDraft ? (
                 <div className="row" style={{ marginTop: 12, alignItems: "flex-end" }}>
                   <div style={{ width: 160 }}><label>Από</label><input type="date" value={importDateDraft.date} onChange={(e) => setImportDateDraft({ ...importDateDraft, date: e.target.value })} /></div>

@@ -43,6 +43,12 @@ export function importCalendarLinks(view, items) {
   return { options, links, duplicates };
 }
 
+/** The calendar days an already imported tournament can be linked to
+ * (2026-10-24.02): those without a tournament, and its own day. */
+export function importCalendarOptions(view, importId) {
+  return (view || []).filter((e) => !e.tournament || (e.tournament.imported && e.tournament.id === importId));
+}
+
 export function todayYMD() {
   return isoToLocalYMD(new Date().toISOString());
 }
