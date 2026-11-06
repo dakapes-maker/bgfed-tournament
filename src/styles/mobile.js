@@ -38,6 +38,17 @@ export const MOBILE_CSS = `
         }
 
         @media (max-width: 600px) {
+          /* Κατάταξη τουρνουά (StandingsTable): Θέση και Παίκτης σταθερές
+             αριστερά όσο κυλάει ο πίνακας· όλες οι στήλες μένουν ορατές. */
+          .std-table th, .std-table td { padding: 7px 6px; }
+          .std-table .std-sticky-rank { position: sticky; left: 0; z-index: 1; background: var(--surface); width: 40px; min-width: 40px; max-width: 40px; }
+          .std-table .std-sticky-name { position: sticky; left: 40px; z-index: 1; background: var(--surface); min-width: 110px; max-width: 150px; white-space: normal; box-shadow: inset -1px 0 0 var(--border); }
+
+          /* Κάρτα αγώνα (διαχειριστής): κουμπιά το ένα κάτω από το άλλο */
+          .match-actions { flex-direction: column; gap: 8px; }
+          .retire-row { flex-direction: column; align-items: stretch; gap: 4px; }
+          .retire-row button { justify-content: flex-start; min-height: 40px; }
+
           .topbar { padding: 10px 14px; }
           .brand { font-size: 12px; }
           .header { padding: 18px 14px 0 14px; }

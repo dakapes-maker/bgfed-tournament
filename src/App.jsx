@@ -8827,6 +8827,7 @@ export default function TournamentManager() {
 
             {view === "pairings" && (
               <>
+                {isAdmin && (
                 <label className="live-toggle">
                   <input
                     type="checkbox"
@@ -8835,6 +8836,7 @@ export default function TournamentManager() {
                   />
                   Update ELO &amp; season standings live, after every round (not just at the end)
                 </label>
+                )}
 
                 <div className="round-pills">
                   {availableRounds.map((r) => (
@@ -8962,7 +8964,7 @@ export default function TournamentManager() {
                         <RotateCcw size={14} /> Redraw this round
                       </button>
                     ) : (
-                      <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)" }}>
+                      <span style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, fontSize: 13, color: "var(--muted)" }}>
                         {round === 1 ? "Delete round 1 and go back to the player list?" : "Discard this round and reopen round " + (round - 1) + "?"}
                         <button className="btn-secondary" onClick={() => setConfirmingRedraw(false)}>Cancel</button>
                         <button

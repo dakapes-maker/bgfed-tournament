@@ -60,11 +60,11 @@ export function StandingsTable({ standings, tiebreaks, L, totalRounds, sideBets,
       <CriteriaNotice summary={L.ttSummary} moreLabel={L.critMore} lessLabel={L.critLess} definitions={L.ttDefs} closing={L.ttHowTo} />
     )}
     <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-      <table>
+      <table className="std-table">
         <thead>
           <tr>
-            <th className="rank" rowSpan={span}>Rank</th>
-            <th rowSpan={span}>Player</th>
+            <th className="rank std-sticky-rank" rowSpan={span}>Rank</th>
+            <th className="std-sticky-name" rowSpan={span}>Player</th>
             {rounds.length > 0 && <th rowSpan={span} title={L.ttRoundsTitle}>{L.ttRounds}</th>}
             <th rowSpan={span} style={{ textAlign: "center" }}>Wins</th>
             {showCols && <th colSpan={4} className="crit-group">{L.ttGroup}</th>}
@@ -88,7 +88,7 @@ export function StandingsTable({ standings, tiebreaks, L, totalRounds, sideBets,
             <React.Fragment key={p.id}>
             <tr>
               <td
-                className="rank"
+                className="rank std-sticky-rank"
                 style={{ whiteSpace: "nowrap", cursor: canOpen ? "pointer" : undefined }}
                 title={p.tie ? tieLines.join(" ") : canOpen ? L.ttRankTitle : undefined}
                 onClick={canOpen ? () => setOpenTie(openTie === p.id ? null : p.id) : undefined}
@@ -96,7 +96,7 @@ export function StandingsTable({ standings, tiebreaks, L, totalRounds, sideBets,
                 {p.rank ?? "—"}{p.shared ? "=" : ""}
                 {p.tie && !p.shared && <span className="tie-mark" aria-label={L.ttBadge}>=</span>}
               </td>
-              <td className="standings-name" style={{ cursor: "pointer" }} onClick={() => onOpenPlayer && onOpenPlayer(normalizeName(p.name))}>
+              <td className="standings-name std-sticky-name" style={{ cursor: "pointer" }} onClick={() => onOpenPlayer && onOpenPlayer(normalizeName(p.name))}>
                 {p.name}
                 {p.withdrawn && <span className="withdrawn-note">{L.ttWithdrawnIn(p.withdrawnRound)}</span>}
               </td>
