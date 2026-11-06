@@ -1,0 +1,330 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 42ff62b..009241a 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -2,7 +2,7 @@
+ 
+ **Hellenic Backgammon Platform** — εφαρμογή διαχείρισης τουρνουά, βαθμολογιών και Πανελλήνιας Κατάταξης ELO για τους συλλόγους backgammon της Ελλάδας, με την υποστήριξη της **Ελληνικής Ομοσπονδίας Backgammon**.
+ Ιδιοκτήτης ο Γιάννης (Πασιάλης)· διαχειριστές με προσωπικούς λογαριασμούς (Google ή email). Γλώσσα επικοινωνίας και UI: **Ελληνικά**.
+-Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-10-24.04`.
++Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-11-06.01`.
+ Διάβασέ το ολόκληρο πριν από κάθε εργασία.
+ 
+ ---
+@@ -80,6 +80,10 @@ src/
+     SeasonFilter.jsx (φίλτρο διοργάνωσης/σεζόν της Βαθμολογίας + αντιγραφή συνδέσμου),
+     OrphanPersonsCard.jsx (Εισαγωγές: παίκτες εισαγωγών που λείπουν από το μητρώο),
+     PlayersCount.jsx (σελίδα «Παίκτες»: γραμμή πλήθους «M από N παίκτες» με τα ενεργά φίλτρα),
++    TopBar.jsx (πάνω μπάρα: κουμπιά σε υπολογιστή, μενού ☰ σε στενή οθόνη· τα ίδια `items` και στα δύο),
++  styles/
++    mobile.js               MOBILE_CSS: κανόνες για στενές οθόνες (≤ 900px μενού ☰, πεδία 16px, καρτέλες με κύλιση·
++                            ≤ 600px μικρότερα περιθώρια)· μπαίνει στο τέλος του <style> του App.jsx για να υπερισχύει
+ firestore.rules             κανόνες Firestore (δημοσιεύονται χειροκίνητα από το console)
+ firebase.json               ρυθμίσεις Emulator (Firestore 8080, Auth 9099) — όχι για deploy
+ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rules)
+@@ -254,5 +258,6 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+   - **Ανοιχτό (εκτός κώδικα):** το Ημερολόγιο της σεζόν 2026-2027 έχει **μόνο μία** αγωνιστική, γι' αυτό η Βαθμολογία γράφει «Αγωνιστική 1 από 1 · Η σεζόν ολοκληρώθηκε»· να προστεθούν οι υπόλοιπες αγωνιστικές (Διοργανώσεις → Πρωτάθλημα Τρικάλων → 2026-2027 → Ημερολόγιο). Πιθανή μικρή βελτίωση κειμένου (επ. 1): «Ολοκληρώθηκαν όλες οι αγωνιστικές του Ημερολογίου» αντί «Η σεζόν ολοκληρώθηκε».
+   - **Ροή για τις επόμενες αγωνιστικές:** Export All Data → ανέβασμα αρχείου → «Πρωτάθλημα Τρικάλων / 2026-2027», διακόπτης «Μετράει στη Βαθμολογία» ενεργός, έλεγχος της στήλης «Ημερολόγιο» → Εισαγωγή όλων → επιβεβαίωση αντιστοίχισης (αυτόματο Recompute Βαθμολογίας) → Recompute ELO. **Όχι** τουρνουά της εφαρμογής για την ίδια αγωνιστική (πιάνει τη θέση στο Ημερολόγιο και δημιουργεί διπλά πρόσωπα).
+ - **Πλήθος παικτών στη σελίδα «Παίκτες»** (build `2026-10-24.04`, επίπεδο 1, σχέδιο `docs/plan-players-count-2026-10-24.md`): απευθείας στο `main`. Κάτω από τα φίλτρα γραμμή `components/PlayersCount.jsx`: «N παίκτες» ή, με φίλτρο συλλόγου/αναζήτηση, «M από N παίκτες · Σύλλογος: … · αναζήτηση: “…”»· N = όσοι φαίνονται χωρίς φίλτρο για τον ίδιο χρήστη (ο διακόπτης φιλοξενούμενων μετράει και στο N). Μηδέν αποτελέσματα: «Κανένας παίκτης δεν ταιριάζει στα φίλτρα». Κείμενα `pc…` στο `config/i18n.js`. Φίλτρα, ταξινόμηση, δεδομένα αμετάβλητα.
++- **Βάση για κινητό** (build `2026-11-06.01`, επίπεδο 1): απευθείας στο `main`. Πάνω μπάρα σε `components/TopBar.jsx`· κάτω από 900px μενού ☰ (πάνελ με τις ίδιες επιλογές + ΕΛ/EN· κλείνει με επιλογή, πάτημα έξω, Esc· κόκκινη κουκκίδα «Σχετικά» και στο ☰)· σύνδεση/λογαριασμός μένουν στη μπάρα (χωρίς email στο κινητό)· «build …» κρυφό. Κανόνες στο `styles/mobile.js`. Υπολογιστής (> 900px) αμετάβλητος. **Επόμενα (ένα build η καθεμία):** τουρνουά σε εξέλιξη (ζευγαρώματα ως κάρτες, κατάταξη με λιγότερες στήλες), Βαθμολογία, Κατάταξη ELO, καρτέλα παίκτη, Ημερολόγιο.
+ - **Εκκρεμότητες εκτός κώδικα:** ο admin του bgfed.gr να επιβεβαιώσει την ανάκληση του WordPress Application Password (βλ. §8).
+ - **Μικρά υπόλοιπα:** τα περισσότερα διορθώθηκαν στο Σ1 (`.13`). Μένει: το `eslint@9.39.5` δεν υποστηρίζεται πια (μόνο εργαλείο ελέγχου).
+diff --git a/src/App.jsx b/src/App.jsx
+index 17ba8fe..1bc3ff6 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -159,6 +159,8 @@ import { StandingsTable } from "./components/StandingsTable.jsx";
+ import { CriteriaNotice } from "./components/CriteriaNotice.jsx";
+ import { PlayersCount } from "./components/PlayersCount.jsx";
+ import { CalendarPage } from "./components/CalendarPage.jsx";
++import { TopBar } from "./components/TopBar.jsx";
++import { MOBILE_CSS } from "./styles/mobile.js";
+ import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
+ import { PlayerTrendCharts } from "./components/charts.jsx";
+ import { MoveToTrashControl, TrashRow } from "./components/trash.jsx";
+@@ -6490,71 +6492,38 @@ export default function TournamentManager() {
+       {/* #endregion Ειδοποιήσεις, πλαίσια σφαλμάτων, διάλογοι επιβεβαίωσης */}
+ 
+       {/* #region Πάνω μπάρα */}
+-      {/* TOP BAR */}
+-      <div className="topbar">
+-        <div className="brand">
+-          {phase !== "dashboard" && (
+-            <button
+-              className="btn-ghost"
+-              onClick={() => (phase === "playerDetail" ? setPhase(playerDetailReturnPhase) : goHome())}
+-              style={{ marginRight: 4 }}
+-            >
+-              <ArrowLeft size={15} />
+-            </button>
+-          )}
+-          HELLENIC BACKGAMMON PLATFORM
+-          <span style={{ fontFamily: "'Source Sans 3', sans-serif", fontWeight: 400, fontSize: 11, color: "var(--muted)", marginLeft: 10, letterSpacing: 0 }}>
+-            build {APP_BUILD_VERSION}
+-          </span>
+-        </div>
+-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+-          <button className="btn-ghost" onClick={() => { setPhase("about"); dismissWhatsNew(); }} style={{ position: "relative" }}>
+-            <Info size={14} /> {L.navAbout}
+-            {hasUnseenUpdate && (
+-              <span
+-                style={{
+-                  position: "absolute", top: -2, right: -6, width: 8, height: 8,
+-                  borderRadius: "50%", background: "#c0392b", border: "1.5px solid var(--card-bg, #fff)",
+-                }}
+-              />
++      {/* TOP BAR — components/TopBar.jsx (μενού ☰ σε στενή οθόνη) */}
++      <TopBar
++        title="HELLENIC BACKGAMMON PLATFORM"
++        buildVersion={APP_BUILD_VERSION}
++        onBack={phase !== "dashboard" ? () => (phase === "playerDetail" ? setPhase(playerDetailReturnPhase) : goHome()) : null}
++        items={[
++          { key: "about", icon: Info, label: L.navAbout, onClick: () => { setPhase("about"); dismissWhatsNew(); }, dot: hasUnseenUpdate },
++          { key: "archive", icon: Trophy, label: L.navTournaments, onClick: () => setPhase("archive") },
++          { key: "calendar", icon: CalendarDays, label: "Ημερολόγιο", onClick: () => setPhase("calendar") },
++          { key: "season", icon: TrendingUp, label: L.navSeason, onClick: () => setPhase("season") },
++          { key: "elo", icon: Award, label: L.navEloNational, onClick: () => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); } },
++          { key: "h2h", icon: Users, label: L.navStats, onClick: () => setPhase("h2h") },
++          ...(isAdminAny
++            ? [
++                { key: "players", icon: Users, label: L.navPlayers, onClick: () => setPhase("players") },
++                { key: "control", icon: Lock, label: L.navControl, onClick: () => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); } },
++              ]
++            : []),
++        ]}
++        langLabel={lang === "el" ? "EN" : "ΕΛ"}
++        onToggleLang={toggleLang}
++        right={
++          <>
++            {!inIframe && !authUser && (
++              <button className="btn-ghost" onClick={() => setShowLogin(true)} style={{ border: "1px solid var(--border)", borderRadius: 20 }}>
++                <Lock size={14} /> Σύνδεση
++              </button>
+             )}
+-          </button>
+-          <button className="btn-ghost" onClick={() => setPhase("archive")}>
+-            <Trophy size={14} /> {L.navTournaments}
+-          </button>
+-          <button className="btn-ghost" onClick={() => setPhase("calendar")}>
+-            <CalendarDays size={14} /> Ημερολόγιο
+-          </button>
+-          <button className="btn-ghost" onClick={() => setPhase("season")}>
+-            <TrendingUp size={14} /> {L.navSeason}
+-          </button>
+-          <button className="btn-ghost" onClick={() => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); }}>
+-            <Award size={14} /> {L.navEloNational}
+-          </button>
+-          <button className="btn-ghost" onClick={() => setPhase("h2h")}>
+-            <Users size={14} /> {L.navStats}
+-          </button>
+-          {isAdminAny && (
+-            <button className="btn-ghost" onClick={() => setPhase("players")}>
+-              <Users size={14} /> {L.navPlayers}
+-            </button>
+-          )}
+-          {isAdminAny && (
+-            <button className="btn-ghost" onClick={() => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); }}>
+-              <Lock size={14} /> {L.navControl}
+-            </button>
+-          )}
+-          <button className="btn-ghost" onClick={toggleLang} title="Switch language" style={{ fontWeight: 700, fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 20 }}>
+-            {lang === "el" ? "EN" : "ΕΛ"}
+-          </button>
+-          {!inIframe && !authUser && (
+-            <button className="btn-ghost" onClick={() => setShowLogin(true)} style={{ border: "1px solid var(--border)", borderRadius: 20 }}>
+-              <Lock size={14} /> Σύνδεση
+-            </button>
+-          )}
+-          {!inIframe && authUser && <AccountMenu email={authUser.email || authUser.uid} onSignOut={logoutAdmin} />}
+-        </div>
+-      </div>
++            {!inIframe && authUser && <AccountMenu email={authUser.email || authUser.uid} onSignOut={logoutAdmin} />}
++          </>
++        }
++      />
+       {/* #endregion Πάνω μπάρα */}
+ 
+       {/* #region Σύνδεση: διάλογος και μηνύματα λογαριασμού */}
+diff --git a/src/components/AccountMenu.jsx b/src/components/AccountMenu.jsx
+index 52160f3..ec172de 100644
+--- a/src/components/AccountMenu.jsx
++++ b/src/components/AccountMenu.jsx
+@@ -5,7 +5,7 @@ import { LogOut, Copy, Check } from "lucide-react";
+ export function AccountMenu({ email, onSignOut }) {
+   return (
+     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+-      <span style={{ fontSize: 12, color: "var(--muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={email}>
++      <span className="account-email" style={{ fontSize: 12, color: "var(--muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={email}>
+         {email}
+       </span>
+       <button className="btn-ghost" onClick={onSignOut} title="Αποσύνδεση">
+diff --git a/src/components/TopBar.jsx b/src/components/TopBar.jsx
+new file mode 100644
+index 0000000..e544503
+--- /dev/null
++++ b/src/components/TopBar.jsx
+@@ -0,0 +1,84 @@
++import { useEffect, useState } from "react";
++import { ArrowLeft, Globe, Menu, X } from "lucide-react";
++
++/**
++ * Πάνω μπάρα της εφαρμογής. Σε υπολογιστή τα κουμπιά πλοήγησης φαίνονται
++ * στη σειρά· σε στενή οθόνη (βλ. styles/mobile.js) μπαίνουν σε μενού ☰.
++ * Τα ίδια `items` τροφοδοτούν και τις δύο προβολές.
++ *
++ * items: [{ key, icon, label, onClick, dot? }]
++ * right: ό,τι μένει πάντα ορατό στη μπάρα (σύνδεση / λογαριασμός).
++ */
++export function TopBar({ title, buildVersion, onBack, items, langLabel, onToggleLang, right }) {
++  const [open, setOpen] = useState(false);
++  const anyDot = items.some((it) => it.dot);
++
++  useEffect(() => {
++    if (!open) return undefined;
++    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
++    window.addEventListener("keydown", onKey);
++    return () => window.removeEventListener("keydown", onKey);
++  }, [open]);
++
++  const choose = (fn) => { setOpen(false); fn(); };
++
++  return (
++    <div className="topbar">
++      <div className="brand">
++        {onBack && (
++          <button className="btn-ghost" onClick={() => { setOpen(false); onBack(); }} style={{ marginRight: 4 }} aria-label="Πίσω">
++            <ArrowLeft size={15} />
++          </button>
++        )}
++        {title}
++        <span className="topbar-build" style={{ fontFamily: "'Source Sans 3', sans-serif", fontWeight: 400, fontSize: 11, color: "var(--muted)", marginLeft: 10, letterSpacing: 0 }}>
++          build {buildVersion}
++        </span>
++      </div>
++
++      <div className="topbar-right">
++        <div className="topbar-nav">
++          {items.map((it) => {
++            const Icon = it.icon;
++            return (
++              <button key={it.key} className="btn-ghost" onClick={it.onClick} style={it.dot !== undefined ? { position: "relative" } : undefined}>
++                <Icon size={14} /> {it.label}
++                {it.dot && <span className="topbar-dot" />}
++              </button>
++            );
++          })}
++          <button className="btn-ghost" onClick={onToggleLang} title="Switch language" style={{ fontWeight: 700, fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 20 }}>
++            {langLabel}
++          </button>
++        </div>
++        {right}
++        <button
++          className="topbar-burger"
++          onClick={() => setOpen((v) => !v)}
++          aria-label="Μενού"
++          aria-expanded={open}
++        >
++          {open ? <X size={20} /> : <Menu size={20} />}
++          {!open && anyDot && <span className="topbar-dot" />}
++        </button>
++      </div>
++
++      <div className={"topbar-scrim" + (open ? " open" : "")} onClick={() => setOpen(false)} />
++      <nav className={"topbar-panel" + (open ? " open" : "")} aria-hidden={!open}>
++        {items.map((it) => {
++          const Icon = it.icon;
++          return (
++            <button key={it.key} className="topbar-panel-item" onClick={() => choose(it.onClick)}>
++              <Icon size={18} /> {it.label}
++              {it.dot && <span className="topbar-dot" />}
++            </button>
++          );
++        })}
++        <div className="topbar-panel-sep" />
++        <button className="topbar-panel-item" onClick={() => choose(onToggleLang)}>
++          <Globe size={18} /> {langLabel === "EN" ? "English" : "Ελληνικά"}
++        </button>
++      </nav>
++    </div>
++  );
++}
+diff --git a/src/config/build.js b/src/config/build.js
+index 7bd919f..0431765 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-10-24.04";
++export const APP_BUILD_VERSION = "2026-11-06.01";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index 4c4458c..fd82e41 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -3,6 +3,9 @@
+ // τεχνικά builds δεν καταγράφονται.
+ // audience: "all" = όλοι, "admin" = μόνο διαχειριστές.
+ export const CHANGELOG = [
++  { date: "2026-11-06", items: [
++    { text: "Η εφαρμογή προσαρμόζεται καλύτερα στο κινητό: νέο μενού ☰ και περισσότερος χώρος στις σελίδες.", audience: "all" },
++  ]},
+   { date: "2026-10-24", items: [
+     { text: "Παίκτες: εμφανίζεται το πλήθος των παικτών, ανάλογα με τα φίλτρα.", audience: "admin" },
+     { text: "Η ένωση δύο προσώπων ενημερώνει και τις εισαγωγές τους (και κρατά τις γραφές πηγών)· νέα κάρτα στις Εισαγωγές για παίκτες εισαγωγών που δεν υπάρχουν πια στο μητρώο.", audience: "admin" },
+diff --git a/src/styles/mobile.js b/src/styles/mobile.js
+new file mode 100644
+index 0000000..c6216e9
+--- /dev/null
++++ b/src/styles/mobile.js
+@@ -0,0 +1,47 @@
++// Κανόνες εμφάνισης για στενές οθόνες (κινητό, tablet όρθιο).
++// Μπαίνουν στο τέλος του <style> του App.jsx, ώστε να υπερισχύουν των
++// γενικών κανόνων. Πάνω από τα 900px η εμφάνιση μένει όπως ήταν.
++export const MOBILE_MENU_MAX = 900;
++
++export const MOBILE_CSS = `
++        /* Πάνω μπάρα: κουμπιά (υπολογιστής) ή μενού ☰ (στενή οθόνη) */
++        .topbar { position: relative; gap: 10px; }
++        .brand { min-width: 0; flex-wrap: wrap; }
++        .topbar-right { display: flex; align-items: center; gap: 14px; }
++        .topbar-nav { display: contents; }
++        .topbar-burger { display: none; position: relative; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink); padding: 0; }
++        .topbar-dot { position: absolute; top: -2px; right: -6px; width: 8px; height: 8px; border-radius: 50%; background: #c0392b; border: 1.5px solid var(--card-bg, #fff); }
++        .topbar-burger .topbar-dot { top: 4px; right: 4px; }
++        .topbar-panel, .topbar-scrim { display: none; }
++
++        @media (max-width: ${MOBILE_MENU_MAX}px) {
++          .topbar-nav { display: none; }
++          .topbar-burger { display: inline-flex; }
++          .topbar-build { display: none; }
++          .account-email { display: none; }
++          .topbar-right { gap: 8px; flex-shrink: 0; }
++          .topbar-scrim.open { display: block; position: fixed; inset: 0; z-index: 140; background: rgba(0,0,0,0.15); }
++          .topbar-panel.open { display: block; position: absolute; top: 100%; left: 0; right: 0; z-index: 150; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: 0 10px 24px rgba(0,0,0,0.12); padding: 6px 0; max-height: calc(100vh - 70px); overflow-y: auto; }
++          .topbar-panel-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0 20px; background: none; border: none; text-align: left; font-size: 16px; font-weight: 600; color: var(--ink); }
++          .topbar-panel-item:hover, .topbar-panel-item:active { background: var(--accent-soft); color: var(--accent); }
++          .topbar-panel-item .topbar-dot { position: static; display: inline-block; margin-left: -4px; }
++          .topbar-panel-sep { height: 1px; background: var(--border); margin: 6px 0; }
++
++          /* Πεδία 16px: κάτω από αυτό το iPhone κάνει zoom όταν πατάς στο πεδίο */
++          .app input[type="text"], .app input[type="number"], .app input[type="date"], .app input[type="email"],
++          .app input[type="password"], .app input[type="search"], .app input:not([type]), .app select, .app textarea { font-size: 16px; }
++
++          /* Καρτέλες σελίδων: οριζόντια κύλιση αντί για σπάσιμο της σελίδας */
++          .tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
++          .tabs::-webkit-scrollbar { display: none; }
++          .tab { white-space: nowrap; flex-shrink: 0; }
++        }
++
++        @media (max-width: 600px) {
++          .topbar { padding: 10px 14px; }
++          .brand { font-size: 12px; }
++          .header { padding: 18px 14px 0 14px; }
++          .content { padding: 18px 14px 48px 14px; }
++          h1 { font-size: 24px; }
++        }
++`;
