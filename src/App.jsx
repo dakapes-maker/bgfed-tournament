@@ -7268,10 +7268,11 @@ export default function TournamentManager() {
           <div className="content">
             <div className="notice" style={{ alignItems: "flex-start" }}>
               <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-              <div>
-                <p style={{ margin: "0 0 6px 0" }}>
+              {/* 2026-11-06: πτυσσόμενο — κλειστό στο κινητό, ανοιχτό στον υπολογιστή */}
+              <details className="elo-howto" open={!(typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 600px)").matches)}>
+                <summary style={{ margin: "0 0 6px 0" }}>
                   <strong>How this is calculated</strong> — a backgammon-specific, match-length-aware Elo, distinct from plain chess Elo:
-                </p>
+                </summary>
                 <p style={{ margin: "0 0 6px 0" }}>
                   Win probability: <code>P = 1 / (1 + 10^(−(Rᴀ−Rʙ)·√N / 2000))</code>, where N = match length (points to win). This shape is well-attested across independent sources tracing to FIBS (the first online backgammon server, 1990s) — longer matches rely more on skill, so a given rating gap implies a bigger edge.
                 </p>
@@ -7281,7 +7282,7 @@ export default function TournamentManager() {
                 <p style={{ margin: 0 }}>
                   Fixed K for every player (no experience-based acceleration). Walkover wins (opponent retired) are excluded entirely — no real backgammon was played. <strong>Caveat:</strong> the win-probability shape is cross-confirmed by multiple sources; the exact constant (4) matches one documented implementation of this family but hasn't been verified against FIBS's original source — treat it as a reasonable, sourced default.
                 </p>
-              </div>
+              </details>
             </div>
 
             <p className="cal-note" style={{ marginBottom: 12 }}>
@@ -7303,12 +7304,12 @@ export default function TournamentManager() {
                 );
               }
               return (
-                <div className="card" style={{ padding: 0 }}>
-                  <table>
+                <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+                  <table className="std-table elo-table">
                     <thead>
                       <tr>
-                        <th className="rank">Rank</th>
-                        <th>Player</th>
+                        <th className="rank std-sticky-rank">Rank</th>
+                        <th className="std-sticky-name">Player</th>
                         <th>Rating</th>
                         <th>Matches</th>
                         <th>Win %<br /><span className="th-sub">(all-time)</span></th>
@@ -7323,8 +7324,8 @@ export default function TournamentManager() {
                         return (
                         <React.Fragment key={p.name}>
                         <tr>
-                          <td className="rank">{i + 1}</td>
-                          <td style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => openPlayerDetail(normalizeName(p.name))}>
+                          <td className="rank std-sticky-rank">{i + 1}</td>
+                          <td className="std-sticky-name" style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => openPlayerDetail(normalizeName(p.name))}>
                             {formatNameForDisplay(p.name, nameDisplayMode)}
                             {(() => {
                               const person = registry.players?.[p.key] || registry.players?.[pk];
@@ -7359,8 +7360,10 @@ export default function TournamentManager() {
                         {open && (
                           <tr className="ledger-row">
                             <td colSpan={7}>
+                              <div className="st-expand-inner">
                               <strong>Πώς προέκυψε η ELO — {formatNameForDisplay(p.name, nameDisplayMode)}</strong>
                               {renderEloLedger(pk)}
+                              </div>
                             </td>
                           </tr>
                         )}

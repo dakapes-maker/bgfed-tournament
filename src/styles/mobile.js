@@ -14,6 +14,10 @@ export const MOBILE_CSS = `
         .topbar-burger .topbar-dot { top: 4px; right: 4px; }
         .topbar-panel, .topbar-scrim { display: none; }
 
+        /* Κατάταξη ELO: πτυσσόμενο πλαίσιο «How this is calculated» */
+        .elo-howto { flex: 1; min-width: 0; }
+        .elo-howto > summary { cursor: pointer; }
+
         @media (max-width: ${MOBILE_MENU_MAX}px) {
           .topbar-nav { display: none; }
           .topbar-burger { display: inline-flex; }
