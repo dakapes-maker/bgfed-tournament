@@ -6363,6 +6363,7 @@ export default function TournamentManager() {
         @media (max-width: 520px) { .details-list { grid-template-columns: 1fr; gap: 2px; } .details-list dd { margin-bottom: 8px; } }
         .field-warning { font-size: 13px; color: #9a5b00; margin: 6px 0 0 0; }
         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        ${MOBILE_CSS}
       `}</style>
       {/* #endregion Στυλ (CSS) */}
 
