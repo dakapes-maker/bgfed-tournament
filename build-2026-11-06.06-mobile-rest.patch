@@ -1,0 +1,147 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 9d20620..f76231e 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -2,7 +2,7 @@
+ 
+ **Hellenic Backgammon Platform** — εφαρμογή διαχείρισης τουρνουά, βαθμολογιών και Πανελλήνιας Κατάταξης ELO για τους συλλόγους backgammon της Ελλάδας, με την υποστήριξη της **Ελληνικής Ομοσπονδίας Backgammon**.
+ Ιδιοκτήτης ο Γιάννης (Πασιάλης)· διαχειριστές με προσωπικούς λογαριασμούς (Google ή email). Γλώσσα επικοινωνίας και UI: **Ελληνικά**.
+-Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-11-06.05`.
++Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-11-06.06`.
+ Διάβασέ το ολόκληρο πριν από κάθε εργασία.
+ 
+ ---
+@@ -259,6 +259,6 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+   - **Ανοιχτό (εκτός κώδικα):** το Ημερολόγιο της σεζόν 2026-2027 έχει **μόνο μία** αγωνιστική, γι' αυτό η Βαθμολογία γράφει «Αγωνιστική 1 από 1 · Η σεζόν ολοκληρώθηκε»· να προστεθούν οι υπόλοιπες αγωνιστικές (Διοργανώσεις → Πρωτάθλημα Τρικάλων → 2026-2027 → Ημερολόγιο). Πιθανή μικρή βελτίωση κειμένου (επ. 1): «Ολοκληρώθηκαν όλες οι αγωνιστικές του Ημερολογίου» αντί «Η σεζόν ολοκληρώθηκε».
+   - **Ροή για τις επόμενες αγωνιστικές:** Export All Data → ανέβασμα αρχείου → «Πρωτάθλημα Τρικάλων / 2026-2027», διακόπτης «Μετράει στη Βαθμολογία» ενεργός, έλεγχος της στήλης «Ημερολόγιο» → Εισαγωγή όλων → επιβεβαίωση αντιστοίχισης (αυτόματο Recompute Βαθμολογίας) → Recompute ELO. **Όχι** τουρνουά της εφαρμογής για την ίδια αγωνιστική (πιάνει τη θέση στο Ημερολόγιο και δημιουργεί διπλά πρόσωπα).
+ - **Πλήθος παικτών στη σελίδα «Παίκτες»** (build `2026-10-24.04`, επίπεδο 1, σχέδιο `docs/plan-players-count-2026-10-24.md`): απευθείας στο `main`. Κάτω από τα φίλτρα γραμμή `components/PlayersCount.jsx`: «N παίκτες» ή, με φίλτρο συλλόγου/αναζήτηση, «M από N παίκτες · Σύλλογος: … · αναζήτηση: “…”»· N = όσοι φαίνονται χωρίς φίλτρο για τον ίδιο χρήστη (ο διακόπτης φιλοξενούμενων μετράει και στο N). Μηδέν αποτελέσματα: «Κανένας παίκτης δεν ταιριάζει στα φίλτρα». Κείμενα `pc…` στο `config/i18n.js`. Φίλτρα, ταξινόμηση, δεδομένα αμετάβλητα.
+-- **Βάση για κινητό** (builds `2026-11-06.01`–`.02`, επίπεδο 1): απευθείας στο `main`. Στο `.01` το `${MOBILE_CSS}` δεν μπήκε στο `<style>` (το import έμεινε αχρησιμοποίητο, το lint δεν το πιάνει — δεν έχει `no-unused-vars`), οπότε σε υπολογιστή φαίνονταν μαζί κουμπιά, ☰ και πάνελ· διορθώθηκε στο `.02`. **Έλεγχος για νέο CSS:** μετά το build, η κλάση πρέπει να υπάρχει στο `dist` (`grep -c <κλάση> dist/assets/*.js`). **Τουρνουά στο κινητό** (build `2026-11-06.03`, επίπεδο 1): στον `StandingsTable` (κλάσεις `std-table`, `std-sticky-rank`, `std-sticky-name`) Θέση και Παίκτης σταθερές αριστερά ≤ 600px, μικρότερα περιθώρια· **όλες οι στήλες κριτηρίων μένουν ορατές** (απόφαση 19/10)· ισχύει και στο ολοκληρωμένο τουρνουά. Κουμπιά της κάρτας αγώνα σε στήλη ≤ 600px· επιβεβαίωση Redraw αναδιπλώνεται· ο διακόπτης live ενημέρωσης μόνο για διαχειριστή. Η διάσπαση της οθόνης (§2.9) αναβλήθηκε: σχεδόν μόνο CSS. **Βαθμολογία στο κινητό** (build `2026-11-06.04`, επίπεδο 1): ίδιες κλάσεις sticky στον πίνακα Βαθμολογίας (`std-table st-table`), με τα χρώματα ζωνών πρόκρισης και στις σταθερές στήλες· ανάπτυγμα παίκτη μέσα στην οθόνη (`st-expand-inner`, sticky με `max-width: calc(100vw - 58px)`), γραμμές αγωνιστικών που αναδιπλώνονται (`st-entry`), υπόμνημα ζωνών με αναδίπλωση· όλες οι στήλες ορατές. **Κατάταξη ELO στο κινητό** (build `2026-11-06.05`, επίπεδο 1): ο πίνακας απέκτησε `overflowX: auto` (πριν έσπρωχνε όλη τη σελίδα), sticky Θέση/Παίκτης (`std-table elo-table`), «Πώς προέκυψε η ELO» μέσα στην οθόνη (`st-expand-inner`)· το πλαίσιο «How this is calculated» είναι `<details>` (`elo-howto`), κλειστό ≤ 600px κατά το άνοιγμα της σελίδας, ανοιχτό στον υπολογιστή. **Υπόλοιπα για κινητό (με σειρά):** καρτέλα παίκτη, Ημερολόγιο, Στατιστικά, Αρχείο τουρνουά, εισαγόμενο τουρνουά (Λίστα/Δέντρο). Οι οθόνες διαχείρισης μένουν για υπολογιστή. Πάνω μπάρα σε `components/TopBar.jsx`· κάτω από 900px μενού ☰ (πάνελ με τις ίδιες επιλογές + ΕΛ/EN· κλείνει με επιλογή, πάτημα έξω, Esc· κόκκινη κουκκίδα «Σχετικά» και στο ☰)· σύνδεση/λογαριασμός μένουν στη μπάρα (χωρίς email στο κινητό)· «build …» κρυφό. Κανόνες στο `styles/mobile.js`. Υπολογιστής (> 900px) αμετάβλητος. **Επόμενα (ένα build η καθεμία):** τουρνουά σε εξέλιξη (ζευγαρώματα ως κάρτες, κατάταξη με λιγότερες στήλες), Βαθμολογία, Κατάταξη ELO, καρτέλα παίκτη, Ημερολόγιο.
++- **Βάση για κινητό** (builds `2026-11-06.01`–`.02`, επίπεδο 1): απευθείας στο `main`. Στο `.01` το `${MOBILE_CSS}` δεν μπήκε στο `<style>` (το import έμεινε αχρησιμοποίητο, το lint δεν το πιάνει — δεν έχει `no-unused-vars`), οπότε σε υπολογιστή φαίνονταν μαζί κουμπιά, ☰ και πάνελ· διορθώθηκε στο `.02`. **Έλεγχος για νέο CSS:** μετά το build, η κλάση πρέπει να υπάρχει στο `dist` (`grep -c <κλάση> dist/assets/*.js`). **Τουρνουά στο κινητό** (build `2026-11-06.03`, επίπεδο 1): στον `StandingsTable` (κλάσεις `std-table`, `std-sticky-rank`, `std-sticky-name`) Θέση και Παίκτης σταθερές αριστερά ≤ 600px, μικρότερα περιθώρια· **όλες οι στήλες κριτηρίων μένουν ορατές** (απόφαση 19/10)· ισχύει και στο ολοκληρωμένο τουρνουά. Κουμπιά της κάρτας αγώνα σε στήλη ≤ 600px· επιβεβαίωση Redraw αναδιπλώνεται· ο διακόπτης live ενημέρωσης μόνο για διαχειριστή. Η διάσπαση της οθόνης (§2.9) αναβλήθηκε: σχεδόν μόνο CSS. **Βαθμολογία στο κινητό** (build `2026-11-06.04`, επίπεδο 1): ίδιες κλάσεις sticky στον πίνακα Βαθμολογίας (`std-table st-table`), με τα χρώματα ζωνών πρόκρισης και στις σταθερές στήλες· ανάπτυγμα παίκτη μέσα στην οθόνη (`st-expand-inner`, sticky με `max-width: calc(100vw - 58px)`), γραμμές αγωνιστικών που αναδιπλώνονται (`st-entry`), υπόμνημα ζωνών με αναδίπλωση· όλες οι στήλες ορατές. **Κατάταξη ELO στο κινητό** (build `2026-11-06.05`, επίπεδο 1): ο πίνακας απέκτησε `overflowX: auto` (πριν έσπρωχνε όλη τη σελίδα), sticky Θέση/Παίκτης (`std-table elo-table`), «Πώς προέκυψε η ELO» μέσα στην οθόνη (`st-expand-inner`)· το πλαίσιο «How this is calculated» είναι `<details>` (`elo-howto`), κλειστό ≤ 600px κατά το άνοιγμα της σελίδας, ανοιχτό στον υπολογιστή. **Υπόλοιπες οθόνες για κινητό** (build `2026-11-06.06`, επίπεδο 1 — με απόφαση του Γιάννη **όλες μαζί σε ένα build**, ως εξαίρεση στο «ένα build = ένα πράγμα», επειδή είναι μόνο εμφάνιση): καρτέλα παίκτη (στοιχεία επικοινωνίας σε μία στήλη, καρτέλες με κύλιση, γραμμές ιστορικού με αναδίπλωση), αρχείο τουρνουά (φίλτρα σε όλο το πλάτος, στοιχεία κάτω από το όνομα), Ημερολόγιο (ο σύλλογος κάτω από τον τίτλο: `cal-row`, `cal-row-text`, `cal-club` στο `CalendarPage.jsx`), εισαγόμενο τουρνουά (λίστα αγώνων με κύλιση· Δέντρο και Excel κυλούσαν ήδη), Πίνακας Ελέγχου σε δύο στήλες· τα πεδία 16px με `!important` (υπερισχύουν και των inline μεγεθών, π.χ. αναζήτηση στα Στατιστικά). Στατιστικά και Σχετικά: χωρίς αλλαγή (χωρούσαν). **Ολοκληρώθηκε η προσαρμογή των δημόσιων οθονών στο κινητό.** Οι οθόνες διαχείρισης μένουν για υπολογιστή. Πάνω μπάρα σε `components/TopBar.jsx`· κάτω από 900px μενού ☰ (πάνελ με τις ίδιες επιλογές + ΕΛ/EN· κλείνει με επιλογή, πάτημα έξω, Esc· κόκκινη κουκκίδα «Σχετικά» και στο ☰)· σύνδεση/λογαριασμός μένουν στη μπάρα (χωρίς email στο κινητό)· «build …» κρυφό. Κανόνες στο `styles/mobile.js`. Υπολογιστής (> 900px) αμετάβλητος. **Επόμενα (ένα build η καθεμία):** τουρνουά σε εξέλιξη (ζευγαρώματα ως κάρτες, κατάταξη με λιγότερες στήλες), Βαθμολογία, Κατάταξη ELO, καρτέλα παίκτη, Ημερολόγιο.
+ - **Εκκρεμότητες εκτός κώδικα:** ο admin του bgfed.gr να επιβεβαιώσει την ανάκληση του WordPress Application Password (βλ. §8).
+ - **Μικρά υπόλοιπα:** τα περισσότερα διορθώθηκαν στο Σ1 (`.13`). Μένει: το `eslint@9.39.5` δεν υποστηρίζεται πια (μόνο εργαλείο ελέγχου).
+diff --git a/src/App.jsx b/src/App.jsx
+index 8b75943..23602b8 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -4142,6 +4142,7 @@ export default function TournamentManager() {
+                   <button key={r} className={`round-pill ${round === r ? "active" : ""}`} onClick={() => setImportView({ ...importView, round: r })}>{roundLabelOf(r)}</button>
+                 ))}
+               </div>
++              <div style={{ overflowX: "auto" }}>
+               <table className="cal-table">
+                 <tbody>
+                   {roundMatches.map((m) => (
+@@ -4154,6 +4155,7 @@ export default function TournamentManager() {
+                   ))}
+                 </tbody>
+               </table>
++              </div>
+               </>
+               )}
+               {inBracket.some((m) => m.scoreRecorded === false && m.method !== "retirement") && (
+@@ -7582,7 +7584,7 @@ export default function TournamentManager() {
+               </div>
+ 
+               {playerDetailTab === "contact" && isAdmin && (
+-                <div className="card" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
++                <div className="card pd-contact-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
+                   <div>
+                     <label>Name</label>
+                     <input
+diff --git a/src/components/CalendarPage.jsx b/src/components/CalendarPage.jsx
+index b244f19..33e52da 100644
+--- a/src/components/CalendarPage.jsx
++++ b/src/components/CalendarPage.jsx
+@@ -114,6 +114,7 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
+               return (
+                 <div
+                   key={`${i.seasonId}-${i.id}`}
++                  className="cal-row"
+                   onClick={canOpen ? () => onOpenTournament(i.tournament) : undefined}
+                   style={{ display: "flex", gap: 12, alignItems: "center", padding: "8px 10px", margin: "4px 0", background: "var(--surface, #fff)", borderRadius: 8, borderLeft: `5px solid ${col}`, opacity: past ? 0.6 : 1, cursor: canOpen ? "pointer" : "default", boxShadow: "0 1px 0 var(--border)" }}
+                 >
+@@ -121,7 +122,7 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
+                     <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase" }}>{wd}</div>
+                     <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{dd}</div>
+                   </div>
+-                  <div style={{ flex: 1, minWidth: 0 }}>
++                  <div className="cal-row-text" style={{ flex: 1, minWidth: 0 }}>
+                     <div style={{ fontWeight: 600 }}>
+                       {i.title}
+                       {i.status === "done" && <span style={{ color: "var(--win)", marginLeft: 6 }}>✓</span>}
+@@ -132,7 +133,7 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
+                       {i.note ? ` · ${i.note}` : ""}
+                     </div>
+                   </div>
+-                  <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: "2px 9px", whiteSpace: "nowrap" }}>
++                  <span className="cal-club" style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: "2px 9px", whiteSpace: "nowrap" }}>
+                     {clubDisplay(sys, i.clubId, "—")}
+                   </span>
+                 </div>
+diff --git a/src/config/build.js b/src/config/build.js
+index d17aa34..c5f6b79 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-11-06.05";
++export const APP_BUILD_VERSION = "2026-11-06.06";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index 0175a33..fe45c30 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -4,6 +4,7 @@
+ // audience: "all" = όλοι, "admin" = μόνο διαχειριστές.
+ export const CHANGELOG = [
+   { date: "2026-11-06", items: [
++    { text: "Κινητό: καλύτερη εμφάνιση στην καρτέλα παίκτη, στο Ημερολόγιο, στο αρχείο τουρνουά, στα εισαγόμενα τουρνουά και στον Πίνακα Ελέγχου.", audience: "all" },
+     { text: "Κατάταξη ELO: εμφανίζεται σωστά στο κινητό — ο πίνακας κυλάει χωρίς να μετακινείται η σελίδα, με σταθερό το όνομα του παίκτη· η εξήγηση του υπολογισμού ανοίγει με πάτημα.", audience: "all" },
+     { text: "Βαθμολογία: στο κινητό το όνομα του παίκτη μένει ορατό όσο κυλάς τον πίνακα, και η ανάλυση ανά αγωνιστική χωράει στην οθόνη.", audience: "all" },
+     { text: "Τουρνουά: στο κινητό η κατάταξη κρατά ορατό το όνομα του παίκτη όσο κυλάς τον πίνακα· πιο άνετα κουμπιά καταχώρησης αποτελέσματος.", audience: "all" },
+diff --git a/src/styles/mobile.js b/src/styles/mobile.js
+index c86cec3..11be5c0 100644
+--- a/src/styles/mobile.js
++++ b/src/styles/mobile.js
+@@ -33,7 +33,7 @@ export const MOBILE_CSS = `
+ 
+           /* Πεδία 16px: κάτω από αυτό το iPhone κάνει zoom όταν πατάς στο πεδίο */
+           .app input[type="text"], .app input[type="number"], .app input[type="date"], .app input[type="email"],
+-          .app input[type="password"], .app input[type="search"], .app input:not([type]), .app select, .app textarea { font-size: 16px; }
++          .app input[type="password"], .app input[type="search"], .app input:not([type]), .app select, .app textarea { font-size: 16px !important; }
+ 
+           /* Καρτέλες σελίδων: οριζόντια κύλιση αντί για σπάσιμο της σελίδας */
+           .tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+@@ -58,6 +58,28 @@ export const MOBILE_CSS = `
+           .st-entry .entry-breakdown { flex-wrap: wrap; gap: 4px 10px; }
+           .qual-row { flex-wrap: wrap; white-space: normal; }
+ 
++          /* Καρτέλα παίκτη */
++          .pd-contact-grid { grid-template-columns: 1fr !important; gap: 12px !important; }
++          .detail-tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
++          .detail-tabs::-webkit-scrollbar { display: none; }
++          .detail-tab { white-space: nowrap; flex-shrink: 0; }
++          .history-row { flex-wrap: wrap; gap: 2px 10px; }
++
++          /* Αρχείο τουρνουά: φίλτρα σε όλο το πλάτος, στοιχεία κάτω από το όνομα */
++          .filters > * { flex: 1 1 100%; min-width: 0 !important; width: auto !important; }
++          .archive-row { flex-direction: column; align-items: flex-start; gap: 4px; }
++          .archive-meta { flex-wrap: wrap; gap: 4px 10px; }
++
++          /* Ημερολόγιο: ο σύλλογος κάτω από τον τίτλο της αγωνιστικής */
++          .cal-row { flex-wrap: wrap; row-gap: 6px; }
++          .cal-row-text { flex-basis: calc(100% - 56px) !important; }
++          .cal-club { margin-left: 56px; }
++
++          /* Πίνακας Ελέγχου: κάρτες σε δύο στήλες */
++          .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
++          .dashboard-card { padding: 14px; }
++          .dashboard-card-title { font-size: 16px; }
++
+           /* Κάρτα αγώνα (διαχειριστής): κουμπιά το ένα κάτω από το άλλο */
+           .match-actions { flex-direction: column; gap: 8px; }
+           .retire-row { flex-direction: column; align-items: stretch; gap: 4px; }
