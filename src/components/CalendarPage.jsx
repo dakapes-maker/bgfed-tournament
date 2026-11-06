@@ -114,6 +114,7 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
               return (
                 <div
                   key={`${i.seasonId}-${i.id}`}
+                  className="cal-row"
                   onClick={canOpen ? () => onOpenTournament(i.tournament) : undefined}
                   style={{ display: "flex", gap: 12, alignItems: "center", padding: "8px 10px", margin: "4px 0", background: "var(--surface, #fff)", borderRadius: 8, borderLeft: `5px solid ${col}`, opacity: past ? 0.6 : 1, cursor: canOpen ? "pointer" : "default", boxShadow: "0 1px 0 var(--border)" }}
                 >
@@ -121,7 +122,7 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
                     <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase" }}>{wd}</div>
                     <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.1 }}>{dd}</div>
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="cal-row-text" style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600 }}>
                       {i.title}
                       {i.status === "done" && <span style={{ color: "var(--win)", marginLeft: 6 }}>✓</span>}
@@ -132,7 +133,7 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
                       {i.note ? ` · ${i.note}` : ""}
                     </div>
                   </div>
-                  <span style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: "2px 9px", whiteSpace: "nowrap" }}>
+                  <span className="cal-club" style={{ flexShrink: 0, fontSize: 12, fontWeight: 600, color: col, border: `1px solid ${col}`, borderRadius: 999, padding: "2px 9px", whiteSpace: "nowrap" }}>
                     {clubDisplay(sys, i.clubId, "—")}
                   </span>
                 </div>

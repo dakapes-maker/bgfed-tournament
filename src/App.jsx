@@ -4142,6 +4142,7 @@ export default function TournamentManager() {
                   <button key={r} className={`round-pill ${round === r ? "active" : ""}`} onClick={() => setImportView({ ...importView, round: r })}>{roundLabelOf(r)}</button>
                 ))}
               </div>
+              <div style={{ overflowX: "auto" }}>
               <table className="cal-table">
                 <tbody>
                   {roundMatches.map((m) => (
@@ -4154,6 +4155,7 @@ export default function TournamentManager() {
                   ))}
                 </tbody>
               </table>
+              </div>
               </>
               )}
               {inBracket.some((m) => m.scoreRecorded === false && m.method !== "retirement") && (
@@ -7582,7 +7584,7 @@ export default function TournamentManager() {
               </div>
 
               {playerDetailTab === "contact" && isAdmin && (
-                <div className="card" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
+                <div className="card pd-contact-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
                   <div>
                     <label>Name</label>
                     <input
