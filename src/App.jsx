@@ -159,6 +159,8 @@ import { StandingsTable } from "./components/StandingsTable.jsx";
 import { CriteriaNotice } from "./components/CriteriaNotice.jsx";
 import { PlayersCount } from "./components/PlayersCount.jsx";
 import { CalendarPage } from "./components/CalendarPage.jsx";
+import { TopBar } from "./components/TopBar.jsx";
+import { MOBILE_CSS } from "./styles/mobile.js";
 import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
 import { PlayerTrendCharts } from "./components/charts.jsx";
 import { MoveToTrashControl, TrashRow } from "./components/trash.jsx";
@@ -6490,71 +6492,38 @@ export default function TournamentManager() {
       {/* #endregion Ειδοποιήσεις, πλαίσια σφαλμάτων, διάλογοι επιβεβαίωσης */}
 
       {/* #region Πάνω μπάρα */}
-      {/* TOP BAR */}
-      <div className="topbar">
-        <div className="brand">
-          {phase !== "dashboard" && (
-            <button
-              className="btn-ghost"
-              onClick={() => (phase === "playerDetail" ? setPhase(playerDetailReturnPhase) : goHome())}
-              style={{ marginRight: 4 }}
-            >
-              <ArrowLeft size={15} />
-            </button>
-          )}
-          HELLENIC BACKGAMMON PLATFORM
-          <span style={{ fontFamily: "'Source Sans 3', sans-serif", fontWeight: 400, fontSize: 11, color: "var(--muted)", marginLeft: 10, letterSpacing: 0 }}>
-            build {APP_BUILD_VERSION}
-          </span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <button className="btn-ghost" onClick={() => { setPhase("about"); dismissWhatsNew(); }} style={{ position: "relative" }}>
-            <Info size={14} /> {L.navAbout}
-            {hasUnseenUpdate && (
-              <span
-                style={{
-                  position: "absolute", top: -2, right: -6, width: 8, height: 8,
-                  borderRadius: "50%", background: "#c0392b", border: "1.5px solid var(--card-bg, #fff)",
-                }}
-              />
+      {/* TOP BAR — components/TopBar.jsx (μενού ☰ σε στενή οθόνη) */}
+      <TopBar
+        title="HELLENIC BACKGAMMON PLATFORM"
+        buildVersion={APP_BUILD_VERSION}
+        onBack={phase !== "dashboard" ? () => (phase === "playerDetail" ? setPhase(playerDetailReturnPhase) : goHome()) : null}
+        items={[
+          { key: "about", icon: Info, label: L.navAbout, onClick: () => { setPhase("about"); dismissWhatsNew(); }, dot: hasUnseenUpdate },
+          { key: "archive", icon: Trophy, label: L.navTournaments, onClick: () => setPhase("archive") },
+          { key: "calendar", icon: CalendarDays, label: "Ημερολόγιο", onClick: () => setPhase("calendar") },
+          { key: "season", icon: TrendingUp, label: L.navSeason, onClick: () => setPhase("season") },
+          { key: "elo", icon: Award, label: L.navEloNational, onClick: () => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); } },
+          { key: "h2h", icon: Users, label: L.navStats, onClick: () => setPhase("h2h") },
+          ...(isAdminAny
+            ? [
+                { key: "players", icon: Users, label: L.navPlayers, onClick: () => setPhase("players") },
+                { key: "control", icon: Lock, label: L.navControl, onClick: () => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); } },
+              ]
+            : []),
+        ]}
+        langLabel={lang === "el" ? "EN" : "ΕΛ"}
+        onToggleLang={toggleLang}
+        right={
+          <>
+            {!inIframe && !authUser && (
+              <button className="btn-ghost" onClick={() => setShowLogin(true)} style={{ border: "1px solid var(--border)", borderRadius: 20 }}>
+                <Lock size={14} /> Σύνδεση
+              </button>
             )}
-          </button>
-          <button className="btn-ghost" onClick={() => setPhase("archive")}>
-            <Trophy size={14} /> {L.navTournaments}
-          </button>
-          <button className="btn-ghost" onClick={() => setPhase("calendar")}>
-            <CalendarDays size={14} /> Ημερολόγιο
-          </button>
-          <button className="btn-ghost" onClick={() => setPhase("season")}>
-            <TrendingUp size={14} /> {L.navSeason}
-          </button>
-          <button className="btn-ghost" onClick={() => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); }}>
-            <Award size={14} /> {L.navEloNational}
-          </button>
-          <button className="btn-ghost" onClick={() => setPhase("h2h")}>
-            <Users size={14} /> {L.navStats}
-          </button>
-          {isAdminAny && (
-            <button className="btn-ghost" onClick={() => setPhase("players")}>
-              <Users size={14} /> {L.navPlayers}
-            </button>
-          )}
-          {isAdminAny && (
-            <button className="btn-ghost" onClick={() => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); }}>
-              <Lock size={14} /> {L.navControl}
-            </button>
-          )}
-          <button className="btn-ghost" onClick={toggleLang} title="Switch language" style={{ fontWeight: 700, fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 20 }}>
-            {lang === "el" ? "EN" : "ΕΛ"}
-          </button>
-          {!inIframe && !authUser && (
-            <button className="btn-ghost" onClick={() => setShowLogin(true)} style={{ border: "1px solid var(--border)", borderRadius: 20 }}>
-              <Lock size={14} /> Σύνδεση
-            </button>
-          )}
-          {!inIframe && authUser && <AccountMenu email={authUser.email || authUser.uid} onSignOut={logoutAdmin} />}
-        </div>
-      </div>
+            {!inIframe && authUser && <AccountMenu email={authUser.email || authUser.uid} onSignOut={logoutAdmin} />}
+          </>
+        }
+      />
       {/* #endregion Πάνω μπάρα */}
 
       {/* #region Σύνδεση: διάλογος και μηνύματα λογαριασμού */}

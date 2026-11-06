@@ -5,7 +5,7 @@ import { LogOut, Copy, Check } from "lucide-react";
 export function AccountMenu({ email, onSignOut }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-      <span style={{ fontSize: 12, color: "var(--muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={email}>
+      <span className="account-email" style={{ fontSize: 12, color: "var(--muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={email}>
         {email}
       </span>
       <button className="btn-ghost" onClick={onSignOut} title="Αποσύνδεση">
