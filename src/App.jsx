@@ -7137,11 +7137,11 @@ export default function TournamentManager() {
               </div>
             ) : (
                 <div className="card" style={{ padding: 0, overflowX: "auto" }}>
-                  <table>
+                  <table className="std-table st-table">
                     <thead>
                       <tr>
-                        <th className="rank">{L.thRank}</th>
-                        <th>{L.thPlayer}</th>
+                        <th className="rank std-sticky-rank">{L.thRank}</th>
+                        <th className="std-sticky-name">{L.thPlayer}</th>
                         <th>{L.thEvents}</th>
                         <th>{L.thPoints}<br /><span className="th-sub">{L.thBest(rules.bestOf)}</span></th>
                         <th>{L.thTotal}<br /><span className="th-sub">{L.thAllEvents}</span></th>
@@ -7161,11 +7161,11 @@ export default function TournamentManager() {
                             style={{ cursor: "pointer" }}
                             onClick={() => setExpandedPlayer(expandedPlayer === p.name ? null : p.name)}
                           >
-                            <td className="rank" style={{ whiteSpace: "nowrap" }}>
+                            <td className="rank std-sticky-rank" style={{ whiteSpace: "nowrap" }}>
                               {rank}
                               {p.tie && <span className="tie-mark" title={tieExplanation(p, L, lang, rules.bestOf).join(" ")} aria-label={L.tieBadge}>=</span>}
                             </td>
-                            <td className="standings-name" style={{ cursor: "pointer" }} onClick={() => openPlayerDetail(normalizeName(p.name))}>{p.name}</td>
+                            <td className="standings-name std-sticky-name" style={{ cursor: "pointer" }} onClick={() => openPlayerDetail(normalizeName(p.name))}>{p.name}</td>
                             <td>{p.eventsPlayed}</td>
                             <td><strong>{p.total}</strong></td>
                             <td>{p.sumAll}</td>
@@ -7179,6 +7179,7 @@ export default function TournamentManager() {
                           {expandedPlayer === p.name && (
                             <tr>
                               <td colSpan={9} style={{ background: "var(--bg)", padding: "10px 14px" }}>
+                                <div className="st-expand-inner">
                                 {p.tie && (
                                   <div className="tie-explain">
                                     {tieExplanation(p, L, lang, rules.bestOf).map((line, k) => <p key={k}>{line}</p>)}
@@ -7187,6 +7188,7 @@ export default function TournamentManager() {
                                 {p.entries.map((e) => (
                                   <div
                                     key={e.tournamentId}
+                                    className="st-entry"
                                     style={{
                                       display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, padding: "6px 0",
                                       borderBottom: "1px solid var(--border)",
@@ -7213,6 +7215,7 @@ export default function TournamentManager() {
                                     </span>
                                   </div>
                                 ))}
+                                </div>
                               </td>
                             </tr>
                           )}
