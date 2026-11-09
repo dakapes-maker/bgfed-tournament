@@ -19,30 +19,30 @@ export function CalcuttaTab({ players, totalRounds, entries, onAdd, onRemove }) 
     <>
       <div className="notice">
         <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-        <span>A separate pool from the official prize pool. Record who bought each player and for how much — the pool is paid out to whoever bought the eventual tournament winner(s), split evenly on a tie.</span>
+        <span>Ξεχωριστό ταμείο από τα επίσημα έπαθλα. Κατάγραψε ποιος αγόρασε κάθε παίκτη και με πόσα — το ταμείο πληρώνεται σε όποιον αγόρασε τον νικητήhoever bought the eventual tournament winner(s), split evenly on a tie.</span>
       </div>
 
       <div className="finance-summary">
         <div className="finance-stat">
-          <span className="finance-stat-label">Calcutta pool</span>
+          <span className="finance-stat-label">Ταμείο Calcutta</span>
           <span className="finance-stat-value">{result.pool}€</span>
         </div>
         <div className="finance-stat">
-          <span className="finance-stat-label">Players sold</span>
+          <span className="finance-stat-label">Παίκτες που πουλήθηκαν</span>
           <span className="finance-stat-value">{entries.length}</span>
         </div>
       </div>
 
       <div className="card">
-        <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Result</p>
+        <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Αποτέλεσμα</p>
         {result.winners.length === 0 ? (
-          <p style={{ color: "var(--muted)", fontSize: 14 }}>No completed winner yet.</p>
+          <p style={{ color: "var(--muted)", fontSize: 14 }}>Δεν υπάρχει ακόμη νικητής.</p>
         ) : (
           result.payouts.map((p) => (
             <div key={p.player.id} className="finance-row">
               <span>
                 <span className="prize-badge win">{totalRounds}/{totalRounds}</span> {p.player.name}
-                {p.sold ? <> — bought by <strong>{p.buyer}</strong></> : <span style={{ color: "var(--muted)" }}> — not sold</span>}
+                {p.sold ? <> — αγοράστηκε από <strong>{p.buyer}</strong></> : <span style={{ color: "var(--muted)" }}> — δεν πουλήθηκε</span>}
               </span>
               <strong>{p.sold ? `${p.amount.toFixed(2)}€` : "—"}</strong>
             </div>
@@ -51,8 +51,8 @@ export function CalcuttaTab({ players, totalRounds, entries, onAdd, onRemove }) 
       </div>
 
       <div className="card">
-        <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Entries</p>
-        {entries.length === 0 && <p style={{ color: "var(--muted)", fontSize: 14 }}>No players sold yet.</p>}
+        <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Καταχωρίσεις</p>
+        {entries.length === 0 && <p style={{ color: "var(--muted)", fontSize: 14 }}>Δεν έχουν πουληθεί ακόμη παίκτες.</p>}
         {entries.map((e) => (
           <div key={e.id} className="finance-row">
             <span>{playersById[e.playerId]?.name || "Unknown"} <span style={{ color: "var(--muted)", fontSize: 12 }}>— {e.buyer}</span></span>
@@ -66,14 +66,14 @@ export function CalcuttaTab({ players, totalRounds, entries, onAdd, onRemove }) 
         <div className="row" style={{ marginTop: 16, alignItems: "center" }}>
           <div style={{ width: 200 }}>
             <select value={selectedPlayerId} onChange={(e) => setSelectedPlayerId(e.target.value)} style={{ width: "100%" }}>
-              <option value="">Select player…</option>
+              <option value="">Επιλογή παίκτη…</option>
               {availablePlayers.map((p) => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
           </div>
           <div className="field">
-            <input type="text" value={buyer} onChange={(e) => setBuyer(e.target.value)} placeholder="Buyer name" />
+            <input type="text" value={buyer} onChange={(e) => setBuyer(e.target.value)} placeholder="Όνομα αγοραστή" />
           </div>
           <div style={{ width: 90 }}>
             <input type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value) || 0)} placeholder="€" />
@@ -110,7 +110,7 @@ export function FinanceTab({
     <>
       <div className="finance-summary">
         <div className="finance-stat">
-          <span className="finance-stat-label">Total collected</span>
+          <span className="finance-stat-label">Συνολικά εισπράχθηκαν</span>
           <span className="finance-stat-value">{f.totalCollected}€</span>
         </div>
         <div className="finance-stat">
@@ -118,15 +118,15 @@ export function FinanceTab({
           <span className="finance-stat-value">{f.federationTotal}€</span>
         </div>
         <div className="finance-stat">
-          <span className="finance-stat-label">Venue</span>
+          <span className="finance-stat-label">Χώρος</span>
           <span className="finance-stat-value">{f.venueTotal}€</span>
         </div>
         <div className="finance-stat">
-          <span className="finance-stat-label">Prize pool</span>
+          <span className="finance-stat-label">Ταμείο επάθλων</span>
           <span className="finance-stat-value">{f.prizePool}€</span>
         </div>
         <div className="finance-stat">
-          <span className="finance-stat-label">Side bets total</span>
+          <span className="finance-stat-label">Σύνολο side bets</span>
           <span className="finance-stat-value">{sideBetsTotal}€</span>
         </div>
       </div>
@@ -142,15 +142,15 @@ export function FinanceTab({
       )}
 
       <div className="card">
-        <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Winners</p>
+        <p style={{ margin: "0 0 12px 0", fontWeight: 600 }}>Νικητές</p>
         {f.runnerUps.length === 0 && f.perfects.length === 0 && sideBets.every((b) => computeSideBetResult(b, playersById).winners.length === 0) ? (
-          <p style={{ color: "var(--muted)", fontSize: 14 }}>No results to pay out yet.</p>
+          <p style={{ color: "var(--muted)", fontSize: 14 }}>Δεν υπάρχουν ακόμη αποτελέσματα για πληρωμή.</p>
         ) : (
           <div className="winners-columns">
             <div>
-              <p className="winners-col-label">Tournament</p>
+              <p className="winners-col-label">Τουρνουά</p>
               {f.perfects.length === 0 && f.runnerUps.length === 0 && (
-                <p style={{ color: "var(--muted)", fontSize: 13 }}>No results yet.</p>
+                <p style={{ color: "var(--muted)", fontSize: 13 }}>Δεν υπάρχουν ακόμη αποτελέσματα.</p>
               )}
               {f.perfects.map((p) => (
                 <div key={`pf-${p.id}`} className="finance-row">
@@ -177,7 +177,7 @@ export function FinanceTab({
             <div>
               <p className="winners-col-label">Side bets</p>
               {sideBets.every((b) => computeSideBetResult(b, playersById).winners.length === 0) && (
-                <p style={{ color: "var(--muted)", fontSize: 13 }}>No results yet.</p>
+                <p style={{ color: "var(--muted)", fontSize: 13 }}>Δεν υπάρχουν ακόμη αποτελέσματα.</p>
               )}
               {sideBets.map((bet) => {
                 const result = computeSideBetResult(bet, playersById);
@@ -197,9 +197,9 @@ export function FinanceTab({
         <table>
           <thead>
             <tr>
-              <th>Player</th>
+              <th>Παίκτης</th>
               <th>Buy-in</th>
-              {isAdmin && <th>Discount</th>}
+              {isAdmin && <th>Έκπτωση</th>}
             </tr>
           </thead>
           <tbody>
@@ -261,7 +261,7 @@ export function SideBetsSection({ players, sideBets, onAdd, onRemove, onTogglePa
                 value={bet.amountPerPlayer}
                 onChange={(e) => onChangeAmount(bet.id, Number(e.target.value) || 0)}
               />
-              <span style={{ fontSize: 13, color: "var(--muted)" }}>per player</span>
+              <span style={{ fontSize: 13, color: "var(--muted)" }}>ανά παίκτη</span>
               <button className="btn-ghost" onClick={() => onRemove(bet.id)}><X size={14} /></button>
             </span>
           </div>
@@ -270,7 +270,7 @@ export function SideBetsSection({ players, sideBets, onAdd, onRemove, onTogglePa
 
       <div className="row" style={{ marginTop: 16 }}>
         <div className="field">
-          <input type="text" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Label (e.g. 'The regulars')" />
+          <input type="text" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="Όνομα (π.χ. «Οι τακτικοί»)" />
         </div>
         <div style={{ width: 90 }}>
           <input type="number" value={newAmount} onChange={(e) => setNewAmount(Number(e.target.value) || 0)} placeholder="€" />
@@ -283,7 +283,7 @@ export function SideBetsSection({ players, sideBets, onAdd, onRemove, onTogglePa
             setNewAmount(40);
           }}
         >
-          <Plus size={15} /> Add side bet
+          <Plus size={15} /> Προσθήκη side bet
         </button>
       </div>
     </div>

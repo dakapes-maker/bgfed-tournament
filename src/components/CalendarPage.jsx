@@ -1,3 +1,4 @@
+import { useL, dateLocale } from "../config/langContext.js";
 import React, { useMemo, useState } from "react";
 import { buildCalendarView, calendarEntryTitle, todayYMD } from "../lib/calendar.js";
 import { competitionsFrom } from "../lib/competitions.js";
@@ -8,10 +9,9 @@ import { seasonCompetitionId, seasonName } from "../lib/seasonRegistry.js";
  * match days, from the season calendars already in the system document, so
  * it costs no database read. Grouped by month; each club has its colour. */
 
-const MONTHS = ["Ιανουάριος", "Φεβρουάριος", "Μάρτιος", "Απρίλιος", "Μάιος", "Ιούνιος", "Ιούλιος", "Αύγουστος", "Σεπτέμβριος", "Οκτώβριος", "Νοέμβριος", "Δεκέμβριος"];
-const WEEKDAYS = ["Κυρ", "Δευ", "Τρί", "Τετ", "Πέμ", "Παρ", "Σάβ"];
 
 export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
+  const L = useL();
   const [clubFilter, setClubFilter] = useState([]); // empty = all clubs
   const [compFilter, setCompFilter] = useState("all");
   const [showPast, setShowPast] = useState(false);
@@ -62,7 +62,7 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
     <div className="calendar-page">
       <div className="card" style={{ padding: "12px 14px", marginBottom: 16 }}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 13, color: "var(--muted)", marginRight: 4 }}>Σύλλογος:</span>
+          <span style={{ fontSize: 13, color: "var(--muted)", marginRight: 4 }}>{L.pcClub}:</span>
           {clubsInUse.map((c) => {
             const on = clubFilter.length === 0 || clubFilter.includes(c.id);
             const col = clubColor(sys, c.id);
@@ -77,25 +77,25 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
             );
           })}
           {clubFilter.length > 0 && (
-            <button className="btn-ghost" style={{ fontSize: 13, padding: "2px 6px" }} onClick={() => setClubFilter([])}>όλοι</button>
+            <button className="btn-ghost" style={{ fontSize: 13, padding: "2px 6px" }} onClick={() => setClubFilter([])}>{L.calAllClubs}</button>
           )}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", marginTop: 10 }}>
           <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 14 }}>
-            Διοργάνωση:
+            {L.stCompetition}:
             <select value={compFilter} onChange={(e) => setCompFilter(e.target.value)} style={{ fontSize: 14, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
-              <option value="all">Όλες</option>
+              <option value="all">{L.allF}</option>
               {compsInUse.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
           <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 14 }}>
-            <input type="checkbox" checked={showPast} onChange={(e) => setShowPast(e.target.checked)} /> και παλαιότερες
+            <input type="checkbox" checked={showPast} onChange={(e) => setShowPast(e.target.checked)} /> {L.calShowPast}
           </label>
         </div>
       </div>
 
       {groups.length === 0 && (
-        <div className="empty-state">Δεν υπάρχουν {showPast ? "" : "επερχόμενες "}αγωνιστικές για τα φίλτρα που επέλεξες.</div>
+        <div className="empty-state">{showPast ? L.calNoneAll : L.calNoneUpcoming}</div>
       )}
 
       {groups.map((g) => {
@@ -103,11 +103,11 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
         return (
           <section key={g.key} style={{ marginBottom: 22 }}>
             <h3 style={{ fontFamily: "'Literata', Georgia, serif", fontSize: 18, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--accent)", borderBottom: "2px solid var(--accent)", paddingBottom: 4, margin: "0 0 8px 0" }}>
-              {MONTHS[m - 1]} {y}
+              {new Date(y, m - 1, 1).toLocaleDateString(dateLocale(L), { month: "long" })} {y}
             </h3>
             {g.rows.map((i) => {
               const [yy, mm, dd] = i.effectiveDate.split("-").map(Number);
-              const wd = WEEKDAYS[new Date(yy, mm - 1, dd).getDay()];
+              const wd = new Date(yy, mm - 1, dd).toLocaleDateString(dateLocale(L), { weekday: "short" }).replace(/\.$/, "");
               const col = clubColor(sys, i.clubId);
               const past = i.status === "done" || i.status === "missed";
               const canOpen = !!i.tournament && (i.status === "done" || i.status === "live");
@@ -126,10 +126,10 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
                     <div style={{ fontWeight: 600 }}>
                       {i.title}
                       {i.status === "done" && <span style={{ color: "var(--win)", marginLeft: 6 }}>✓</span>}
-                      {i.status === "live" && <span style={{ color: "var(--accent)", marginLeft: 6, fontSize: 12, fontWeight: 700 }}>● σε εξέλιξη</span>}
+                      {i.status === "live" && <span style={{ color: "var(--accent)", marginLeft: 6, fontSize: 12, fontWeight: 700 }}>● {L.tInProgress}</span>}
                     </div>
                     <div style={{ fontSize: 13, color: "var(--muted)" }}>
-                      {i.compName} · σεζόν {i.seasonLabel}
+                      {i.compName} · {L.stSeason} {i.seasonLabel}
                       {i.note ? ` · ${i.note}` : ""}
                     </div>
                   </div>

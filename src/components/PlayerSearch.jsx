@@ -1,3 +1,4 @@
+import { useL } from "../config/langContext.js";
 import { useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
 
@@ -13,6 +14,7 @@ function fold(s) {
  */
 export function PlayerSearch({ players, onOpen, autoFocus = false, onDone, className = "" }) {
   const [q, setQ] = useState("");
+  const L = useL();
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);
   const blurTimer = useRef(null);
@@ -50,12 +52,12 @@ export function PlayerSearch({ players, onOpen, autoFocus = false, onDone, class
     <div className={"player-search " + className}>
       <label className="player-search-field">
         <Search size={16} aria-hidden="true" />
-        <span className="sr-only">Αναζήτηση παίκτη</span>
+        <span className="sr-only">{L.searchLabel}</span>
         <input
           type="search"
           value={q}
           autoFocus={autoFocus}
-          placeholder="Βρες παίκτη…"
+          placeholder={L.searchPlaceholder}
           autoComplete="off"
           role="combobox"
           aria-expanded={open && results.length > 0}
@@ -68,7 +70,7 @@ export function PlayerSearch({ players, onOpen, autoFocus = false, onDone, class
       </label>
       {open && q.trim() && (
         <ul className="player-search-list" id="player-search-list" role="listbox">
-          {results.length === 0 && <li className="player-search-empty">Δεν βρέθηκε παίκτης</li>}
+          {results.length === 0 && <li className="player-search-empty">{L.searchNone}</li>}
           {results.map((p, i) => (
             <li key={p.key} role="option" aria-selected={i === hi}>
               <button

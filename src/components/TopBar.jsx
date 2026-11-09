@@ -1,3 +1,4 @@
+import { useL } from "../config/langContext.js";
 import { useState } from "react";
 import { ArrowLeft, Search, X } from "lucide-react";
 import { PlayerSearch } from "./PlayerSearch.jsx";
@@ -24,23 +25,24 @@ export function BrandMark({ size = 34 }) {
  */
 export function TopBar({ title, buildVersion, onBack, onHome, links, admin = [], active, langLabel, onToggleLang, right, players, onOpenPlayer }) {
   const [searchOpen, setSearchOpen] = useState(false);
+  const L = useL();
 
   return (
     <div className="topbar">
       <div className="brand">
         {onBack && (
-          <button className="btn-ghost topbar-back" onClick={onBack} aria-label="Πίσω">
+          <button className="btn-ghost topbar-back" onClick={onBack} aria-label={L.navBack}>
             <ArrowLeft size={18} />
           </button>
         )}
-        <button type="button" className="brand-home" onClick={onHome} aria-label={`${title} — αρχική`}>
+        <button type="button" className="brand-home" onClick={onHome} aria-label={`${title} — ${L.navHome}`}>
           <BrandMark />
           <span className="brand-title">{title}</span>
         </button>
         <span className="topbar-build">build {buildVersion}</span>
       </div>
 
-      <nav className="topbar-links" aria-label="Κύρια πλοήγηση">
+      <nav className="topbar-links" aria-label={L.navMain}>
         {links.map((it) => (
           <button
             key={it.key}
@@ -50,7 +52,7 @@ export function TopBar({ title, buildVersion, onBack, onHome, links, admin = [],
             onClick={it.onClick}
           >
             {it.label}
-            {it.liveDot && <span className="nav-live" aria-label="σε εξέλιξη" />}
+            {it.liveDot && <span className="nav-live" aria-label={L.tInProgress} />}
             {it.dot && <span className="topbar-dot nav-dot" />}
           </button>
         ))}
@@ -58,7 +60,7 @@ export function TopBar({ title, buildVersion, onBack, onHome, links, admin = [],
 
       <div className="topbar-right">
         <PlayerSearch players={players} onOpen={onOpenPlayer} className="topbar-search" />
-        <button type="button" className="topbar-search-btn" aria-label="Αναζήτηση παίκτη" onClick={() => setSearchOpen(true)}>
+        <button type="button" className="topbar-search-btn" aria-label={L.searchLabel} onClick={() => setSearchOpen(true)}>
           <Search size={20} />
         </button>
         {admin.map((it) => (
@@ -81,7 +83,7 @@ export function TopBar({ title, buildVersion, onBack, onHome, links, admin = [],
       {searchOpen && (
         <div className="search-overlay">
           <PlayerSearch players={players} onOpen={onOpenPlayer} autoFocus onDone={() => setSearchOpen(false)} />
-          <button type="button" className="search-overlay-close" aria-label="Κλείσιμο αναζήτησης" onClick={() => setSearchOpen(false)}>
+          <button type="button" className="search-overlay-close" aria-label={L.searchClose} onClick={() => setSearchOpen(false)}>
             <X size={22} />
           </button>
         </div>

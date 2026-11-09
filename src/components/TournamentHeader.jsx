@@ -1,12 +1,14 @@
+import { useL } from "../config/langContext.js";
 /** Κεφαλίδα τουρνουά (build 2026-11-09.03): ένδειξη κατάστασης, όνομα,
  * γραμμή στοιχείων και δύο μετρητές. */
 export function TournamentHeader({ live, name, meta, counters }) {
+  const L = useL();
   return (
     <div className="header t-header">
       <div className="t-header-main">
         <p className={`t-status ${live ? "live" : "done"}`}>
           {live && <span className="t-status-dot" aria-hidden="true" />}
-          {live ? "Σε εξέλιξη" : "Ολοκληρώθηκε"}
+          {live ? L.tInProgress : L.tFinished}
         </p>
         <h1>{name}</h1>
         {meta && <p className="t-meta">{meta}</p>}

@@ -165,6 +165,8 @@ import { CalendarPage } from "./components/CalendarPage.jsx";
 import { TopBar } from "./components/TopBar.jsx";
 import { BottomNav } from "./components/BottomNav.jsx";
 import { TournamentHeader } from "./components/TournamentHeader.jsx";
+import { UI } from "./config/i18nUi.js";
+import { LangContext, browserLang } from "./config/langContext.js";
 import { HomePage } from "./components/HomePage.jsx";
 import { todayLocalYMD, daysBetween, upcomingCalendarEntries, seasonProgress, pickHeroState } from "./lib/home.js";
 import { WinDots } from "./components/WinDots.jsx";
@@ -218,12 +220,15 @@ export default function TournamentManager() {
   const [statsTab, setStatsTab] = useState("h2h");
   const [lang, setLang] = useState(() => {
     try {
-      return window.localStorage.getItem(LANG_STORAGE_KEY) === "en" ? "en" : "el";
+      // 2026-11-09.06: a stored choice wins; else English only for an English browser.
+      const stored = window.localStorage.getItem(LANG_STORAGE_KEY);
+      return stored === "en" || stored === "el" ? stored : browserLang();
     } catch {
       return "el";
     }
   });
-  const L = TRANSLATIONS[lang];
+  const L = useMemo(() => ({ ...TRANSLATIONS[lang], ...UI[lang], lang }), [lang]);
+  const dloc = lang === "en" ? "en-GB" : "el-GR";
   function toggleLang() {
     const next = lang === "el" ? "en" : "el";
     setLang(next);
@@ -1608,7 +1613,7 @@ export default function TournamentManager() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast("Full backup downloaded.");
+    showToast("Το πλήρες αντίγραφο ασφαλείας κατέβηκε.");
     if (await saveSysState({ lastExportAt: exportedAtIso })) {
       setSysState((s) => ({ ...s, lastExportAt: exportedAtIso }));
     } else {
@@ -1714,7 +1719,7 @@ export default function TournamentManager() {
       try {
         const data = JSON.parse(ev.target.result);
         if (!data.registry || !data.elo || !data.archiveIndex) {
-          setNotice("That doesn't look like a full backup file.");
+          setNotice("Αυτό δεν μοιάζει με αρχείο πλήρους αντιγράφου ασφαλείας.");
           return;
         }
         const failed = [];
@@ -1773,9 +1778,9 @@ export default function TournamentManager() {
           setImportsList(null);
           if (failed.length > 0) reportSaveFailure(`Επαναφορά backup — δεν γράφτηκαν: ${failed.join(", ")}. Ξανατρέξε την επαναφορά.`);
         }
-        if (failed.length === 0) showToast("Full backup restored.");
+        if (failed.length === 0) showToast("Το πλήρες αντίγραφο ασφαλείας επαναφέρθηκε.");
       } catch {
-        setNotice("That file wasn't valid, or wasn't a full backup.");
+        setNotice("Το αρχείο δεν ήταν έγκυρο ή δεν ήταν πλήρες αντίγραφο ασφαλείας.");
       }
     };
     reader.readAsText(file);
@@ -1809,9 +1814,9 @@ export default function TournamentManager() {
         setRound(data.round || 1);
         setCurrentPairings(data.currentPairings || null);
         setHistory(data.history || []);
-        setNotice("Tournament file loaded.");
+        setNotice("Το αρχείο τουρνουά φορτώθηκε.");
       } catch {
-        setNotice("That file wasn't valid.");
+        setNotice("Το αρχείο δεν ήταν έγκυρο.");
       }
     };
     reader.readAsText(file);
@@ -1825,7 +1830,7 @@ export default function TournamentManager() {
   async function openArchived(id) {
     const data = await fetchTournamentData(id);
     if (!data) {
-      setNotice("This tournament could not be loaded.");
+      setNotice("Το τουρνουά δεν φορτώθηκε.");
       return;
     }
     setTournamentId(id);
@@ -2275,7 +2280,7 @@ export default function TournamentManager() {
     if (!player || !contactDraft) return;
     const newName = (contactDraft.name || "").trim();
     if (!newName) {
-      showToast("Player needs a name before saving.");
+      showToast("Ο παίκτης χρειάζεται όνομα πριν από την αποθήκευση.");
       return;
     }
     const stillNeedsInfo = contactDraft.email.trim() || contactDraft.phone.trim() ? false : player.needsInfo;
@@ -3436,7 +3441,7 @@ export default function TournamentManager() {
    * ELO replay (computeEloTimeline) to have run. */
   function renderEloLedger(key) {
     if (!eloTimeline || !eloTimeline.__ledger) {
-      return <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0" }}>Υπολογισμός…</p>;
+      return <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0" }}>{L.calculating}</p>;
     }
     const rows = eloTimeline.__ledger[key] || [];
     const stored = eloData.players?.[key]?.rating;
@@ -3445,14 +3450,13 @@ export default function TournamentManager() {
     return (
       <>
         <p style={{ fontSize: 13, color: "var(--muted)", margin: "8px 0" }}>
-          Αφετηρία {ELO_INITIAL}. {`Κάθε αγώνας των διοργανώσεων της κατάταξης (${rankingMembersLabel(mainRanking)}) αλλάζει την ELO· οι φιλοξενούμενοι παίζουν πάντα με 1500`} ανάλογα με τη διαφορά δυναμικότητας και το μήκος του αγώνα· οι αγώνες ενός γύρου υπολογίζονται μαζί. Οι νίκες με Α.Α. δεν μετράνε.
-          {" "}Τελική: <strong>{Math.round(final)}</strong>
-          {agrees ? " ✓ ίδια με την κατάταξη." : ` ⚠ η αποθηκευμένη ELO είναι ${Math.round(stored)} — χρειάζεται Recompute.`}
+          {L.ledgerIntro(ELO_INITIAL, rankingMembersLabel(mainRanking))}{" "}{L.ledgerFinal} <strong>{Math.round(final)}</strong>
+          {agrees ? L.ledgerAgrees : L.ledgerDiffers(Math.round(stored))}
         </p>
         <div style={{ overflowX: "auto", maxHeight: 420, overflowY: "auto" }}>
           <table className="cal-table ledger-table">
             <thead>
-              <tr><th>Τουρνουά</th><th>Γύρος</th><th>Αντίπαλος (ELO)</th><th>Αποτ.</th><th>Μεταβολή</th><th>ELO</th></tr>
+              <tr><th>{L.lgTournament}</th><th>{L.tRound}</th><th>{L.lgOpponent}</th><th>{L.lgResult}</th><th>{L.lgChange}</th><th>ELO</th></tr>
             </thead>
             <tbody>
               {[...rows].reverse().map((r, i) => (
@@ -3467,7 +3471,7 @@ export default function TournamentManager() {
                   </td>
                   <td>{r.round}</td>
                   <td>{r.opponent} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
-                  <td>{r.ret ? (r.result === "win" ? "Ν (Α.Α.)" : "Η (Α.Α.)") : r.result === "win" ? "Νίκη" : "Ήττα"}</td>
+                  <td>{r.ret ? (r.result === "win" ? `${L.wShort} (${L.retShort})` : `${L.lShort} (${L.retShort})`) : r.result === "win" ? L.winWord : L.lossWord}</td>
                   <td className={r.delta > 0 ? "pos" : r.delta < 0 ? "neg" : ""}>{r.ret ? "—" : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}`}</td>
                   <td>{Math.round(r.ratingAfter)}</td>
                 </tr>
@@ -3894,7 +3898,7 @@ export default function TournamentManager() {
     if (!person) return sourceName;
     if (person.guest) return <span>{person.name}<span className="cal-note"> · φιλοξ.</span></span>;
     return (
-      <button className="history-link" onClick={() => openPlayerDetail(key)} title="Καρτέλα παίκτη">{formatNameForDisplay(person.name, nameDisplayMode)}</button>
+      <button className="history-link" onClick={() => openPlayerDetail(key)} title={L.playerCard}>{formatNameForDisplay(person.name, nameDisplayMode)}</button>
     );
   }
 
@@ -4167,7 +4171,7 @@ export default function TournamentManager() {
     const bracket = importView.bracket || brackets[0].id;
     const inBracket = (doc.matches || []).filter((m) => (m.bracket || "main") === bracket);
     const rounds = [...new Set(inBracket.map((m) => m.round))].sort((a, b) => a - b);
-    const roundLabelOf = (r) => (inBracket.find((m) => m.round === r && m.roundLabel) || {}).roundLabel || `Γύρος ${r}`;
+    const roundLabelOf = (r) => (inBracket.find((m) => m.round === r && m.roundLabel) || {}).roundLabel || L.tRoundN(r);
     const roundMatches = inBracket.filter((m) => m.round === round);
     const scoreText = (m) => {
       if (m.method === "bye") return "bye";
@@ -4179,14 +4183,14 @@ export default function TournamentManager() {
     return (
       <>
           <div className="tabs" style={{ marginBottom: 12 }}>
-            {[["standings", "Κατάταξη"], ["rounds", "Γύροι"], ["info", "Στοιχεία"]].map(([k, v]) => (
+            {[["standings", L.tTabStandings], ["rounds", L.tRounds], ["info", L.tTabDetails]].map(([k, v]) => (
               <button key={k} className={`tab ${tab === k ? "active" : ""}`} onClick={() => setImportView({ ...importView, tab: k })}>{v}</button>
             ))}
           </div>
           {tab === "standings" && (
             <div style={{ overflowX: "auto" }}>
               <table className="cal-table">
-                <thead><tr><th>Θέση</th><th>Παίκτης</th>{hasSeats && <th title="Η θέση του πίνακα που κάλυψε ο παίκτης">Θέση πίνακα</th>}{adminMode && doc.personMap && <th>Στην πηγή</th>}<th>Νίκες</th><th>Ήττες</th><th>Αγώνες</th></tr></thead>
+                <thead><tr><th>{L.thRank}</th><th>{L.thPlayer}</th>{hasSeats && <th title={L.imSeatTitle}>{L.imSeat}</th>}{adminMode && doc.personMap && <th>Στην πηγή</th>}<th>{L.thWins}</th><th>{L.imLosses}</th><th>{L.thMatches}</th></tr></thead>
                 <tbody>
                   {(doc.placements || []).map((p) => {
                     return (
@@ -4203,8 +4207,8 @@ export default function TournamentManager() {
               </table>
               <p className="cal-note" style={{ marginTop: 6 }}>
                 {doc.brackets && doc.brackets.length > 1
-                  ? "Οι θέσεις είναι αυτές της διοργάνωσης· μετά την 4η, ανά γύρο αποκλεισμού. Η «Θέση πίνακα» (π.χ. Κ6) είναι η θέση του πίνακα που κάλυψε ο παίκτης — όχι απαραίτητα ο σύλλογός του."
-                  : "Οι νίκες περιλαμβάνουν τα bye, όπως στην πηγή. Η σειρά είναι αυτή της πηγής."}
+                  ? L.imNoteBracket
+                  : L.imNoteSwiss}
               </p>
             </div>
           )}
@@ -4227,13 +4231,13 @@ export default function TournamentManager() {
                 </div>
               )}
               {(brackets.length > 1 || sourceSheetsOf(doc).length > 0) && (
-                <div className="layout-toggle" role="group" aria-label="Εμφάνιση" style={{ marginBottom: 10 }}>
+                <div className="layout-toggle" role="group" aria-label={L.tLayoutLabel} style={{ marginBottom: 10 }}>
                   <button className={importView.view !== "tree" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "list" })}>
-                    <List size={14} /> Λίστα
+                    <List size={14} /> {L.tList}
                   </button>
                   {brackets.length > 1 && (
                     <button className={importView.view === "tree" ? "active" : ""} onClick={() => setImportView({ ...importView, view: "tree" })}>
-                      <LayoutGrid size={14} /> Δέντρο
+                      <LayoutGrid size={14} /> {L.imTree}
                     </button>
                   )}
                   {sourceSheetsOf(doc).length > 0 && (
@@ -4246,14 +4250,14 @@ export default function TournamentManager() {
               {importView.view === "excel" && sourceSheetsOf(doc).length > 0 ? (
                 <>
                   <p className="cal-note" style={{ margin: "0 0 8px 0" }}>
-                    Το αρχικό αρχείο της διοργάνωσης, όπως ήταν. {importView.highlight ? `Σημειώνονται τα κελιά με «${sourceSurname(importView.highlight)}».` : "Διάλεξε έναν παίκτη στο Δέντρο για να σημειωθούν τα κελιά του."}
+                    {L.imExcelNote} {importView.highlight ? L.imExcelMarked(sourceSurname(importView.highlight)) : L.imExcelPick}
                   </p>
                   {renderSourceSheets(doc)}
                 </>
               ) : importView.view === "tree" && brackets.length > 1 ? (
                 <>
                   <p className="cal-note" style={{ margin: "0 0 8px 0" }}>
-                    Πάτα ένα όνομα για να φωτιστεί η πορεία του. Ετικέτες: <strong>Ο1, Κ6…</strong> θέση πίνακα · <strong>↓85</strong> ήρθε ως χαμένος του αγώνα 85 · <strong>Ν123</strong> ήρθε ως νικητής του αγώνα 123.
+                    {L.imTreeNote1} <strong>Ο1, Κ6…</strong> {L.imTreeSlot} · <strong>↓85</strong> {L.imTreeLoser} · <strong>Ν123</strong> {L.imTreeWinner}
                   </p>
                   {renderBracketTree(doc, bracket)}
                 </>
@@ -4281,28 +4285,28 @@ export default function TournamentManager() {
               </>
               )}
               {inBracket.some((m) => m.scoreRecorded === false && m.method !== "retirement") && (
-                <p className="cal-note" style={{ marginTop: 6 }}>* Το σκορ δεν είχε καταγραφεί· είναι γνωστός μόνο ο νικητής.</p>
+                <p className="cal-note" style={{ marginTop: 6 }}>{L.imNoScore}</p>
               )}
             </>
           )}
           {tab === "info" && (
             <>
               <dl className="details-list">
-                <dt>Ημερομηνίες</dt><dd>{importDateLabel(doc)}{doc.venue ? ` · ${doc.venue}` : ""}</dd>
-                <dt>Σεζόν</dt><dd>{importSeason(doc) ? sn(importSeason(doc)) : "—"}</dd>
-                <dt>Διοργάνωση</dt><dd>{competitionName(competitionsFrom(sysState), importCompetitionId(doc))}</dd>
-                {importCountsInStandings(doc) && (<><dt>Βαθμολογία</dt><dd>Μετράει στη Βαθμολογία της σεζόν{doc.personMap ? "" : " (μετά την αντιστοίχιση των παικτών)"}</dd></>)}
+                <dt>{L.imDates}</dt><dd>{importDateLabel(doc)}{doc.venue ? ` · ${doc.venue}` : ""}</dd>
+                <dt>{L.stSeason}</dt><dd>{importSeason(doc) ? sn(importSeason(doc)) : "—"}</dd>
+                <dt>{L.stCompetition}</dt><dd>{competitionName(competitionsFrom(sysState), importCompetitionId(doc))}</dd>
+                {importCountsInStandings(doc) && (<><dt>{L.navSeason}</dt><dd>{L.imCounts}{doc.personMap ? "" : L.imAfterMatch}</dd></>)}
                 {doc.calendarEntryId && (() => {
                   const e = buildCalendarView(sysState, importSeason(doc), archive, calendarImports).find((x) => x.id === doc.calendarEntryId);
-                  return (<><dt>Ημερολόγιο</dt><dd>{e ? `${calendarEntryTitle(e, importSeason(doc), competitionsFrom(sysState), sysState)} · ${formatYMD(e.date)}` : "αγωνιστική που δεν υπάρχει πια στο Ημερολόγιο"}</dd></>);
+                  return (<><dt>{L.navCalendar}</dt><dd>{e ? `${calendarEntryTitle(e, importSeason(doc), competitionsFrom(sysState), sysState)} · ${formatYMD(e.date)}` : L.imCalGone}</dd></>);
                 })()}
-                <dt>Διοργανωτής</dt><dd>{doc.organiser || "—"}</dd>
-                <dt>Σύστημα</dt><dd>{doc.system || "—"}</dd>
-                <dt>Μήκος αγώνα</dt><dd>{doc.matchLength ? `${doc.matchLength} πόντοι` : "—"}</dd>
-                <dt>Παίκτες / αγώνες</dt><dd>{(doc.players || []).length} / {(doc.matches || []).filter((m) => m.method !== "bye").length}</dd>
-                <dt>Πηγή</dt><dd>{doc.sourceUrl ? <a href={doc.sourceUrl} target="_blank" rel="noreferrer">{doc.sourceName || doc.sourceUrl}</a> : doc.sourceName || "—"}</dd>
-                {doc.sourceLink && (<><dt>Αρχικό αρχείο</dt><dd><a href={doc.sourceLink} target="_blank" rel="noreferrer">Άνοιγμα σε νέα καρτέλα</a></dd></>)}
-                <dt>Εισαγωγή</dt><dd>{doc.importedAt ? formatDate(doc.importedAt) : "—"}</dd>
+                <dt>{L.imOrganiser}</dt><dd>{doc.organiser || "—"}</dd>
+                <dt>{L.imSystem}</dt><dd>{doc.system || "—"}</dd>
+                <dt>{L.imMatchLength}</dt><dd>{doc.matchLength ? L.imPoints(doc.matchLength) : "—"}</dd>
+                <dt>{L.imPlayersMatches}</dt><dd>{(doc.players || []).length} / {(doc.matches || []).filter((m) => m.method !== "bye").length}</dd>
+                <dt>{L.imSource}</dt><dd>{doc.sourceUrl ? <a href={doc.sourceUrl} target="_blank" rel="noreferrer">{doc.sourceName || doc.sourceUrl}</a> : doc.sourceName || "—"}</dd>
+                {doc.sourceLink && (<><dt>{L.imOriginal}</dt><dd><a href={doc.sourceLink} target="_blank" rel="noreferrer">{L.imOpenNewTab}</a></dd></>)}
+                <dt>{L.imImported}</dt><dd>{doc.importedAt ? new Date(doc.importedAt).toLocaleDateString(dloc) : "—"}</dd>
               </dl>
               {adminMode && competitionHasStandings(competitionById(importCompetitionId(doc))) && (
                 <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 14, marginTop: 12 }}>
@@ -5733,9 +5737,9 @@ export default function TournamentManager() {
                     <td>{competitionName(comps, e.competitionId)}</td>
                     <td>
                       {e.tournament ? (
-                        <button className="history-link" onClick={() => openCalendarTournament(e.tournament)}>{CAL_STATUS_LABEL[e.status]}{e.tournament.imported ? " (εισαγωγή)" : ""}</button>
+                        <button className="history-link" onClick={() => openCalendarTournament(e.tournament)}>{L.calStatus(e.status)}{e.tournament.imported ? " (εισαγωγή)" : ""}</button>
                       ) : (
-                        CAL_STATUS_LABEL[e.status]
+                        L.calStatus(e.status)
                       )}
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>
@@ -5805,18 +5809,18 @@ export default function TournamentManager() {
       <div className="card" style={{ padding: "12px 18px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <span style={{ fontSize: 15 }}>
-            {prog.total > 0 && <><strong>Αγωνιστική {prog.done} από {prog.total}</strong></>}
+            {prog.total > 0 && <><strong>{L.calDayOf(prog.done, prog.total)}</strong></>}
             {prog.next && (
               <span style={{ color: "var(--muted)" }}>
                 {prog.total > 0 ? " · " : ""}
-                {prog.next.status === "live" ? "Σε εξέλιξη: " : "Επόμενη: "}
+                {prog.next.status === "live" ? `${L.tInProgress}: ` : `${L.calNext}: `}
                 {formatYMD(prog.next.effectiveDate)}
               </span>
             )}
-            {!prog.next && prog.total > 0 && <span style={{ color: "var(--muted)" }}> · Η σεζόν ολοκληρώθηκε</span>}
+            {!prog.next && prog.total > 0 && <span style={{ color: "var(--muted)" }}> · {L.calSeasonDone}</span>}
           </span>
           <button className="btn-ghost" onClick={() => setShowSchedule(!showSchedule)}>
-            {showSchedule ? <ChevronUp size={14} /> : <ChevronDown size={14} />} Πρόγραμμα σεζόν
+            {showSchedule ? <ChevronUp size={14} /> : <ChevronDown size={14} />} {L.calSchedule}
           </button>
         </div>
         {showSchedule && (
@@ -5825,13 +5829,13 @@ export default function TournamentManager() {
               <tbody>
                 {view.map((e) => (
                   <tr key={e.id} className={`cal-${e.status}`}>
-                    <td>{e.day ? `Ημέρα ${e.day}` : competitionName(comps, e.competitionId)}</td>
+                    <td>{e.day ? L.calDayN(e.day) : competitionName(comps, e.competitionId)}</td>
                     <td>{formatYMD(e.effectiveDate)}</td>
                     <td>
                       {e.tournament && e.status === "done" ? (
-                        <button className="history-link" onClick={() => openCalendarTournament(e.tournament)}>Αποτελέσματα</button>
+                        <button className="history-link" onClick={() => openCalendarTournament(e.tournament)}>{L.calResults}</button>
                       ) : (
-                        CAL_STATUS_LABEL[e.status]
+                        L.calStatus(e.status)
                       )}
                       {e.note ? <span className="cal-note"> · {e.note}</span> : null}
                     </td>
@@ -6138,6 +6142,7 @@ export default function TournamentManager() {
   /* ---------------------------------------------------------------------- */
 
   return (
+    <LangContext.Provider value={L}>
     <div className="app">
       {/* #region Στυλ (CSS) */}
       <style>{`
@@ -6647,7 +6652,7 @@ export default function TournamentManager() {
               active={navActive}
               links={[
                 { key: "archive", label: L.navTournaments, onClick: goArchive, liveDot: liveToday },
-                { key: "calendar", label: "Ημερολόγιο", onClick: goCalendar },
+                { key: "calendar", label: L.navCalendar, onClick: goCalendar },
                 { key: "season", label: L.navSeasonShort, onClick: goSeason },
                 { key: "elo", label: L.navEloShort, onClick: goElo },
                 { key: "h2h", label: L.navStats, onClick: goStats },
@@ -6665,7 +6670,7 @@ export default function TournamentManager() {
                 <>
                   {!inIframe && !authUser && (
                     <button className="btn-ghost" onClick={() => setShowLogin(true)} style={{ border: "1px solid var(--border)", borderRadius: 20 }}>
-                      <Lock size={14} /> Σύνδεση
+                      <Lock size={14} /> {L.loginBtn}
                     </button>
                   )}
                   {!inIframe && authUser && <AccountMenu email={authUser.email || authUser.uid} onSignOut={logoutAdmin} />}
@@ -6675,14 +6680,14 @@ export default function TournamentManager() {
             <BottomNav
               active={navActive}
               items={[
-                { key: "home", label: "Αρχική", icon: Home, onClick: goHome },
+                { key: "home", label: L.navHome, icon: Home, onClick: goHome },
                 { key: "archive", label: L.navTournaments, icon: Trophy, onClick: goArchive, liveDot: liveToday },
                 { key: "season", label: L.navSeasonShort, icon: TrendingUp, onClick: goSeason },
                 { key: "elo", label: "ELO", icon: Award, onClick: goElo },
               ]}
               moreIcon={MoreHorizontal}
               more={[
-                { key: "calendar", label: "Ημερολόγιο", icon: CalendarDays, onClick: goCalendar },
+                { key: "calendar", label: L.navCalendar, icon: CalendarDays, onClick: goCalendar },
                 { key: "h2h", label: L.navStats, icon: Users, onClick: goStats },
                 { key: "about", label: L.navAbout, icon: Info, onClick: goAbout, dot: hasUnseenUpdate },
                 ...(isAdminAny ? [
@@ -6716,16 +6721,17 @@ export default function TournamentManager() {
             <p className="eyebrow">{L.aboutEyebrow}</p>
             <h1>{L.aboutTitle}</h1>
             <div className="tabs" style={{ marginTop: 14 }}>
-              <button className={`tab ${aboutTab === "features" ? "active" : ""}`} onClick={() => setAboutTab("features")}>Λειτουργικότητες</button>
-              <button className={`tab ${aboutTab === "technical" ? "active" : ""}`} onClick={() => setAboutTab("technical")}>Τεχνικά στοιχεία</button>
-              <button className={`tab ${aboutTab === "changelog" ? "active" : ""}`} onClick={() => setAboutTab("changelog")}>Changelog</button>
+              <button className={`tab ${aboutTab === "features" ? "active" : ""}`} onClick={() => setAboutTab("features")}>{L.abFeatures}</button>
+              <button className={`tab ${aboutTab === "technical" ? "active" : ""}`} onClick={() => setAboutTab("technical")}>{L.abTechnical}</button>
+              <button className={`tab ${aboutTab === "changelog" ? "active" : ""}`} onClick={() => setAboutTab("changelog")}>{L.abChangelog}</button>
             </div>
           </div>
           <div className="content" style={{ maxWidth: 640 }}>
             {aboutTab === "features" && (
               <>
-                <p style={{ fontSize: 15, margin: "0 0 4px 0" }}><strong>Hellenic Backgammon Platform</strong>: τουρνουά, βαθμολογίες και Πανελλήνια Κατάταξη ELO για τους συλλόγους backgammon της Ελλάδας.</p>
-                <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 6px 0" }}>Με την υποστήριξη της Ελληνικής Ομοσπονδίας Backgammon.</p>
+                <p style={{ fontSize: 15, margin: "0 0 4px 0" }}><strong>Hellenic Backgammon Platform</strong>{L.abIntro}</p>
+              {lang === "en" && <p className="cal-note">{L.abContentNote}</p>}
+                <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 6px 0" }}>{L.supportedBy}.</p>
                 <p style={{ fontSize: 13, color: "var(--muted)", margin: "0 0 14px 0" }}>build {APP_BUILD_VERSION}</p>
                 <ul style={{ margin: 0, paddingLeft: 20, fontSize: 15, lineHeight: 1.7 }}>
                   {FEATURES_SUMMARY.map((it, idx) => (
@@ -6770,15 +6776,15 @@ export default function TournamentManager() {
             <p className="eyebrow">{L.statsEyebrow}</p>
             <h1>{L.statsTitle}</h1>
             <div className="tabs" style={{ marginTop: 14 }}>
-              <button className={`tab ${statsTab === "h2h" ? "active" : ""}`} onClick={() => setStatsTab("h2h")}>Στατιστικά Παίκτη</button>
-              <button className={`tab ${statsTab === "streaks" ? "active" : ""}`} onClick={() => setStatsTab("streaks")}>Σερί &amp; Πρωτοπορία</button>
-              <button className={`tab ${statsTab === "titles" ? "active" : ""}`} onClick={() => setStatsTab("titles")}>Κατακτήσεις</button>
-              <button className={`tab ${statsTab === "season" ? "active" : ""}`} onClick={() => setStatsTab("season")}>Στατιστικά Σεζόν</button>
+              <button className={`tab ${statsTab === "h2h" ? "active" : ""}`} onClick={() => setStatsTab("h2h")}>{L.sTabPlayer}</button>
+              <button className={`tab ${statsTab === "streaks" ? "active" : ""}`} onClick={() => setStatsTab("streaks")}>{L.sTabStreaks}</button>
+              <button className={`tab ${statsTab === "titles" ? "active" : ""}`} onClick={() => setStatsTab("titles")}>{L.sTabTitles}</button>
+              <button className={`tab ${statsTab === "season" ? "active" : ""}`} onClick={() => setStatsTab("season")}>{L.sTabSeason}</button>
             </div>
           </div>
           <div className="content" style={{ maxWidth: 780 }}>
             <div className="scope-bar">
-              <span>Διοργάνωση:</span>
+              <span>{L.stCompetition}:</span>
               {["all", ...competitionsFrom(sysState).map((c) => c.id)].map((c) => (
                 <button
                   key={c}
@@ -6791,12 +6797,12 @@ export default function TournamentManager() {
                     else setH2hResult(null);
                   }}
                 >
-                  {c === "all" ? "Όλες" : competitionName(competitionsFrom(sysState), c)}
+                  {c === "all" ? L.allF : competitionName(competitionsFrom(sysState), c)}
                 </button>
               ))}
             </div>
             <div className="scope-bar">
-              <span>Περίοδος:</span>
+              <span>{L.sPeriod}:</span>
               {["all", ...[...new Set([...seasonYearsAvailable, ...Object.values(importDocs).map(importSeason).filter(Boolean)])].sort((a, b) => b - a)].map((y) => (
                 <button
                   key={y}
@@ -6810,7 +6816,7 @@ export default function TournamentManager() {
                     else setH2hResult(null);
                   }}
                 >
-                  {y === "all" ? "Όλα" : `Σεζόν ${sn(y)}`}
+                  {y === "all" ? L.allN : `${L.stSeason} ${sn(y)}`}
                 </button>
               ))}
             </div>
@@ -6822,7 +6828,7 @@ export default function TournamentManager() {
                     onChange={(e) => { setH2hSelectedPlayer(e.target.value); setH2hResult(null); setH2hExpandedOpponent(null); }}
                     style={{ fontSize: 15, border: "1px solid var(--border)", borderRadius: 7, padding: "8px 10px", background: "var(--surface)", flex: "1 1 240px" }}
                   >
-                    <option value="">Επιλέξτε παίκτη</option>
+                    <option value="">{L.sPickPlayer}</option>
                     {Object.values(registry.players || {}).map((p) => p.name).sort((a, b) => a.localeCompare(b, "el")).map((name) => (
                       <option key={name} value={name}>{name}</option>
                     ))}
@@ -6832,7 +6838,7 @@ export default function TournamentManager() {
                     disabled={!h2hSelectedPlayer || h2hLoading}
                     onClick={() => computeOpponentBreakdown(h2hSelectedPlayer)}
                   >
-                    {h2hLoading ? "Υπολογισμός…" : "Ανάλυση"}
+                    {h2hLoading ? L.calculating : L.sAnalyse}
                   </button>
                 </div>
 
@@ -6856,39 +6862,39 @@ export default function TournamentManager() {
                       <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center", textAlign: "center", marginBottom: 20, padding: "14px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
                         <div>
                           <p style={{ fontWeight: 800, fontSize: 24, margin: 0 }}>{totalGames}</p>
-                          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>συνολικά ματς</p>
+                          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{L.sTotalMatches}</p>
                         </div>
                         <div>
                           <p style={{ fontWeight: 800, fontSize: 24, margin: 0, color: "var(--win)" }}>{totalWins}-{totalGames - totalWins}</p>
-                          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>νίκες-ήττες</p>
+                          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{L.sWinLoss}</p>
                         </div>
                         <div>
                           <p style={{ fontWeight: 800, fontSize: 24, margin: 0 }}>{overallPct}%</p>
-                          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>ποσοστό</p>
+                          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{L.sPct}</p>
                         </div>
                         <div>
                           <p style={{ fontWeight: 800, fontSize: 24, margin: 0 }}>{h2hResult.rows.length}</p>
-                          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>αντίπαλοι</p>
+                          <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>{L.sOpponents}</p>
                         </div>
                       </div>
 
                       <input
                         type="text"
-                        placeholder="Αναζήτηση αντιπάλου…"
+                        placeholder={L.sFindOpp}
                         value={h2hSearch}
                         onChange={(e) => setH2hSearch(e.target.value)}
                         style={{ width: "100%", maxWidth: 300, fontSize: 14, border: "1px solid var(--border)", borderRadius: 7, padding: "6px 10px", marginBottom: 12 }}
                       />
 
                       {sortedRows.length === 0 ? (
-                        <p style={{ color: "var(--muted)" }}>Δεν βρέθηκαν αντίπαλοι.</p>
+                        <p style={{ color: "var(--muted)" }}>{L.sNoOpp}</p>
                       ) : (
                         <table style={{ width: "100%", fontSize: 14, borderCollapse: "collapse" }}>
                           <thead>
                             <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 12 }}>
-                              <th style={{ padding: "4px 6px", cursor: "pointer" }} onClick={() => toggleSort("name")}>Αντίπαλος{sortArrow("name")}</th>
-                              <th style={{ padding: "4px 6px", cursor: "pointer", textAlign: "center" }} onClick={() => toggleSort("total")}>Αγώνες{sortArrow("total")}</th>
-                              <th style={{ padding: "4px 6px", cursor: "pointer", textAlign: "center" }} onClick={() => toggleSort("wins")}>Ν-Η{sortArrow("wins")}</th>
+                              <th style={{ padding: "4px 6px", cursor: "pointer" }} onClick={() => toggleSort("name")}>{L.sOpponent}{sortArrow("name")}</th>
+                              <th style={{ padding: "4px 6px", cursor: "pointer", textAlign: "center" }} onClick={() => toggleSort("total")}>{L.thMatches}{sortArrow("total")}</th>
+                              <th style={{ padding: "4px 6px", cursor: "pointer", textAlign: "center" }} onClick={() => toggleSort("wins")}>{L.sWL}{sortArrow("wins")}</th>
                               <th style={{ padding: "4px 6px", cursor: "pointer", textAlign: "center" }} onClick={() => toggleSort("pct")}>%{sortArrow("pct")}</th>
                             </tr>
                           </thead>
@@ -6915,8 +6921,8 @@ export default function TournamentManager() {
                                               <td style={{ padding: "3px 6px", color: "var(--muted)" }}>{m.tournamentName}</td>
                                               <td style={{ padding: "3px 6px", fontWeight: 700 }}>
                                                 {m.method === "double_retirement"
-                                                  ? "Διπλό Α.Α. — χωρίς νικητή"
-                                                  : `${m.winner} νίκη${m.method === "retirement" ? " (Α.Α.)" : ""}`}
+                                                  ? L.sDoubleRet
+                                                  : L.sWonBy(m.winner, m.method === "retirement")}
                                               </td>
                                             </tr>
                                           ))}
@@ -6938,19 +6944,19 @@ export default function TournamentManager() {
 
             {(statsTab === "streaks" || statsTab === "titles") && !statsResult && (
               <button className="btn-secondary" disabled={statsLoading} onClick={() => computeStatistics()}>
-                <TrendingUp size={15} /> {statsLoading ? "Υπολογισμός…" : "Υπολόγισε στατιστικά"}
+                <TrendingUp size={15} /> {statsLoading ? L.calculating : L.sCompute}
               </button>
             )}
 
             {statsTab === "streaks" && statsResult && (
               <div style={{ display: "grid", gap: 24 }}>
                 <div>
-                  <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🔥 Μεγαλύτερα σερί νικών</p>
+                  <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🔥 {L.sWinStreaks}</p>
                   {statsResult.topWinStreaks.length === 0 ? <p style={{ color: "var(--muted)" }}>—</p> : (
                     <ol style={{ margin: 0, paddingLeft: 20 }}>
                       {statsResult.topWinStreaks.map((s, i) => (
                         <li key={i} style={{ marginBottom: 4 }}>
-                          <strong>{s.name}</strong> — {s.length} νίκες στη σειρά
+                          <strong>{s.name}</strong> — {L.sWinsInRow(s.length)}
                           <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
                         </li>
                       ))}
@@ -6958,12 +6964,12 @@ export default function TournamentManager() {
                   )}
                 </div>
                 <div>
-                  <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🎯 Μεγαλύτερα σερί συμμετοχών</p>
+                  <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🎯 {L.sPlayStreaks}</p>
                   {statsResult.topParticipationStreaks.length === 0 ? <p style={{ color: "var(--muted)" }}>—</p> : (
                     <ol style={{ margin: 0, paddingLeft: 20 }}>
                       {statsResult.topParticipationStreaks.map((s, i) => (
                         <li key={i} style={{ marginBottom: 4 }}>
-                          <strong>{s.name}</strong> — {s.length} συνεχόμενες αγωνιστικές
+                          <strong>{s.name}</strong> — {L.sDaysInRow(s.length)}
                           <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
                         </li>
                       ))}
@@ -6972,41 +6978,41 @@ export default function TournamentManager() {
                 </div>
                 <div style={{ display: "flex", gap: 40, flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 260px" }}>
-                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📈 Πρωτοπορία Season Standings</p>
+                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📈 {L.sLeadSeason}</p>
                     <ol style={{ margin: 0, paddingLeft: 20 }}>
                       {statsResult.standingsLeaders.map((s, i) => (
-                        <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {s.days} {s.days === 1 ? "αγωνιστική" : "αγωνιστικές"} #1</li>
+                        <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {L.sDaysFirst(s.days)}</li>
                       ))}
                     </ol>
                   </div>
                   <div style={{ flex: "1 1 260px" }}>
-                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>⭐ Πρωτοπορία ELO</p>
+                    <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>⭐ {L.sLeadElo}</p>
                     <ol style={{ margin: 0, paddingLeft: 20 }}>
                       {statsResult.eloLeaders.map((s, i) => (
-                        <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {s.days} {s.days === 1 ? "αγωνιστική" : "αγωνιστικές"} #1</li>
+                        <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {L.sDaysFirst(s.days)}</li>
                       ))}
                     </ol>
                   </div>
                 </div>
                 <button className="btn-ghost" style={{ justifySelf: "start" }} disabled={statsLoading} onClick={() => computeStatistics()}>
-                  <RotateCcw size={13} /> Ξαναϋπολόγισε
+                  <RotateCcw size={13} /> {L.sRecompute}
                 </button>
               </div>
             )}
 
             {statsTab === "titles" && statsResult && (
               <div>
-                <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🏆 Κατακτήσεις τουρνουά</p>
+                <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>🏆 {L.sTitles}</p>
                 <ol style={{ margin: 0, paddingLeft: 20 }}>
                   {statsResult.titles.map((tt, i) => (
                     <li key={i} style={{ marginBottom: 4 }}>
-                      <strong>{tt.name}</strong> — {tt.count} {tt.count === 1 ? "τίτλος" : "τίτλοι"}
+                      <strong>{tt.name}</strong> — {L.sTitlesN(tt.count)}
                       <span style={{ color: "var(--muted)", fontSize: 13 }}> ({tt.tournaments.map((x) => x.name).join(", ")})</span>
                     </li>
                   ))}
                 </ol>
                 <button className="btn-ghost" style={{ marginTop: 16 }} disabled={statsLoading} onClick={() => computeStatistics()}>
-                  <RotateCcw size={13} /> Ξαναϋπολόγισε
+                  <RotateCcw size={13} /> {L.sRecompute}
                 </button>
               </div>
             )}
@@ -7015,21 +7021,21 @@ export default function TournamentManager() {
               <div>
                 <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 20 }}>
                   <button className="btn-primary" disabled={seasonStatsLoading} onClick={() => computeSeasonOverview(statsScope)}>
-                    {seasonStatsLoading ? "Υπολογισμός…" : "Υπολόγισε"}
+                    {seasonStatsLoading ? L.calculating : L.sComputeShort}
                   </button>
-                  {seasonStatsResult && <span className="cal-note">{seasonStatsResult.scope === "all" ? scopeLabel("all") : `Σεζόν ${sn(seasonStatsResult.scope)}`}</span>}
+                  {seasonStatsResult && <span className="cal-note">{seasonStatsResult.scope === "all" ? scopeLabel("all") : `${L.stSeason} ${sn(seasonStatsResult.scope)}`}</span>}
                 </div>
 
                 {seasonStatsResult && (
                   <>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 16, marginBottom: 28 }}>
                       {[
-                        { icon: "🏆", label: "Τουρνουά", value: seasonStatsResult.tournamentCount },
-                        { icon: "👥", label: "Παίκτες", value: seasonStatsResult.playerCount },
-                        { icon: "🆕", label: "Νέοι παίκτες", value: seasonStatsResult.newPlayers ?? "—" },
-                        { icon: "📊", label: "Μ.Ο. συμμετοχών/τουρνουά", value: seasonStatsResult.avgParticipants },
-                        { icon: "🎲", label: "Σύνολο αγώνων (προσέγγιση)", value: seasonStatsResult.totalMatches },
-                        { icon: "😲", label: "Ποσοστό εκπλήξεων", value: `${seasonStatsResult.upsetRate}%` },
+                        { icon: "🏆", label: L.lgTournament, value: seasonStatsResult.tournamentCount },
+                        { icon: "👥", label: L.tPlayers, value: seasonStatsResult.playerCount },
+                        { icon: "🆕", label: L.sNewPlayers, value: seasonStatsResult.newPlayers ?? "—" },
+                        { icon: "📊", label: L.sAvgEntrants, value: seasonStatsResult.avgParticipants },
+                        { icon: "🎲", label: L.sTotalApprox, value: seasonStatsResult.totalMatches },
+                        { icon: "😲", label: L.sUpsetRate, value: `${seasonStatsResult.upsetRate}%` },
                       ].map((box) => (
                         <div key={box.label} style={{ border: "1px solid var(--border)", borderTop: "3px solid var(--accent)", borderRadius: 8, padding: "16px 16px 14px 16px", textAlign: "center", background: "var(--surface)" }}>
                           <div style={{ fontSize: 22, marginBottom: 4 }}>{box.icon}</div>
@@ -7041,23 +7047,23 @@ export default function TournamentManager() {
 
                     <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
                       <div style={{ flex: "1 1 320px", border: "1px solid var(--border)", borderRadius: 10, padding: "20px 22px", background: "var(--accent-soft)" }}>
-                        <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>😲 Μεγαλύτερη ανατροπή</p>
+                        <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>😲 {L.sBiggestUpset}</p>
                         {seasonStatsResult.biggestUpset ? (
                           <>
                             <p style={{ fontFamily: "'Literata', Georgia, serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>
                               {seasonStatsResult.biggestUpset.winner} <span style={{ fontSize: 15, color: "var(--muted)" }}>({seasonStatsResult.biggestUpset.winnerRatingBefore})</span>
                             </p>
                             <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 10px 0" }}>
-                              νίκησε τον <strong style={{ color: "var(--ink)" }}>{seasonStatsResult.biggestUpset.loser}</strong> ({seasonStatsResult.biggestUpset.loserRatingBefore})
+                              {L.sBeat} <strong style={{ color: "var(--ink)" }}>{seasonStatsResult.biggestUpset.loser}</strong> ({seasonStatsResult.biggestUpset.loserRatingBefore})
                             </p>
                             <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
-                              διαφορά <strong>{seasonStatsResult.biggestUpset.margin}</strong> πόντοι ELO — {seasonStatsResult.biggestUpset.tournamentName}
+                              {L.sGap} <strong>{seasonStatsResult.biggestUpset.margin}</strong> {L.sEloPoints} — {seasonStatsResult.biggestUpset.tournamentName}
                             </p>
                           </>
                         ) : <p style={{ color: "var(--muted)" }}>—</p>}
                       </div>
                       <div style={{ flex: "1 1 320px", border: "1px solid var(--border)", borderRadius: 10, padding: "20px 22px", background: "var(--accent-soft)" }}>
-                        <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>📈 Μεγαλύτερη άνοδος ELO</p>
+                        <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>📈 {L.sMostImproved}</p>
                         {seasonStatsResult.mostImproved ? (
                           <>
                             <p style={{ fontFamily: "'Literata', Georgia, serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{seasonStatsResult.mostImproved.name}</p>
@@ -7065,18 +7071,18 @@ export default function TournamentManager() {
                               {seasonStatsResult.mostImproved.startRating} → <strong style={{ color: "var(--win)" }}>{seasonStatsResult.mostImproved.endRating}</strong>
                             </p>
                             <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
-                              <strong style={{ color: "var(--win)" }}>+{seasonStatsResult.mostImproved.delta}</strong> πόντοι μέσα στη σεζόν
+                              <strong style={{ color: "var(--win)" }}>+{seasonStatsResult.mostImproved.delta}</strong> {L.sPointsInSeason}
                             </p>
                           </>
                         ) : <p style={{ color: "var(--muted)" }}>—</p>}
                       </div>
                       <div style={{ flex: "1 1 320px", border: "1px solid var(--border)", borderRadius: 10, padding: "20px 22px", background: "var(--accent-soft)" }}>
-                        <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>🎪 Τουρνουά με τις περισσότερες εκπλήξεις</p>
+                        <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>🎪 {L.sMostSurprising}</p>
                         {seasonStatsResult.mostSurprisingTournament ? (
                           <>
                             <p style={{ fontFamily: "'Literata', Georgia, serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{seasonStatsResult.mostSurprisingTournament.name}</p>
                             <p style={{ fontSize: 14, color: "var(--muted)", margin: 0 }}>
-                              <strong style={{ color: "var(--ink)" }}>{seasonStatsResult.mostSurprisingTournament.rate}%</strong> των αγώνων ({seasonStatsResult.mostSurprisingTournament.upsets} από {seasonStatsResult.mostSurprisingTournament.matches})
+                              <strong style={{ color: "var(--ink)" }}>{seasonStatsResult.mostSurprisingTournament.rate}%</strong> {L.sOfMatches(seasonStatsResult.mostSurprisingTournament.upsets, seasonStatsResult.mostSurprisingTournament.matches)}
                             </p>
                           </>
                         ) : <p style={{ color: "var(--muted)" }}>—</p>}
@@ -7084,7 +7090,7 @@ export default function TournamentManager() {
                     </div>
 
                     <button className="btn-ghost" style={{ marginTop: 20 }} disabled={seasonStatsLoading} onClick={() => computeSeasonOverview(statsScope)}>
-                      <RotateCcw size={13} /> Ξαναϋπολόγισε
+                      <RotateCcw size={13} /> {L.sRecompute}
                     </button>
                   </>
                 )}
@@ -7182,7 +7188,7 @@ export default function TournamentManager() {
       {phase === "calendar" && (
         <>
           <div className="header">
-            <p className="eyebrow">Επερχόμενες αγωνιστικές</p>
+            <p className="eyebrow">{L.calUpcoming}</p>
             <h1>Ημερολόγιο</h1>
             <div className="points-strip">
               {Array.from({ length: 24 }).map((_, i) => (
@@ -7441,22 +7447,22 @@ export default function TournamentManager() {
               {/* 2026-11-06: πτυσσόμενο — κλειστό στο κινητό, ανοιχτό στον υπολογιστή */}
               <details className="elo-howto" open={!(typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 600px)").matches)}>
                 <summary style={{ margin: "0 0 6px 0" }}>
-                  <strong>How this is calculated</strong> — a backgammon-specific, match-length-aware Elo, distinct from plain chess Elo:
+                  <strong>{L.eloHowTitle}</strong> — {L.eloHowLead}
                 </summary>
                 <p style={{ margin: "0 0 6px 0" }}>
-                  Win probability: <code>P = 1 / (1 + 10^(−(Rᴀ−Rʙ)·√N / 2000))</code>, where N = match length (points to win). This shape is well-attested across independent sources tracing to FIBS (the first online backgammon server, 1990s) — longer matches rely more on skill, so a given rating gap implies a bigger edge.
+                  {L.eloHowP1a} <code>P = 1 / (1 + 10^(−(Rᴀ−Rʙ)·√N / 2000))</code>{L.eloHowP1b}
                 </p>
                 <p style={{ margin: "0 0 6px 0" }}>
-                  Points at stake per match: <code>S = 4 × √N</code>. Winner gains (1−P)×S, loser loses the same amount.
+                  {L.eloHowP2a} <code>S = 4 × √N</code>{L.eloHowP2b}
                 </p>
                 <p style={{ margin: 0 }}>
-                  Fixed K for every player (no experience-based acceleration). Walkover wins (opponent retired) are excluded entirely — no real backgammon was played. <strong>Caveat:</strong> the win-probability shape is cross-confirmed by multiple sources; the exact constant (4) matches one documented implementation of this family but hasn't been verified against FIBS's original source — treat it as a reasonable, sourced default.
+                  {L.eloHowP3} <strong>{L.eloHowCaveat}</strong> {L.eloHowP3b}
                 </p>
               </details>
             </div>
 
             <p className="cal-note" style={{ marginBottom: 12 }}>
-              Διοργανώσεις της κατάταξης: {rankingMembersLabel(eloRankingsFrom(sysState).find((r) => r.id === eloPool) || mainRanking)}. Όλοι ξεκινούν από 1500· οι φιλοξενούμενοι παίζουν πάντα με 1500 και δεν εμφανίζονται στην κατάταξη.
+              {L.eloMembers(rankingMembersLabel(eloRankingsFrom(sysState).find((r) => r.id === eloPool) || mainRanking))}
             </p>
 
             {eloPool === PRIMARY_RANKING_ID && staleNotice}
@@ -7469,7 +7475,7 @@ export default function TournamentManager() {
                 return (
                   <div className="empty-state">
                     <Award size={20} style={{ marginBottom: 6 }} />
-                    <p>No ELO data yet. It fills in as tournaments are played.</p>
+                    <p>{L.eloEmpty}</p>
                   </div>
                 );
               }
@@ -7478,13 +7484,13 @@ export default function TournamentManager() {
                   <table className="std-table elo-table">
                     <thead>
                       <tr>
-                        <th className="rank std-sticky-rank">Rank</th>
-                        <th className="std-sticky-name">Player</th>
-                        <th>Rating</th>
-                        <th>Matches</th>
-                        <th>Win %<br /><span className="th-sub">(all-time)</span></th>
-                        <th>Experience<br /><span className="th-sub">(points played)</span></th>
-                        <th style={{ width: 44 }} title="Πώς προέκυψε η ELO"></th>
+                        <th className="rank std-sticky-rank">{L.thRank}</th>
+                        <th className="std-sticky-name">{L.thPlayer}</th>
+                        <th>{L.eloThRating}</th>
+                        <th>{L.thMatches}</th>
+                        <th>{L.eloThWinPct}<br /><span className="th-sub">{L.eloThAllTime}</span></th>
+                        <th>{L.eloThExperience}<br /><span className="th-sub">{L.eloThPointsPlayed}</span></th>
+                        <th style={{ width: 44 }} title={L.eloLedgerTitle}></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -7512,7 +7518,7 @@ export default function TournamentManager() {
                             {eloPool === PRIMARY_RANKING_ID && (
 <button
                               className={`btn-ghost ledger-btn ${open ? "active" : ""}`}
-                              title="Πώς προέκυψε η ELO"
+                              title={L.eloLedgerTitle}
                               onClick={() => {
                                 if (open) {
                                   setEloLedgerOpen(null);
@@ -7554,7 +7560,7 @@ export default function TournamentManager() {
       {/* PLAYER REGISTRY */}
       {phase === "players" && !isAdmin && (
         <div className="content">
-          <div className="empty-state">The player registry is only available in Admin mode.</div>
+          <div className="empty-state">Το μητρώο παικτών είναι διαθέσιμο μόνο στη διαχείριση.</div>
         </div>
       )}
       {phase === "players" && isAdmin && (
@@ -7571,28 +7577,28 @@ export default function TournamentManager() {
           <div className="content">
             <div className="notice">
               <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
-              <span>Admin-only: contact info and membership status never appear to visitors.</span>
+              <span>Μόνο για διαχειριστή: τα στοιχεία επικοινωνίας και η συνδρομή δεν εμφανίζονται ποτέ στους επισκέπτες.</span>
             </div>
 
             <div className="footer-actions" style={{ marginTop: 0, marginBottom: 20 }}>
               <button className="btn-secondary" onClick={addRegistryPlayer}>
-                <Plus size={16} /> Add Player
+                <Plus size={16} /> Προσθήκη παίκτη
               </button>
             </div>
 
             <div className="filters">
               <div className="field">
-                <label>Search by name</label>
+                <label>{L.arSearch}</label>
                 <input type="text" value={registrySearch} onChange={(e) => setRegistrySearch(e.target.value)} placeholder="e.g. Zoidis" />
               </div>
               <div style={{ width: 170 }}>
-                <label>Display names as</label>
+                <label>Εμφάνιση ονομάτων</label>
                 <select
                   value={nameDisplayMode}
                   onChange={(e) => setNameDisplayMode(e.target.value)}
                   style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff", color: "var(--ink)" }}
                 >
-                  <option value="normal">As entered</option>
+                  <option value="normal">Όπως καταχωρίστηκαν</option>
                   <option value="upper">ΚΕΦΑΛΑΙΑ</option>
                   <option value="greeklish">Greeklish</option>
                 </select>
@@ -7661,7 +7667,7 @@ export default function TournamentManager() {
                     <thead>
                       <tr>
                         <th style={{ width: 70 }}>Α.Μ.</th>
-                        <th>Player</th>
+                        <th>Παίκτης</th>
                         <th>Σύλλογος</th>
                         <th>{currentYear} status</th>
                         <th></th>
@@ -7680,7 +7686,7 @@ export default function TournamentManager() {
                             <td>
                               {formatNameForDisplay(p.name, nameDisplayMode)}
                               {p.guest && <span className="cal-note"> · φιλοξενούμενος</span>}
-                              {mine && p.needsInfo && <span className="needs-info-badge"> ⚠ Needs info</span>}
+                              {mine && p.needsInfo && <span className="needs-info-badge"> ⚠ Λείπουν στοιχεία</span>}
                             </td>
                             <td>{clubDisplay(sysState, p.clubId, p.club) || "—"}</td>
                             <td>
@@ -7713,7 +7719,7 @@ export default function TournamentManager() {
         if (!p || !contactDraft) {
           return (
             <div className="content">
-              <div className="empty-state">Ο παίκτης δεν βρέθηκε.</div>
+              <div className="empty-state">{L.pNotFound}</div>
             </div>
           );
         }
@@ -7740,7 +7746,7 @@ export default function TournamentManager() {
                 <div className="profile-avatar" aria-hidden="true">{initials}</div>
                 <div className="profile-id">
                   <p className="eyebrow">
-                    {[p.regNo ? `Αρ. Μητρώου ${formatRegNo(p.regNo)}` : null, clubName || null].filter(Boolean).join(" · ") || "Παίκτης"}
+                    {[p.regNo ? `${L.pRegNo} ${formatRegNo(p.regNo)}` : null, clubName || null].filter(Boolean).join(" · ") || L.thPlayer}
                     {isAdmin && registry.identityVersion === 2 ? <span style={{ opacity: 0.6 }}> · ID {key}</span> : null}
                   </p>
                   <h1>{formatNameForDisplay(p.name, nameDisplayMode)}</h1>
@@ -7748,7 +7754,7 @@ export default function TournamentManager() {
                 {eloEntry && (
                   <div className="profile-figures">
                     <div className="profile-figure"><span>ELO</span><strong className="accent">{Math.round(eloEntry.rating)}</strong><small>{mainRanking.name}</small></div>
-                    <div className="profile-figure"><span>Θέση</span><strong>#{rank}</strong><small>πανελλήνια</small></div>
+                    <div className="profile-figure"><span>{L.thRank}</span><strong>#{rank}</strong><small>{L.pNational}</small></div>
                   </div>
                 )}
               </div>
@@ -7768,7 +7774,7 @@ export default function TournamentManager() {
               {playerDetailTab === "contact" && isAdmin && (
                 <div className="card pd-contact-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
                   <div>
-                    <label>Name</label>
+                    <label>Όνομα</label>
                     <input
                       type="text"
                       value={contactDraft.name}
@@ -7802,7 +7808,7 @@ export default function TournamentManager() {
                       onChange={(e) => setContactDraft({ ...contactDraft, email: e.target.value })}
                       style={{ marginBottom: 10 }}
                     />
-                    <label>Phone</label>
+                    <label>Τηλέφωνο</label>
                     <input
                       type="text"
                       value={contactDraft.phone}
@@ -7819,11 +7825,11 @@ export default function TournamentManager() {
                         checked={!!contactDraft.hasDiscount}
                         onChange={(e) => setContactDraft({ ...contactDraft, hasDiscount: e.target.checked })}
                       />
-                      Discount
+                      Έκπτωση
                     </label>
                     {contactDraft.hasDiscount && (
                       <div className="row" style={{ alignItems: "center", marginBottom: 10 }}>
-                        <label style={{ margin: 0 }}>Discounted buy-in (€)</label>
+                        <label style={{ margin: 0 }}>Μειωμένο buy-in (€)</label>
                         <input
                           type="number"
                           style={{ width: 70 }}
@@ -7834,18 +7840,18 @@ export default function TournamentManager() {
                     )}
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                       <button className="btn-primary" onClick={() => saveContactDraft(key)}>
-                        <Save size={15} /> Save
+                        <Save size={15} /> Αποθήκευση
                       </button>
                       {!isSuper ? null : playerHasHistory(key) ? (
                         <span style={{ fontSize: 13, color: "var(--muted)" }}>Έχει ιστορικό αγώνων: δεν διαγράφεται από το μητρώο.</span>
                       ) : confirmingDeletePlayer !== key ? (
                         <button className="btn-ghost" onClick={() => setConfirmingDeletePlayer(key)}>
-                          <X size={14} /> Delete player
+                          <X size={14} /> Διαγραφή παίκτη
                         </button>
                       ) : (
                         <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--muted)" }}>
-                          Remove from registry? Existing tournaments, standings, and ELO history are unaffected.
-                          <button className="btn-secondary" onClick={() => setConfirmingDeletePlayer(null)}>Cancel</button>
+                          Αφαίρεση από το μητρώο; Τα τουρνουά, η Βαθμολογία και το ιστορικό ELO δεν επηρεάζονται.
+                          <button className="btn-secondary" onClick={() => setConfirmingDeletePlayer(null)}>Άκυρο</button>
                           <button
                             className="btn-primary"
                             style={{ background: "var(--accent)" }}
@@ -7854,7 +7860,7 @@ export default function TournamentManager() {
                               setPhase("players");
                             }}
                           >
-                            Yes, delete
+                            Ναι, διαγραφή
                           </button>
                         </span>
                       )}
@@ -7894,20 +7900,20 @@ export default function TournamentManager() {
                   </div>
 
                   <div>
-                    <label>Membership history</label>
+                    <label>Ιστορικό συνδρομών</label>
                     {p.membership.length === 0 && (
-                      <p style={{ fontSize: 13, color: "var(--muted)" }}>No membership years recorded yet.</p>
+                      <p style={{ fontSize: 13, color: "var(--muted)" }}>Δεν υπάρχουν ακόμη έτη συνδρομής.</p>
                     )}
                     {p.membership.map((m) => (
                       <div key={m.year} className="membership-row">
                         <strong>{m.year}</strong>
                         <select value={m.member ? "yes" : "no"} onChange={(e) => updateMembershipRow(key, m.year, "member", e.target.value === "yes")}>
-                          <option value="yes">Member</option>
-                          <option value="no">Not a member</option>
+                          <option value="yes">Μέλος</option>
+                          <option value="no">Όχι μέλος</option>
                         </select>
                         <select value={m.dues ? "yes" : "no"} onChange={(e) => updateMembershipRow(key, m.year, "dues", e.target.value === "yes")}>
-                          <option value="yes">Dues paid</option>
-                          <option value="no">Dues unpaid</option>
+                          <option value="yes">Πληρωμένη συνδρομή</option>
+                          <option value="no">Απλήρωτη συνδρομή</option>
                         </select>
                         <button className="btn-ghost" onClick={() => removeMembershipRow(key, m.year)}>
                           <X size={13} />
@@ -7923,7 +7929,7 @@ export default function TournamentManager() {
                         />
                       </div>
                       <button className="btn-ghost" onClick={() => addMembershipRow(key, newMembershipYear)}>
-                        <Plus size={13} /> Add year
+                        <Plus size={13} /> Προσθήκη έτους
                       </button>
                     </div>
                   </div>
@@ -7935,37 +7941,37 @@ export default function TournamentManager() {
                 {eloEntry && (
                   <div className="profile-tiles">
                     <div className="profile-tile">
-                      <div className="profile-tile-label">Αγώνες</div>
+                      <div className="profile-tile-label">{L.thMatches}</div>
                       <div className="profile-tile-value">{games}</div>
                       <div className="profile-tile-sub">{mainRanking.name}</div>
                     </div>
                     <div className="profile-tile">
-                      <div className="profile-tile-label">Νίκες</div>
+                      <div className="profile-tile-label">{L.thWins}</div>
                       <div className="profile-tile-value">{winPct !== null ? `${winPct}%` : "—"}</div>
                       <div className="profile-tile-sub">{eloEntry.wins || 0} νίκες – {Math.max(0, games - (eloEntry.wins || 0))} ήττες</div>
                     </div>
                     <div className="profile-tile">
-                      <div className="profile-tile-label">Εμπειρία</div>
+                      <div className="profile-tile-label">{L.eloThExperience}</div>
                       <div className="profile-tile-value">{eloEntry.experience ?? games * 7}</div>
-                      <div className="profile-tile-sub">πόντοι αγώνων</div>
+                      <div className="profile-tile-sub">{L.pPointsPlayed}</div>
                     </div>
                     <div className="profile-tile">
-                      <div className="profile-tile-label">Απέναντι σε ισχυρότερους / ασθενέστερους</div>
+                      <div className="profile-tile-label">{L.pVs}</div>
                       {stats ? (
                         <>
-                          <div className="profile-tile-sub" style={{ marginTop: 4 }}>Ισχυρότερους: {stats.vsStrongerW}–{stats.vsStrongerL}{strongPct !== null ? ` (${strongPct}%)` : ""}</div>
+                          <div className="profile-tile-sub" style={{ marginTop: 4 }}>{L.pStronger}: {stats.vsStrongerW}–{stats.vsStrongerL}{strongPct !== null ? ` (${strongPct}%)` : ""}</div>
                           <div className="profile-bar"><span style={{ width: `${strongPct || 0}%` }} /></div>
-                          <div className="profile-tile-sub">Ασθενέστερους: {stats.vsWeakerW}–{stats.vsWeakerL}{weakPct !== null ? ` (${weakPct}%)` : ""}</div>
+                          <div className="profile-tile-sub">{L.pWeaker}: {stats.vsWeakerW}–{stats.vsWeakerL}{weakPct !== null ? ` (${weakPct}%)` : ""}</div>
                           <div className="profile-bar ink"><span style={{ width: `${weakPct || 0}%` }} /></div>
                         </>
                       ) : (
-                        <div className="profile-tile-sub">Φόρτωση…</div>
+                        <div className="profile-tile-sub">{L.loading}</div>
                       )}
                     </div>
                   </div>
                 )}
                 <div className="card">
-                  <h2 className="profile-section-title">Πορεία</h2>
+                  <h2 className="profile-section-title">{L.pTrend}</h2>
                   {(() => {
                     // 5D: one ranking — the main one (stored in meta/elo).
                     const eloRows = eloTimeline ? eloTimeline[key] || [] : null;
@@ -7993,11 +7999,11 @@ export default function TournamentManager() {
 
                 {recent && recent.length > 0 && (
                   <div className="card">
-                    <h2 className="profile-section-title">Τελευταίοι αγώνες</h2>
+                    <h2 className="profile-section-title">{L.pRecent}</h2>
                     <div style={{ overflowX: "auto" }}>
                       <table className="recent-table">
                         <thead>
-                          <tr><th>Τουρνουά</th><th>Αντίπαλος (ELO)</th><th>Αποτ.</th><th style={{ textAlign: "right" }}>ELO</th></tr>
+                          <tr><th>{L.lgTournament}</th><th>{L.lgOpponent}</th><th>{L.lgResult}</th><th style={{ textAlign: "right" }}>ELO</th></tr>
                         </thead>
                         <tbody>
                           {recent.map((r, i) => (
@@ -8006,12 +8012,12 @@ export default function TournamentManager() {
                                 {r.matchlist ? r.tournamentName : (
                                   <button className="history-link" onClick={() => (r.imported ? openImportPublic(r.tournamentId, { kind: "player", key }) : openTournamentFromPlayer(r.tournamentId, key))}>{r.imported ? r.tournamentName : shortTournamentLabel(r.tournamentName)}</button>
                                 )}
-                                <span className="cal-note" style={{ display: "block" }}>Γύρος {r.round} · {formatDate(r.date)}</span>
+                                <span className="cal-note" style={{ display: "block" }}>{L.tRoundN(r.round)} · {new Date(r.date).toLocaleDateString(dloc)}</span>
                               </td>
                               <td>{r.opponent} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
-                              <td><span className={`recent-res ${r.result === "win" ? "w" : "l"}`} title={r.ret ? "με Α.Α." : undefined}>{r.result === "win" ? "Ν" : "Η"}</span></td>
+                              <td><span className={`recent-res ${r.result === "win" ? "w" : "l"}`} title={r.ret ? L.retShort : undefined}>{r.result === "win" ? L.wShort : L.lShort}</span></td>
                               <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                                {r.ret ? <span className="cal-note">Α.Α.</span> : <strong className={r.delta > 0 ? "pos" : r.delta < 0 ? "neg" : ""}>{`${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}`}</strong>}{" "}
+                                {r.ret ? <span className="cal-note">{L.retShort}</span> : <strong className={r.delta > 0 ? "pos" : r.delta < 0 ? "neg" : ""}>{`${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}`}</strong>}{" "}
                                 <span className="cal-note">→ {Math.round(r.ratingAfter)}</span>
                               </td>
                             </tr>
@@ -8021,7 +8027,7 @@ export default function TournamentManager() {
                     </div>
                     <details className="ledger" style={{ marginTop: 12 }}>
                       <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                        Όλοι οι αγώνες — πώς προέκυψε η ELO ({(eloTimeline.__ledger[key] || []).filter((r) => !r.ret).length} αγώνες)
+                        {L.pAllMatches((eloTimeline.__ledger[key] || []).filter((r) => !r.ret).length)}
                       </summary>
                       {renderEloLedger(key)}
                     </details>
@@ -8029,16 +8035,16 @@ export default function TournamentManager() {
                 )}
 
                 <div className="card">
-                  <h2 className="profile-section-title">Ιστορικό τουρνουά</h2>
-                  {!playerHistoryCache[key] && <p style={{ fontSize: 13, color: "var(--muted)" }}>Φόρτωση…</p>}
+                  <h2 className="profile-section-title">{L.pHistory}</h2>
+                  {!playerHistoryCache[key] && <p style={{ fontSize: 13, color: "var(--muted)" }}>{L.loading}</p>}
                   {playerHistoryCache[key] && playerHistoryCache[key].length === 0 && (
-                    <p style={{ fontSize: 13, color: "var(--muted)" }}>Δεν υπάρχουν ακόμη τουρνουά.</p>
+                    <p style={{ fontSize: 13, color: "var(--muted)" }}>{L.pNoHistory}</p>
                   )}
                   {playerHistoryCache[key] && new Set([...playerHistoryCache[key].map((h) => h.competitionId), ...playerMatchlistGroups(importDocs, key).map((g) => g.competitionId)]).size > 1 && (
                     <div className="round-pills" style={{ margin: "6px 0 8px 0" }}>
                       {["", ...new Set([...playerHistoryCache[key].map((h) => h.competitionId), ...playerMatchlistGroups(importDocs, key).map((g) => g.competitionId)])].map((c) => (
                         <button key={c || "all"} className={`round-pill ${historyCompetition === c ? "active" : ""}`} onClick={() => setHistoryCompetition(c)}>
-                          {c ? competitionName(competitionsFrom(sysState), c) : "Όλες"}
+                          {c ? competitionName(competitionsFrom(sysState), c) : L.allF}
                         </button>
                       ))}
                     </div>
@@ -8049,11 +8055,11 @@ export default function TournamentManager() {
                         <div key={i} className="history-row">
                           <span>
                             {h.imported ? (
-                              <button className="history-link" onClick={() => openImportPublic(h.tournamentId, { kind: "player", key })} title="Άνοιγμα του τουρνουά">
+                              <button className="history-link" onClick={() => openImportPublic(h.tournamentId, { kind: "player", key })} title={L.openTournament}>
                                 {h.tournamentName}
                               </button>
                             ) : h.tournamentId && archive.some((t) => t.id === h.tournamentId) ? (
-                              <button className="history-link" onClick={() => openTournamentFromPlayer(h.tournamentId, key)} title="Άνοιγμα του τουρνουά">
+                              <button className="history-link" onClick={() => openTournamentFromPlayer(h.tournamentId, key)} title={L.openTournament}>
                                 {h.tournamentName}
                               </button>
                             ) : (
@@ -8061,7 +8067,7 @@ export default function TournamentManager() {
                             )}{" "}
                             <span style={{ color: "var(--muted)" }}>({formatDate(h.date)})</span>
                           </span>
-                          <strong>{h.imported ? (h.positionLabel && h.positionLabel.includes("–") ? `θέσεις ${h.positionLabel}` : h.position ? `${h.position}η θέση` : "—") : `${h.points} β.`}</strong>
+                          <strong>{h.imported ? (h.positionLabel && h.positionLabel.includes("–") ? L.placesN(h.positionLabel) : h.position ? L.placeN(h.position) : "—") : L.ptsN(h.points)}</strong>
                         </div>
                       ))}
                     </div>
@@ -8074,7 +8080,7 @@ export default function TournamentManager() {
                       const q = k ? registry.players[k] : null;
                       if (!q) return n;
                       if (q.guest) return <span>{q.name}<span className="cal-note"> · φιλοξ.</span></span>;
-                      return <button className="history-link" onClick={() => openPlayerDetail(k)} title="Καρτέλα παίκτη">{formatNameForDisplay(q.name, nameDisplayMode)}</button>;
+                      return <button className="history-link" onClick={() => openPlayerDetail(k)} title={L.playerCard}>{formatNameForDisplay(q.name, nameDisplayMode)}</button>;
                     }}
                   />
                 </div>
@@ -8106,27 +8112,27 @@ export default function TournamentManager() {
           const zones = h.rules && h.rules.qualZones;
           const cutoff = zones ? (h.rules.cutoffR48 || h.rules.cutoffR32 || 0) : 0;
           const parts = [];
-          if (prog.total) parts.push(`${prog.done} από ${prog.total} αγωνιστικές`);
-          if (h.rules && h.rules.bestOf && h.rules.bestOf < 99) parts.push(`μετράνε οι ${h.rules.bestOf} καλύτερες`);
-          if (zones) parts.push("πράσινο = ζώνη πρόκρισης");
+          if (prog.total) parts.push(L.hDaysDone(prog.done, prog.total));
+          if (h.rules && h.rules.bestOf && h.rules.bestOf < 99) parts.push(L.hBestOf(h.rules.bestOf));
+          if (zones) parts.push(L.hZoneNote);
           return {
-            id: c.id, label: c.name, seasonLabel: `σεζόν ${sn(h.seasonId)}`, ruleLine: parts.join(" · "),
+            id: c.id, label: c.name, seasonLabel: `${L.stSeason} ${sn(h.seasonId)}`, ruleLine: parts.join(" · "),
             rows: h.rows.map((r) => ({ ...r, zone: zones && r.rank <= cutoff })),
           };
         });
-        const winnerFact = latest && latest.winner ? { label: "Τελευταίος νικητής", value: latest.winner, key: latest.winnerKey, sub: `${latest.name}` } : null;
+        const winnerFact = latest && latest.winner ? { label: L.hLastWinner, value: latest.winner, key: latest.winnerKey, sub: `${latest.name}` } : null;
         const plRows = homeStandings[DEFAULT_COMPETITION_ID]?.rows || [];
-        const stFact = plRows[0] ? { label: "Πρώτος στη Βαθμολογία", value: plRows[0].name, key: plRows[0].key, sub: `${plRows[0].total} βαθμοί` } : null;
-        const eloFact = eloTop[0] ? { label: "Πρώτος στην ELO", value: eloTop[0].name, key: eloTop[0].key, sub: `${eloTop[0].rating}` } : null;
-        const fmt = (ymd) => (ymd ? new Date(`${ymd}T12:00:00`).toLocaleDateString("el-GR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
+        const stFact = plRows[0] ? { label: L.hFirstStandings, value: plRows[0].name, key: plRows[0].key, sub: L.hPoints(plRows[0].total) } : null;
+        const eloFact = eloTop[0] ? { label: L.hFirstElo, value: eloTop[0].name, key: eloTop[0].key, sub: `${eloTop[0].rating}` } : null;
+        const fmt = (ymd) => (ymd ? new Date(`${ymd}T12:00:00`).toLocaleDateString(dloc, { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
         const hero =
           heroKind === "live" ? { kind: "live", ...homeLive }
-          : heroKind === "recent" ? { kind: "recent", id: latest.id, name: latest.name, dateLabel: new Date(`${latest.date}T12:00:00`).toLocaleDateString("el-GR", { weekday: "long", day: "numeric", month: "long" }), players: latest.players, podium: latest.podium, next: upcoming[0] ? `${upcoming[0].title.replace(/^Backgammon /, "")} · ${fmt(upcoming[0].date).slice(0, 5)}` : null }
+          : heroKind === "recent" ? { kind: "recent", id: latest.id, name: latest.name, dateLabel: new Date(`${latest.date}T12:00:00`).toLocaleDateString(dloc, { weekday: "long", day: "numeric", month: "long" }), players: latest.players, podium: latest.podium, next: upcoming[0] ? `${upcoming[0].title.replace(/^Backgammon /, "")} · ${fmt(upcoming[0].date).slice(0, 5)}` : null }
           : { kind: "next", entry: upcoming[0] || null, days: upcoming[0] ? daysBetween(today, upcoming[0].date) : null, facts: [winnerFact, stFact, eloFact].filter(Boolean) };
         const openPlayer = (k) => { if (k && registry.players?.[k]) openPlayerDetail(k); };
         return (
           <HomePage
-            seasonLabel={`Σεζόν ${sn(currentSeasonId(sysState, DEFAULT_COMPETITION_ID))}`}
+            seasonLabel={`${L.stSeason} ${sn(currentSeasonId(sysState, DEFAULT_COMPETITION_ID))}`}
             hero={hero}
             upcoming={upcoming}
             standings={standings}
@@ -8541,7 +8547,7 @@ export default function TournamentManager() {
                 Πλήρες αντίγραφο όλων των δεδομένων σε αρχείο. Τελευταίο: {sysState.lastExportAt ? formatDate(sysState.lastExportAt) : "ποτέ"}.
               </p>
               <button className="btn-secondary" onClick={exportAllData}>
-                <Download size={15} /> Export All Data (full backup)
+                <Download size={15} /> Export All Data (πλήρες αντίγραφο ασφαλείας)
               </button>
             </div>
 
@@ -8638,35 +8644,35 @@ export default function TournamentManager() {
             {isAdmin && (
               <div className="footer-actions" style={{ marginTop: 0, marginBottom: 20 }}>
                 <button className="btn-primary" onClick={goToNewTournament}>
-                  <Plus size={16} /> New Tournament
+                  <Plus size={16} /> Νέο τουρνουά
                 </button>
               </div>
             )}
 
             <div className="filters">
               <div className="field">
-                <label>Search by name</label>
-                <input type="text" value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder="e.g. Championship" />
+                <label>{L.arSearch}</label>
+                <input type="text" value={searchName} onChange={(e) => setSearchName(e.target.value)} placeholder={L.arSearchPh} />
               </div>
               <div className="field">
-                <label>From date</label>
+                <label>{L.arFrom}</label>
                 <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
               </div>
               <div className="field">
-                <label>To date</label>
+                <label>{L.arTo}</label>
                 <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
               </div>
               <div style={{ width: 140 }}>
-                <label>Σεζόν</label>
+                <label>{L.stSeason}</label>
                 <select value={archiveSeason} onChange={(e) => setArchiveSeason(e.target.value)} style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
-                  <option value="">Όλες</option>
+                  <option value="">{L.allF}</option>
                   {archiveSeasonOptions.map((y) => <option key={y} value={y}>{sn(y)}</option>)}
                 </select>
               </div>
               <div style={{ width: 180 }}>
-                <label>Διοργάνωση</label>
+                <label>{L.stCompetition}</label>
                 <select value={archiveCompetition} onChange={(e) => setArchiveCompetition(e.target.value)} style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}>
-                  <option value="">Όλες</option>
+                  <option value="">{L.allF}</option>
                   {competitionsFrom(sysState).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
@@ -8675,7 +8681,7 @@ export default function TournamentManager() {
             {visibleArchive.length === 0 && (
               <div className="empty-state">
                 <Search size={20} style={{ marginBottom: 6 }} />
-                <p>No tournaments found{archiveHasFilter ? " matching these filters." : "."}</p>
+                <p>{archiveHasFilter ? L.arNoneFiltered : L.arNone}</p>
               </div>
             )}
 
@@ -8683,22 +8689,22 @@ export default function TournamentManager() {
               <div className="archive-row" key={t.id} onClick={() => (t.imported ? openImportPublic(t.id, { kind: "archive" }) : openArchived(t.id))}>
                 <span className="archive-name">
                   {t.name}
-                  {!t.isOfficial && <span className="status-chip test" style={{ marginLeft: 8 }}>Test</span>}
-                  {t.imported && <span className="status-chip imported" style={{ marginLeft: 8 }}>Εισαγόμενο</span>}
+                  {!t.isOfficial && <span className="status-chip test" style={{ marginLeft: 8 }}>{L.arTest}</span>}
+                  {t.imported && <span className="status-chip imported" style={{ marginLeft: 8 }}>{L.arImported}</span>}
                 </span>
                 <span className="archive-meta">
                   <span className="cal-note">
-                    Σεζόν {(Number(t.seasonYear) || seasonForDate(t.date)) ? sn(Number(t.seasonYear) || seasonForDate(t.date)) : "—"} · {competitionName(competitionsFrom(sysState), t.competitionId || DEFAULT_COMPETITION_ID)}
+                    {L.stSeason} {(Number(t.seasonYear) || seasonForDate(t.date)) ? sn(Number(t.seasonYear) || seasonForDate(t.date)) : "—"} · {competitionName(competitionsFrom(sysState), t.competitionId || DEFAULT_COMPETITION_ID)}
                   </span>
-                  {formatDate(t.date)}
-                  <span className={`status-chip ${t.status === "Completed" ? "done" : "live"}`}>{t.status}</span>
+                  {new Date(t.date).toLocaleDateString(dloc)}
+                  <span className={`status-chip ${t.status === "Completed" ? "done" : "live"}`}>{t.status === "Completed" ? L.tFinished : L.tInProgress}</span>
                 </span>
               </div>
             ))}
 
             {!archiveHasFilter && filteredArchive.length > 10 && !showAllArchive && (
               <button className="btn-ghost" onClick={() => setShowAllArchive(true)}>
-                Show all ({filteredArchive.length})
+                {L.arShowAll(filteredArchive.length)}
               </button>
             )}
           </div>
@@ -8721,10 +8727,10 @@ export default function TournamentManager() {
           </div>
           <div className="content">
             <button className="btn-secondary" onClick={backFromImport} style={{ marginBottom: 12 }}>
-              <ArrowLeft size={15} /> {importReturn?.kind === "player" ? `Πίσω στον παίκτη (${registry.players[importReturn.key]?.name || ""})` : "Πίσω στα τουρνουά"}
+              <ArrowLeft size={15} /> {importReturn?.kind === "player" ? L.imBackPlayer(registry.players[importReturn.key]?.name || "") : L.imBackTournaments}
             </button>
             <p className="cal-note" style={{ marginBottom: 12 }}>
-              Τουρνουά που διεξήχθη εκτός εφαρμογής ({importView.doc.sourceName || "εξωτερική πηγή"}) — δεν μετράει στην ELO και στη Βαθμολογία της {clubDisplay(sysState, sysState.homeClubId, "Ομοσπονδίας")}.
+              {L.imBanner(importView.doc.sourceName || L.imExternal, clubDisplay(sysState, sysState.homeClubId, L.imFederation))}
             </p>
             {renderImportBody(false)}
           </div>
@@ -9056,13 +9062,13 @@ export default function TournamentManager() {
           <TournamentHeader
             live
             name={tournamentName || "Backgammon Tournament"}
-            meta={[createdAt ? formatDate(createdAt) : null, `${players.length} παίκτες`, `Swiss, ${totalRounds} γύροι`, `αγώνες στους ${matchLength} πόντους`].filter(Boolean).join(" · ")}
+            meta={[createdAt ? new Date(createdAt).toLocaleDateString(dloc) : null, L.tPlayersN(players.length), L.tSwissRounds(totalRounds), L.tMatchLen(matchLength)].filter(Boolean).join(" · ")}
             counters={[
-              { label: "Γύρος", value: round, of: totalRounds },
+              { label: L.tRound, value: round, of: totalRounds },
               (() => {
                 const prs = (currentPairings && currentPairings.pairs) || [];
                 const done = prs.filter((p) => p.result).length;
-                return { label: "Αγώνες γύρου", value: done, of: prs.length, bar: prs.length ? done / prs.length : 0 };
+                return { label: L.tRoundMatches, value: done, of: prs.length, bar: prs.length ? done / prs.length : 0 };
               })(),
             ]}
           />
@@ -9077,12 +9083,12 @@ export default function TournamentManager() {
             {renderBackToPlayer()}
 
             <div className="tabs">
-              <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Ζευγαρώματα</button>
-              <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Κατάταξη</button>
-              <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
+              <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>{L.tTabMatches}</button>
+              <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>{L.tTabStandings}</button>
+              <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>{L.tTabDetails}</button>
               {isAdmin && tFin.enabled && (
                 <>
-                  <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>Prizes</button>
+                  <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>{L.tTabPrizes}</button>
                   <button className={`tab ${view === "calcutta" ? "active" : ""}`} onClick={() => setView("calcutta")}>Calcutta</button>
                 </>
               )}
@@ -9099,7 +9105,7 @@ export default function TournamentManager() {
                     checked={liveStandingsEnabled}
                     onChange={(e) => setLiveStandingsEnabled(e.target.checked)}
                   />
-                  Update ELO &amp; season standings live, after every round (not just at the end)
+                  Ζωντανή ενημέρωση: η Βαθμολογία με κάθε αποτέλεσμα, η ELO με κάθε γύρο (όχι μόνο στο τέλος)
                 </label>
                 )}
 
@@ -9110,20 +9116,20 @@ export default function TournamentManager() {
                       className={`round-pill ${selectedRound === r ? "active" : ""}`}
                       onClick={() => { setSelectedRound(r); setConfirmingRedraw(false); }}
                     >
-                      Γύρος {r}
+                      {L.tRoundN(r)}
                     </button>
                   ))}
                 </div>
 
-                <div className="layout-toggle" role="group" aria-label="Εμφάνιση αγώνων">
+                <div className="layout-toggle" role="group" aria-label={L.tLayoutLabel}>
                   <button className={pairingsLayout === "cards" ? "active" : ""} onClick={() => choosePairingsLayout("cards")}>
-                    <LayoutGrid size={14} /> Κάρτες
+                    <LayoutGrid size={14} /> {L.tCards}
                   </button>
                   <button className={pairingsLayout === "list" ? "active" : ""} onClick={() => choosePairingsLayout("list")}>
-                    <List size={14} /> Λίστα
+                    <List size={14} /> {L.tList}
                   </button>
                 </div>
-                {selectedRound > 1 && <p className="pairings-order-note">Δίπλα σε κάθε όνομα οι νίκες (●) και ήττες (○) πριν από αυτόν τον γύρο· πρώτα οι αγώνες με τις περισσότερες νίκες.</p>}
+                {selectedRound > 1 && <p className="pairings-order-note">{L.tDotsNote}</p>}
 
                 {pairingsLayout === "list" ? (
                   renderPairingsList(true)
@@ -9137,9 +9143,9 @@ export default function TournamentManager() {
                       <Check size={14} />
                     </div>
                     <div className="match-row-name" style={{ color: "var(--muted)", fontStyle: "italic" }}>
-                      <span>— κανένας αντίπαλος —</span>
+                      <span>{L.tNoOpponent}</span>
                     </div>
-                    <div className="match-row-tag">Αυτόματο ρεπό</div>
+                    <div className="match-row-tag">{L.tAutoBye}</div>
                   </div>
                 )}
                 {roundData && roundOrder.map((i) => {
@@ -9188,26 +9194,26 @@ export default function TournamentManager() {
                       {result && !isDoubleRet && result.method === "retirement" && (
                         <div className="match-row-tag">{byId[result.loserId]?.name} αποχώρησε (Α.Α.)</div>
                       )}
-                      {!result && !canEdit && <div className="match-row-tag">Σε εξέλιξη</div>}
+                      {!result && !canEdit && <div className="match-row-tag">{L.tInProgress}</div>}
 
                       {canEdit && isExpanded && (
                         <div className="match-expand" onClick={(e) => e.stopPropagation()}>
                           {!result && (
                             <>
                               <div className="match-actions">
-                                <button className="btn-secondary" onClick={() => doSetResult(p1.id, p2.id, "normal")}>Win {p1.name}</button>
-                                <button className="btn-secondary" onClick={() => doSetResult(p2.id, p1.id, "normal")}>Win {p2.name}</button>
+                                <button className="btn-secondary" onClick={() => doSetResult(p1.id, p2.id, "normal")}>Νίκη {p1.name}</button>
+                                <button className="btn-secondary" onClick={() => doSetResult(p2.id, p1.id, "normal")}>Νίκη {p2.name}</button>
                               </div>
                               <div className="retire-row">
-                                <button className="btn-ghost" onClick={() => doSetResult(p2.id, p1.id, "retirement")}><UserX size={13} /> {p1.name} retired</button>
-                                <button className="btn-ghost" onClick={() => doSetResult(p1.id, p2.id, "retirement")}><UserX size={13} /> {p2.name} retired</button>
+                                <button className="btn-ghost" onClick={() => doSetResult(p2.id, p1.id, "retirement")}><UserX size={13} /> {p1.name} Α.Α.</button>
+                                <button className="btn-ghost" onClick={() => doSetResult(p1.id, p2.id, "retirement")}><UserX size={13} /> {p2.name} Α.Α.</button>
                               </div>
                               <div className="retire-row">
-                                <button className="btn-ghost" style={{ color: "var(--muted)" }} onClick={() => doSetResult(null, null, "double_retirement")}><UserX size={13} /> Both retired (no winner)</button>
+                                <button className="btn-ghost" style={{ color: "var(--muted)" }} onClick={() => doSetResult(null, null, "double_retirement")}><UserX size={13} /> Και οι δύο Α.Α. — χωρίς νικητή</button>
                               </div>
                             </>
                           )}
-                          {result && <button className="btn-ghost" onClick={doClearResult}>Undo</button>}
+                          {result && <button className="btn-ghost" onClick={doClearResult}>Αναίρεση</button>}
                         </div>
                       )}
                     </div>
@@ -9224,16 +9230,16 @@ export default function TournamentManager() {
                       disabled={!roundComplete}
                       onClick={() => (round >= totalRounds ? setConfirmingFinish(true) : finalizeRoundAndAdvance(true))}
                     >
-                      {round >= totalRounds ? "Finish Tournament" : "Draw Next Round"} <ArrowRight size={16} />
+                      {round >= totalRounds ? "Ολοκλήρωση τουρνουά" : "Κλήρωση επόμενου γύρου"} <ArrowRight size={16} />
                     </button>
                     {!confirmingRedraw ? (
                       <button className="btn-ghost" onClick={() => setConfirmingRedraw(true)}>
-                        <RotateCcw size={14} /> Redraw this round
+                        <RotateCcw size={14} /> Νέα κλήρωση γύρου
                       </button>
                     ) : (
                       <span style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, fontSize: 13, color: "var(--muted)" }}>
-                        {round === 1 ? "Delete round 1 and go back to the player list?" : "Discard this round and reopen round " + (round - 1) + "?"}
-                        <button className="btn-secondary" onClick={() => setConfirmingRedraw(false)}>Cancel</button>
+                        {round === 1 ? "Διαγραφή του 1ου γύρου και επιστροφή στη λίστα παικτών;" : `Ακύρωση αυτού του γύρου και επαναφορά του ${round - 1}ου γύρου;`}
+                        <button className="btn-secondary" onClick={() => setConfirmingRedraw(false)}>Άκυρο</button>
                         <button
                           className="btn-primary"
                           onClick={() => {
@@ -9241,7 +9247,7 @@ export default function TournamentManager() {
                             setConfirmingRedraw(false);
                           }}
                         >
-                          Yes, redraw
+                          Ναι, νέα κλήρωση
                         </button>
                       </span>
                     )}
@@ -9274,8 +9280,8 @@ export default function TournamentManager() {
         <>
           <TournamentHeader
             name={tournamentName || "Backgammon Tournament"}
-            meta={[createdAt ? formatDate(createdAt) : null, `${players.length} παίκτες`, `Swiss, ${totalRounds} γύροι`, `αγώνες στους ${matchLength} πόντους`].filter(Boolean).join(" · ")}
-            counters={[{ label: "Γύροι", value: totalRounds, of: totalRounds }, { label: "Παίκτες", value: players.length, of: players.length }]}
+            meta={[createdAt ? new Date(createdAt).toLocaleDateString(dloc) : null, L.tPlayersN(players.length), L.tSwissRounds(totalRounds), L.tMatchLen(matchLength)].filter(Boolean).join(" · ")}
+            counters={[{ label: L.tRounds, value: totalRounds, of: totalRounds }, { label: L.tPlayers, value: players.length, of: players.length }]}
           />
           <div className="content" style={{ maxWidth: 1600 }}>
             {notice && (
@@ -9286,7 +9292,7 @@ export default function TournamentManager() {
             )}
             <div className="winner-banner">
               <Trophy size={34} className="trophy" />
-              <p className="sub">Tournament Winner</p>
+              <p className="sub">{L.tWinner}</p>
               <p className="name">{standings[0]?.shared ? standings.filter((p) => p.rank === 1).map((p) => p.name).join(" · ") : standings[0]?.name}</p>
               {winnerTieLine(standings, L) && <p className="sub">{winnerTieLine(standings, L)}</p>}
             </div>
@@ -9317,12 +9323,12 @@ export default function TournamentManager() {
             {renderBackToPlayer()}
 
             <div className="tabs">
-              <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Ζευγαρώματα</button>
-              <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Κατάταξη</button>
-              <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
+              <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>{L.tTabMatches}</button>
+              <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>{L.tTabStandings}</button>
+              <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>{L.tTabDetails}</button>
               {isAdmin && tFin.enabled && (
                 <>
-                  <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>Prizes</button>
+                  <button className={`tab ${view === "finance" ? "active" : ""}`} onClick={() => setView("finance")}>{L.tTabPrizes}</button>
                   <button className={`tab ${view === "calcutta" ? "active" : ""}`} onClick={() => setView("calcutta")}>Calcutta</button>
                 </>
               )}
@@ -9339,20 +9345,20 @@ export default function TournamentManager() {
                       className={`round-pill ${selectedRound === r ? "active" : ""}`}
                       onClick={() => setSelectedRound(r)}
                     >
-                      Γύρος {r}
+                      {L.tRoundN(r)}
                     </button>
                   ))}
                 </div>
 
-                <div className="layout-toggle" role="group" aria-label="Εμφάνιση αγώνων">
+                <div className="layout-toggle" role="group" aria-label={L.tLayoutLabel}>
                   <button className={pairingsLayout === "cards" ? "active" : ""} onClick={() => choosePairingsLayout("cards")}>
-                    <LayoutGrid size={14} /> Κάρτες
+                    <LayoutGrid size={14} /> {L.tCards}
                   </button>
                   <button className={pairingsLayout === "list" ? "active" : ""} onClick={() => choosePairingsLayout("list")}>
-                    <List size={14} /> Λίστα
+                    <List size={14} /> {L.tList}
                   </button>
                 </div>
-                {selectedRound > 1 && <p className="pairings-order-note">Δίπλα σε κάθε όνομα οι νίκες (●) και ήττες (○) πριν από αυτόν τον γύρο· πρώτα οι αγώνες με τις περισσότερες νίκες.</p>}
+                {selectedRound > 1 && <p className="pairings-order-note">{L.tDotsNote}</p>}
 
                 {pairingsLayout === "list" ? (
                   renderPairingsList(false)
@@ -9366,9 +9372,9 @@ export default function TournamentManager() {
                       <Check size={14} />
                     </div>
                     <div className="match-row-name" style={{ color: "var(--muted)", fontStyle: "italic" }}>
-                      <span>— κανένας αντίπαλος —</span>
+                      <span>{L.tNoOpponent}</span>
                     </div>
-                    <div className="match-row-tag">Αυτόματο ρεπό</div>
+                    <div className="match-row-tag">{L.tAutoBye}</div>
                   </div>
                 )}
                 {roundData && roundOrder.map((i) => {
@@ -9415,19 +9421,19 @@ export default function TournamentManager() {
                           {!result && (
                             <>
                               <div className="match-actions">
-                                <button className="btn-secondary" onClick={() => doSetResult(p1.id, p2.id, "normal")}>Win {p1.name}</button>
-                                <button className="btn-secondary" onClick={() => doSetResult(p2.id, p1.id, "normal")}>Win {p2.name}</button>
+                                <button className="btn-secondary" onClick={() => doSetResult(p1.id, p2.id, "normal")}>Νίκη {p1.name}</button>
+                                <button className="btn-secondary" onClick={() => doSetResult(p2.id, p1.id, "normal")}>Νίκη {p2.name}</button>
                               </div>
                               <div className="retire-row">
-                                <button className="btn-ghost" onClick={() => doSetResult(p2.id, p1.id, "retirement")}><UserX size={13} /> {p1.name} retired</button>
-                                <button className="btn-ghost" onClick={() => doSetResult(p1.id, p2.id, "retirement")}><UserX size={13} /> {p2.name} retired</button>
+                                <button className="btn-ghost" onClick={() => doSetResult(p2.id, p1.id, "retirement")}><UserX size={13} /> {p1.name} Α.Α.</button>
+                                <button className="btn-ghost" onClick={() => doSetResult(p1.id, p2.id, "retirement")}><UserX size={13} /> {p2.name} Α.Α.</button>
                               </div>
                               <div className="retire-row">
-                                <button className="btn-ghost" style={{ color: "var(--muted)" }} onClick={() => doSetResult(null, null, "double_retirement")}><UserX size={13} /> Both retired (no winner)</button>
+                                <button className="btn-ghost" style={{ color: "var(--muted)" }} onClick={() => doSetResult(null, null, "double_retirement")}><UserX size={13} /> Και οι δύο Α.Α. — χωρίς νικητή</button>
                               </div>
                             </>
                           )}
-                          {result && <button className="btn-ghost" onClick={doClearResult}>Undo</button>}
+                          {result && <button className="btn-ghost" onClick={doClearResult}>Αναίρεση</button>}
                         </div>
                       )}
                     </div>
@@ -9454,7 +9460,7 @@ export default function TournamentManager() {
 
             {isAdmin && (
               <div className="footer-actions">
-                <button className="btn-secondary" onClick={goHome}><RotateCcw size={15} /> Home</button>
+                <button className="btn-secondary" onClick={goHome}><RotateCcw size={15} /> {L.navHome}</button>
               </div>
             )}
           </div>
@@ -9466,12 +9472,13 @@ export default function TournamentManager() {
       {isAdmin && (phase === "tournament" || phase === "finished") && (
         <div className="content" style={{ paddingTop: 0, marginTop: -20 }}>
           <button className="btn-ghost" onClick={() => fileInputRef.current?.click()}>
-            <Upload size={14} /> Load tournament file (.json)
+            <Upload size={14} /> Φόρτωση αρχείου τουρνουά (.json)
           </button>
           <input type="file" accept="application/json" ref={fileInputRef} onChange={importJSON} style={{ display: "none" }} />
         </div>
       )}
       {/* #endregion Φόρτωση αρχείου τουρνουά (admin, τουρνουά) */}
     </div>
+    </LangContext.Provider>
   );
 }

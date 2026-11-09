@@ -60,7 +60,7 @@ export function TrashRow({ entry, busy, action, onAction, onRestore, onPurge, on
             {entry.isOfficial ? (
               <span className="status-chip done" style={{ marginLeft: 8 }}>Επίσημο</span>
             ) : (
-              <span className="status-chip test" style={{ marginLeft: 8 }}>Test</span>
+              <span className="status-chip test" style={{ marginLeft: 8 }}>Δοκιμαστικό</span>
             )}
           </div>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>

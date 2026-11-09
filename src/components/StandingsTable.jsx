@@ -63,10 +63,10 @@ export function StandingsTable({ standings, tiebreaks, L, totalRounds, sideBets,
       <table className="std-table">
         <thead>
           <tr>
-            <th className="rank std-sticky-rank" rowSpan={span}>Rank</th>
-            <th className="std-sticky-name" rowSpan={span}>Player</th>
+            <th className="rank std-sticky-rank" rowSpan={span}>{L.thRank}</th>
+            <th className="std-sticky-name" rowSpan={span}>{L.thPlayer}</th>
             {rounds.length > 0 && <th rowSpan={span} title={L.ttRoundsTitle}>{L.ttRounds}</th>}
-            <th rowSpan={span} style={{ textAlign: "center" }}>Wins</th>
+            <th rowSpan={span} style={{ textAlign: "center" }}>{L.thWins}</th>
             {showCols && <th colSpan={4} className="crit-group">{L.ttGroup}</th>}
             {showActive && <th rowSpan={span} />}
             {showSideBets && <th rowSpan={span} style={{ textAlign: "center" }}>Side bet</th>}
