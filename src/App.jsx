@@ -165,6 +165,8 @@ import { CalendarPage } from "./components/CalendarPage.jsx";
 import { TopBar } from "./components/TopBar.jsx";
 import { BottomNav } from "./components/BottomNav.jsx";
 import { TournamentHeader } from "./components/TournamentHeader.jsx";
+import { HomePage } from "./components/HomePage.jsx";
+import { todayLocalYMD, daysBetween, upcomingCalendarEntries, seasonProgress, pickHeroState } from "./lib/home.js";
 import { WinDots } from "./components/WinDots.jsx";
 import { recordsBeforeRound, pairDisplayOrder } from "./lib/roundRecords.js";
 import { VIEWS_CSS } from "./styles/views.js";
@@ -774,6 +776,75 @@ export default function TournamentManager() {
       if (unsubscribe) unsubscribe();
     };
   }, [phase, seasonBrowseYear]);
+
+  // 2026-11-09.05: home page — standings (top 5 per competition with
+  // standings), the latest results with their winners and the running
+  // tournament of today. Read on each visit of the home page; tournament
+  // reads go through the per-visit cache of firebase.js.
+  const [homeStandings, setHomeStandings] = useState({});
+  const [homeRecent, setHomeRecent] = useState([]);
+  const [homeLive, setHomeLive] = useState(null);
+  const [homeComp, setHomeComp] = useState(DEFAULT_COMPETITION_ID);
+  useEffect(() => {
+    if (phase !== "dashboard") return undefined;
+    let cancelled = false;
+    (async () => {
+      const comps = competitionsFrom(sysState).filter((c) => competitionHasStandings(c));
+      const st = {};
+      for (const c of comps) {
+        const sid = currentSeasonId(sysState, c.id);
+        try {
+          const season = await loadSeason(sid);
+          const rules = rulesForSeason(sysState, sid);
+          const rows = computeSeasonStandings(season || { players: {} }, rules.bestOf, null);
+          st[c.id] = { seasonId: sid, rules, rows: rows.slice(0, 5).map((r, i) => ({ key: r.key, name: r.name, total: r.total, rank: i + 1 })), all: rows.length };
+        } catch {
+          st[c.id] = { seasonId: sid, rules: rulesForSeason(sysState, sid), rows: [], all: 0 };
+        }
+      }
+      if (!cancelled) setHomeStandings(st);
+
+      const today = todayLocalYMD();
+      const liveT = archive.find((t) => t.status === "In progress" && t.isOfficial && isoToLocalYMD(t.date) === today);
+      if (liveT) {
+        try {
+          const d = await loadTournamentForDisplay(liveT.id);
+          const prs = (d && d.currentPairings && d.currentPairings.pairs) || [];
+          if (!cancelled) setHomeLive({ id: liveT.id, name: liveT.name, round: d?.round || 1, totalRounds: d?.totalRounds || liveT.totalRounds, players: (d?.players || []).length, done: prs.filter((p) => p.result).length, total: prs.length });
+        } catch { if (!cancelled) setHomeLive(null); }
+      } else if (!cancelled) setHomeLive(null);
+
+      const done = archive.filter((t) => t.status === "Completed" && t.isOfficial).map((t) => ({ id: t.id, name: t.name, date: isoToLocalYMD(t.date), imported: false }));
+      const imps = importDocsList
+        .filter((d) => !isMatchlist(d) && Array.isArray(d.placements) && d.placements.some((p) => Number(p.position) === 1))
+        .map((d) => ({ id: d.id, name: d.name, date: isoToLocalYMD(importDateIso(d.date) || d.importedAt), imported: true, doc: d }));
+      const latest = [...done, ...imps].filter((t) => t.date).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 4);
+      const out = [];
+      for (const t of latest) {
+        if (t.imported) {
+          const p1 = t.doc.placements.find((p) => Number(p.position) === 1);
+          const k = p1 && t.doc.personMap ? t.doc.personMap[p1.name] : null;
+          out.push({ id: t.id, name: t.name, date: t.date, imported: true, winner: k && registry.players?.[k] ? registry.players[k].name : p1?.name, winnerKey: k || null, podium: null, players: (t.doc.placements || []).length });
+          continue;
+        }
+        try {
+          const d = await loadTournamentForDisplay(t.id);
+          const rows = sortStandings(d?.players || []);
+          out.push({
+            id: t.id, name: t.name, date: t.date, imported: false,
+            winner: rows[0] ? rows.filter((r) => r.rank === 1).map((r) => r.name).join(" · ") : null,
+            winnerKey: rows[0] ? normalizeName(rows[0].name) : null,
+            players: (d?.players || []).length,
+            podium: rows.slice(0, 3).map((r, i) => ({ place: r.rank || i + 1, name: r.name, key: normalizeName(r.name), detail: `${r.wins} ${r.wins === 1 ? "νίκη" : "νίκες"}` })),
+          });
+        } catch {
+          out.push({ id: t.id, name: t.name, date: t.date, imported: false, winner: null, podium: null });
+        }
+      }
+      if (!cancelled) setHomeRecent(out);
+    })();
+    return () => { cancelled = true; };
+  }, [phase, archive, sysState, importDocsList]);
 
   // Tie-break 4 (head-to-head) of the season shown: from the counting
   // tournaments of the catalogue, read once per visit (cache).
@@ -8017,18 +8088,61 @@ export default function TournamentManager() {
 
       {/* #region Οθόνη: Πίνακας Ελέγχου (phase "dashboard") */}
       {/* DASHBOARD */}
-      {phase === "dashboard" && (
-        <>
-          <div className="header">
-            <p className="eyebrow">{L.dashboardEyebrow}</p>
-            <h1>{L.dashboardTitle}</h1>
-            <div className="points-strip">
-              {Array.from({ length: 24 }).map((_, i) => (
-                <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
-              ))}
-            </div>
-          </div>
-          <div className="content">
+      {phase === "dashboard" && (() => {
+        // 2026-11-09.05: new home page (components/HomePage.jsx).
+        const today = todayLocalYMD();
+        const comps = competitionsFrom(sysState);
+        const upcoming = upcomingCalendarEntries(sysState, archive, calendarImports, comps, today, 4);
+        const latest = homeRecent[0] || null;
+        const heroKind = pickHeroState({ live: homeLive, recent: latest && latest.podium && latest.podium.length ? latest : null, today });
+        const eloRanked = Object.entries(eloData.players || {}).map(([key, p]) => ({ key, ...p })).sort((a, b) => b.rating - a.rating);
+        const eloTop = eloRanked.slice(0, 5).map((p, i) => {
+          const person = registry.players?.[p.key];
+          return { key: p.key, rank: i + 1, name: person ? person.name : p.name, rating: Math.round(p.rating), club: person && person.clubId ? clubDisplay(sysState, person.clubId, "") : "" };
+        });
+        const standings = comps.filter((c) => homeStandings[c.id]).map((c) => {
+          const h = homeStandings[c.id];
+          const prog = seasonProgress(sysState, h.seasonId, archive, calendarImports);
+          const zones = h.rules && h.rules.qualZones;
+          const cutoff = zones ? (h.rules.cutoffR48 || h.rules.cutoffR32 || 0) : 0;
+          const parts = [];
+          if (prog.total) parts.push(`${prog.done} από ${prog.total} αγωνιστικές`);
+          if (h.rules && h.rules.bestOf && h.rules.bestOf < 99) parts.push(`μετράνε οι ${h.rules.bestOf} καλύτερες`);
+          if (zones) parts.push("πράσινο = ζώνη πρόκρισης");
+          return {
+            id: c.id, label: c.name, seasonLabel: `σεζόν ${sn(h.seasonId)}`, ruleLine: parts.join(" · "),
+            rows: h.rows.map((r) => ({ ...r, zone: zones && r.rank <= cutoff })),
+          };
+        });
+        const winnerFact = latest && latest.winner ? { label: "Τελευταίος νικητής", value: latest.winner, key: latest.winnerKey, sub: `${latest.name}` } : null;
+        const plRows = homeStandings[DEFAULT_COMPETITION_ID]?.rows || [];
+        const stFact = plRows[0] ? { label: "Πρώτος στη Βαθμολογία", value: plRows[0].name, key: plRows[0].key, sub: `${plRows[0].total} βαθμοί` } : null;
+        const eloFact = eloTop[0] ? { label: "Πρώτος στην ELO", value: eloTop[0].name, key: eloTop[0].key, sub: `${eloTop[0].rating}` } : null;
+        const fmt = (ymd) => (ymd ? new Date(`${ymd}T12:00:00`).toLocaleDateString("el-GR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
+        const hero =
+          heroKind === "live" ? { kind: "live", ...homeLive }
+          : heroKind === "recent" ? { kind: "recent", id: latest.id, name: latest.name, dateLabel: new Date(`${latest.date}T12:00:00`).toLocaleDateString("el-GR", { weekday: "long", day: "numeric", month: "long" }), players: latest.players, podium: latest.podium, next: upcoming[0] ? `${upcoming[0].title.replace(/^Backgammon /, "")} · ${fmt(upcoming[0].date).slice(0, 5)}` : null }
+          : { kind: "next", entry: upcoming[0] || null, days: upcoming[0] ? daysBetween(today, upcoming[0].date) : null, facts: [winnerFact, stFact, eloFact].filter(Boolean) };
+        const openPlayer = (k) => { if (k && registry.players?.[k]) openPlayerDetail(k); };
+        return (
+          <HomePage
+            seasonLabel={`Σεζόν ${sn(currentSeasonId(sysState, DEFAULT_COMPETITION_ID))}`}
+            hero={hero}
+            upcoming={upcoming}
+            standings={standings}
+            activeComp={homeComp}
+            onPickComp={setHomeComp}
+            eloTop={eloTop}
+            recent={homeRecent.map((t) => ({ ...t, dateLabel: fmt(t.date) }))}
+            onOpenTournament={(id, imported) => (imported ? openImportPublic(id) : openArchived(id))}
+            onOpenPlayer={openPlayer}
+            nav={{
+              calendar: () => setPhase("calendar"),
+              archive: () => setPhase("archive"),
+              elo: () => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); },
+              season: (compId) => { if (compId) setSeasonBrowseComp(compId); if (compId && homeStandings[compId]) setSeasonBrowseYear(homeStandings[compId].seasonId); setPhase("season"); },
+            }}
+          >
             {isSuper && (() => {
               const lastExport = sysState.lastExportAt ? new Date(sysState.lastExportAt) : null;
               const daysSince = lastExport ? Math.floor((Date.now() - lastExport.getTime()) / 86400000) : null;
@@ -8062,56 +8176,17 @@ export default function TournamentManager() {
                 </>
               );
             })()}
-            <div className="dashboard-grid">
-              <button className="dashboard-card" onClick={() => setPhase("archive")}>
-                <Trophy size={26} />
-                <span className="dashboard-card-title">{L.navTournaments}</span>
-                <span className="dashboard-card-desc">Browse past tournaments or start a new one</span>
-              </button>
-              <button className="dashboard-card" onClick={() => setPhase("calendar")}>
-                <CalendarDays size={26} />
-                <span className="dashboard-card-title">Ημερολόγιο</span>
-                <span className="dashboard-card-desc">Οι επόμενες αγωνιστικές όλων των διοργανώσεων</span>
-              </button>
-              <button className="dashboard-card" onClick={() => setPhase("season")}>
-                <TrendingUp size={26} />
-                <span className="dashboard-card-title">{L.navSeason}</span>
-                <span className="dashboard-card-desc">Annual ranking across all tournaments</span>
-              </button>
-              <button className="dashboard-card" onClick={() => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); }}>
-                <Award size={26} />
-                <span className="dashboard-card-title">{L.navEloNational}</span>
-                <span className="dashboard-card-desc">Lifetime skill rating for every player</span>
-              </button>
-              <button className="dashboard-card" onClick={() => setPhase("h2h")}>
-                <Users size={26} />
-                <span className="dashboard-card-title">{L.navStats}</span>
-                <span className="dashboard-card-desc">Στατιστικά παίκτη, σερί, τίτλοι, πρωτοπορία</span>
-              </button>
-              {isAdmin && (
-                <button className="dashboard-card" onClick={() => setPhase("players")}>
-                  <Users size={26} />
-                  <span className="dashboard-card-title">{L.navPlayers}</span>
-                  <span className="dashboard-card-desc">Registry, contact info, membership</span>
-                </button>
-              )}
-              {isAdmin && (
-                <button className="dashboard-card" onClick={() => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); }}>
-                  <Lock size={26} />
-                  <span className="dashboard-card-title">{L.navControl}</span>
-                  <span className="dashboard-card-desc">Σεζόν, κανόνες, δεδομένα, backup, ρυθμίσεις</span>
-                </button>
-              )}
-              <button className="dashboard-card" onClick={() => { setPhase("about"); dismissWhatsNew(); }}>
-                <Info size={26} />
-                <span className="dashboard-card-title">{L.navAbout}</span>
-                <span className="dashboard-card-desc">Λειτουργικότητες, τεχνικά στοιχεία, changelog</span>
-              </button>
-            </div>
-            <p style={{ textAlign: "center", fontSize: 13, color: "var(--muted)", marginTop: 26 }}>Με την υποστήριξη της Ελληνικής Ομοσπονδίας Backgammon</p>
-          </div>
-        </>
-      )}
+            {isAdmin && (
+              <div className="home-admin">
+                <span className="home-admin-label">Διαχείριση</span>
+                <button className="btn-secondary" onClick={goToNewTournament}><Plus size={15} /> Νέο τουρνουά</button>
+                <button className="btn-ghost" onClick={() => setPhase("players")}><Users size={15} /> {L.navPlayers}</button>
+                <button className="btn-ghost" onClick={() => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); }}><Lock size={15} /> {L.navControl}</button>
+              </div>
+            )}
+          </HomePage>
+        );
+      })()}
       {/* #endregion Οθόνη: Πίνακας Ελέγχου (phase "dashboard") */}
 
       {/* #region Οθόνη: Διαχείριση (phase "control") */}
