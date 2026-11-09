@@ -1,0 +1,498 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 9bc31cd..a36b420 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -2,7 +2,7 @@
+ 
+ **Hellenic Backgammon Platform** — εφαρμογή διαχείρισης τουρνουά, βαθμολογιών και Πανελλήνιας Κατάταξης ELO για τους συλλόγους backgammon της Ελλάδας, με την υποστήριξη της **Ελληνικής Ομοσπονδίας Backgammon**.
+ Ιδιοκτήτης ο Γιάννης (Πασιάλης)· διαχειριστές με προσωπικούς λογαριασμούς (Google ή email). Γλώσσα επικοινωνίας και UI: **Ελληνικά**.
+-Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-11-09.03`.
++Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-11-09.04`.
+ Διάβασέ το ολόκληρο πριν από κάθε εργασία.
+ 
+ ---
+@@ -254,6 +254,7 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+ - **Τελεία συλλόγου στην Κατάταξη ELO** (build `2026-10-16.01`, επίπεδο 1, σχέδιο `docs/plan-elo-club-dot-2026-10-15.md`): στη δεύτερη γραμμή (σύλλογος) κυκλική τελεία 8px στο χρώμα του συλλόγου (`clubColor`, ίδιο με το Ημερολόγιο· κλάση `.elo-club-dot`, `aria-hidden`), μόνο όταν ο παίκτης έχει `clubId`. Κείμενο, πλάτος στήλης, φιλοξενούμενοι, ELO και Excel αμετάβλητα.
+ - **Κριτήρια ισοβαθμίας Βαθμολογίας** (build `2026-10-18.01`, επίπεδο 2, σχέδιο `docs/plan-season-tiebreaks-2026-10-16.md`, βλ. §6): νέα σειρά σε ίσους βαθμούς (1 σύνολο, 2 % όλων, 3 % στα Ν καλύτερα, 4 μεταξύ τους για δύο), σημάδι «=» και επεξήγηση ανά ισοβαθμία, σημείωση κριτηρίων στην κορυφή, κάτω από το πλαίσιο πληροφοριών (αρχικά κάτω από τον πίνακα με σύνδεσμο «↓»· μετακινήθηκε με απόφαση του Γιάννη). Υλοποιήθηκε στο branch της συνεδρίας `claude/season-tiebreaks-2026-3fwrci` (όχι στον σταθερό branch preview) και πέρασε στο `main` με εντολή του Γιάννη (18/10). Διορθώθηκε το σχόλιο του `normalMatches` στο `pushSeasonUpdate`. Αποθηκευμένα δεδομένα, βαθμοί, ματς, ποσοστό: αμετάβλητα.
+ - **Οπτική ανανέωση — βήμα Α+Β: ύφος και πλοήγηση** (build `2026-11-09.02`, επίπεδο 1, σχέδια στο canvas «bgfed-tournament — Οπτική ανανέωση»): νέες μεταβλητές χρωμάτων (`--bg #F6F2EA`, `--surface #FFFDF9`, `--ink #1D1A17`, `--muted #5E5650`, `--accent #7B1E2B`, `--accent-soft #F3E6E3`, `--border #E3DACB`· νίκη/ήττα ίδια), τίτλοι **Literata** αντί για Fraunces (η Fraunces δεν έχει ελληνικά), κάρτες 14px, h1 34px· το φόντο με το σχέδιο ταμπλό **έμεινε** (απόφαση του Γιάννη, «αν δεν μου αρέσει το αλλάζουμε»). Πλοήγηση: `TopBar` με links χωρίς εικονίδια (Τουρνουά · Ημερολόγιο · Βαθμολογίες · Κατάταξη ELO · Στατιστικά · Σχετικά — κείμενα `navSeasonShort`/`navEloShort`), ενεργή σελίδα μπορντό με γραμμή, πράσινη κουκκίδα στο «Τουρνουά» μόνο για **επίσημο τουρνουά «In progress» με σημερινή ημερομηνία**, αναζήτηση παίκτη σε όλο το μητρώο (μόνο όνομα), «Διαχείριση» ως ξεχωριστό κουμπί· ≤ 1100px κάτω μπάρα (`BottomNav`), φακός για αναζήτηση σε όλο το πλάτος, **το ☰ καταργήθηκε**. Επόμενα βήματα (ένα build το καθένα): Γ τουρνουά, Δ δημιουργία τουρνουά, Ε προφίλ παίκτη, ΣΤ αρχική.
++- **Οπτική ανανέωση — βήμα Δ: Νέο τουρνουά** (build `2026-11-09.04`, επίπεδο 2, σχέδιο `docs/plan-setup-screen-2026-11-09.md`): δύο στήλες (Ρυθμίσεις | Παίκτες), λίστα νεότερος πρώτος με επισήμανση και «Στο μητρώο/Νέος παίκτης», επικόλληση από Excel πτυσσόμενη, **«Ζωντανή ενημέρωση» ενεργή από προεπιλογή σε νέο τουρνουά** (απόφαση του Γιάννη) και ρυθμίσιμη στις ρυθμίσεις, **επιβεβαίωση έναρξης** με σύνοψη (`confirmingStart`) πριν από το `startTournament()`. Επίσης: **σταθεροί τίτλοι πινάκων** — > 1100px κυλάει η σελίδα και το `thead` κολλάει στην κορυφή (απόφαση του Γιάννη: όχι κύλιση μέσα σε πλαίσιο στον υπολογιστή)· ≤ 1100px κύλιση μέσα στο πλαίσιο.
+ - **Οπτική ανανέωση — βήματα Γ+Ε** (build `2026-11-09.03`, επίπεδο 1): **Τουρνουά** (σε εξέλιξη και ολοκληρωμένο): `TournamentHeader` στη θέση του «Round X of Y» (σε εξέλιξη: Γύρος N/M, Αγώνες γύρου με μπάρα· ολοκληρωμένο: Γύροι, Παίκτες)· καρτέλες «Ζευγαρώματα/Κατάταξη/Στοιχεία» (καρτέλες, απόφαση του Γιάννη — **όχι** σελίδα δίπλα-δίπλα)· `lib/roundRecords.js`: `recordsBeforeRound(history, round)` (W/L ανά γύρο **πριν** από τον εμφανιζόμενο· bye και νίκη με Α.Α. = W, διπλή Α.Α. = L) → `WinDots` δίπλα στα ονόματα (κάρτες και λίστα)· `pairDisplayOrder` = σειρά εμφάνισης (περισσότερες νίκες στο ζευγάρι, μετά άθροισμα, μετά αριθμός αγώνα) — **ο αριθμός αγώνα `M{i+1}` και ο δείκτης `i` των ενεργειών μένουν ίδιοι** (θα γίνει αριθμός τραπεζιού)· «Σε εξέλιξη» αντί για «Εκκρεμεί». **Σταθερή γραμμή τίτλων** (backlog): κλάση `table-scroll` στα περιβλήματα των `std-table` (κατάταξη τουρνουά, Βαθμολογία, ELO): ο πίνακας κυλάει μέσα στο πλαίσιό του (`max-height`) με `thead` sticky. **Καρτέλα παίκτη ως προφίλ:** κεφαλίδα-κάρτα (αρχικά, Αρ. Μητρώου · σύλλογος, ELO και θέση), κουτάκια Αγώνες / Νίκες % / Εμπειρία / Απέναντι σε ισχυρότερους-ασθενέστερους, «Πορεία», «Τελευταίοι αγώνες» (6 από το ledger) με «Όλοι οι αγώνες» = η πλήρης ανάλυση, «Ιστορικό τουρνουά»· ελληνικά κείμενα. Διακρίσεις (τίτλοι, σερί) **όχι ακόμη** (νέοι υπολογισμοί). Η πλήρης μεταφορά των οθονών σε δικά τους αρχεία (§2.9) αναβλήθηκε· μπήκαν μόνο τα νέα κομμάτια.
+ - **Ουρά ELO και έλεγχος συνέπειας σε live τουρνουά** (build `2026-11-09.01`, επίπεδο 2, σχέδιο `docs/plan-live-elo-serial-2026-11-09.md`): μετά την Ημέρα 14 (07/11) ο έλεγχος έβγαλε «Το ELO δεν ταιριάζει με τη Βαθμολογία» χωρίς πραγματικό λάθος — η ELO του τελευταίου γύρου γραφόταν στο παρασκήνιο και ο έλεγχος την «πρόλαβε». Οι εγγραφές ELO του τουρνουά περνούν από δική τους σειριακή ουρά (`eloWriterRef`)· το κλείσιμο του τελευταίου γύρου περιμένει την εγγραφή πριν από το «finished» και ξανατρέχει τον έλεγχο· ο έλεγχος δεν συγκρίνει νίκες όσο υπάρχει τουρνουά με σημάδι `live` < 12 ωρών που δεν είναι «Completed» (`report.liveInProgress`, ενημερωτικό εύρημα). Δοκιμή: `node docs/tests/live-elo-2026-11-09.test.mjs`. **Εκκρεμεί (backlog):** διόρθωση παλιού γύρου / Redraw σε live τουρνουά αφήνουν ακόμη την ELO πίσω (προειδοποίηση + χειροκίνητο Recompute).
+ - **Ζωντανή Βαθμολογία ανά αποτέλεσμα** (build `2026-10-19.01`, επίπεδο 2, σχέδιο `docs/plan-live-season-per-match-2026-10-19.md`, βλ. §6): έγινε merge (PR #21). Κανόνες Firestore αμετάβλητοι (νέο πεδίο `live` σε υπάρχον έγγραφο). Με live ενημέρωση και «Όχι» στο τέλος, η Βαθμολογία κρατά ήδη τα αποτελέσματα (για να μη μετρήσει: κάδος + Recompute).
+diff --git a/docs/plan-setup-screen-2026-11-09.md b/docs/plan-setup-screen-2026-11-09.md
+new file mode 100644
+index 0000000..bc49098
+--- /dev/null
++++ b/docs/plan-setup-screen-2026-11-09.md
+@@ -0,0 +1,26 @@
++# Build 2026-11-09.04 — Νέο τουρνουά (δύο στήλες, επιβεβαίωση, ζωντανή ενημέρωση) + σταθεροί τίτλοι στον υπολογιστή
++
++**Επίπεδο 2** · branch `claude/kind-tesla-vchqn9` → PR → έλεγχος στο preview από τον Γιάννη → merge **μόνο** με εντολή του.
++
++## Αλλαγές
++1. **Οθόνη «Νέο τουρνουά»** (region `Οθόνη: Νέο τουρνουά`): δύο στήλες — Ρυθμίσεις (αγωνιστική, γραμμή
++   «ημερομηνία · σεζόν · αλλαγή» που ανοίγει τα πεδία, όνομα, γύροι, μήκος, διοργάνωση + σύλλογος, «Επίσημη αγωνιστική»,
++   **«Ζωντανή ενημέρωση»**) | Παίκτες (μετρητής, πεδίο + Side bet + «Προσθήκη», «▸ Επικόλληση λίστας από Excel»
++   πτυσσόμενο, λίστα **νεότερος πρώτος** με επισήμανση, ετικέτα «Στο μητρώο»/«Νέος παίκτης», ×, «Έναρξη τουρνουά»).
++   Όλα στα Ελληνικά. Ίδιες συναρτήσεις: `addPlayer`, `addPlayersBulk`, `removePlayer`, `toggleDefaultSideBetForPlayer`,
++   `applyCalendarEntry`, `renderSeasonSelect`, `startTournament`.
++2. **«Ζωντανή ενημέρωση» ενεργή από προεπιλογή** σε νέο τουρνουά (`setLiveStandingsEnabled(true)` στην προετοιμασία
++   νέου τουρνουά) και ρυθμίζεται από τις ρυθμίσεις· αποθηκεύεται με το τουρνουά όπως πριν (`liveStandingsEnabled` στο
++   snapshot). Ο διακόπτης στην οθόνη ζευγαρωμάτων μένει. Τουρνουά που ήδη υπάρχουν: αμετάβλητα (φορτώνουν τη δική τους τιμή).
++3. **Επιβεβαίωση έναρξης**: «Έναρξη τουρνουά» ανοίγει διάλογο (όνομα, παίκτες, γύροι/μήκος, ημερομηνία/σεζόν, side bet,
++   σε τι μετράει, ζωντανή ενημέρωση, bye αν μονός αριθμός) → «Ναι, κλήρωση 1ου γύρου» καλεί το `startTournament()` όπως πριν.
++4. **Σταθεροί τίτλοι πινάκων** (`styles/views.js`): > 1100px κυλάει η σελίδα και το `thead` κολλάει στην κορυφή
++   (το `.table-scroll` χωρίς δική του κύλιση)· ≤ 1100px όπως στο `.03` (κύλιση μέσα στο πλαίσιο).
++
++**Δεν αλλάζουν:** κλήρωση, ζευγαρώσεις, αντιστοίχιση ονομάτων, αποθήκευση παικτών, κανόνες Firestore.
++
++## Δοκιμές
++- lint + build· οι κλάσεις `setup-grid`, `start-summary` υπάρχουν στο `dist`.
++- **Preview (Γιάννης):** Νέο τουρνουά → ξετσεκάρισμα «Επίσημη αγωνιστική» (δοκιμαστικό) → 5 παίκτες (ένας νέος) →
++  «Έναρξη» → η επιβεβαίωση δείχνει 5 παίκτες, «Ζωντανή ενημέρωση: Ναι», γραμμή bye → «Όχι, επιστροφή» (μένει στη
++  ρύθμιση) → ξανά «Έναρξη» → «Ναι» → κλήρωση 1ου γύρου → κάδος. Βαθμολογία/ELO: κύλιση σελίδας με σταθερούς τίτλους.
+diff --git a/src/App.jsx b/src/App.jsx
+index 0ad1b59..04281d9 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -282,6 +282,10 @@ export default function TournamentManager() {
+   const [confirmingFinish, setConfirmingFinish] = useState(false);
+   const [seasonYear, setSeasonYear] = useState(new Date().getFullYear());
+   const [liveStandingsEnabled, setLiveStandingsEnabled] = useState(false);
++  // 2026-11-09.04: new-tournament screen — paste box, date/season editor, start confirmation.
++  const [showSetupBulk, setShowSetupBulk] = useState(false);
++  const [showSetupDate, setShowSetupDate] = useState(false);
++  const [confirmingStart, setConfirmingStart] = useState(false);
+   const [isOfficial, setIsOfficial] = useState(true); // Official League day — only these count in "Recompute from scratch"
+   const [competitionId, setCompetitionId] = useState(DEFAULT_COMPETITION_ID); // Build 2: which competition this tournament belongs to
+   const [organisation, setOrganisation] = useState(""); // Build 2: organising club; new tournaments default to the home club
+@@ -927,7 +931,12 @@ export default function TournamentManager() {
+     setOrganisation(clubsActive(sysState) ? clubDisplay(sysState, startOwner, sysState.homeClub) : sysState.homeClub || "");
+     setOrganisationClubId(clubsActive(sysState) ? startOwner : null);
+     setCalendarEntryId(null);
+-    setLiveStandingsEnabled(false);
++    // 2026-11-09.04: «live update» is on by default for a new tournament
++    // (decision of Giannis — it was easy to forget on the pairings screen).
++    setLiveStandingsEnabled(true);
++    setShowSetupBulk(false);
++    setShowSetupDate(false);
++    setConfirmingStart(false);
+     setIsOfficial(true);
+     setPlayers([]);
+     // Prefill from the next open calendar day (current season, then next) of
+@@ -8703,36 +8712,45 @@ export default function TournamentManager() {
+           </div>
+         </div>
+       )}
+-      {phase === "setup" && isAdmin && (
++      {phase === "setup" && isAdmin && (() => {
++        // 2026-11-09.04: two columns — settings | players (list right under the input, newest first).
++        const sideBet = sideBets.find((b) => b.id === "default-sidebet");
++        const sideCount = sideBet?.participantIds.length || 0;
++        const comp = competitionById(competitionId);
++        const compName = competitionName(competitionsFrom(sysState), competitionId);
++        const countsElo = isOfficial && countsTowardRatings({ isOfficial: true, competitionId });
++        const countsSt = isOfficial && countsTowardStandings({ isOfficial: true, competitionId });
++        const countsText = countsElo && countsSt ? `ELO και Βαθμολογία ${compName}` : countsElo ? "μόνο ELO" : countsSt ? `μόνο Βαθμολογία ${compName}` : "τίποτα (δοκιμαστικό ή εκτός κατάταξης)";
++        const dateLong = createdAt ? new Date(createdAt).toLocaleDateString("el-GR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
++        const shown = [...players].reverse();
++        const selectStyle = { width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface)" };
++        return (
+         <>
+           <div className="header">
+-            <p className="eyebrow">New Tournament</p>
+-            <h1>Setup</h1>
+-            <div className="points-strip">
+-              {Array.from({ length: 24 }).map((_, i) => (
+-                <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
+-              ))}
+-            </div>
++            <p className="eyebrow">Διαχείριση</p>
++            <h1>Νέο τουρνουά</h1>
+           </div>
+-          <div className="content">
++          <div className="content" style={{ maxWidth: 1240 }}>
+             {notice && (
+               <div className="notice">
+                 <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+                 <span>{notice}</span>
+               </div>
+             )}
+-            <div className="card">
++            <div className="setup-grid">
++            <div className="card setup-col">
++              <h2 className="profile-section-title">Ρυθμίσεις</h2>
+               {(() => {
+                 const view = buildCalendarView(sysState, seasonYear, archive, calendarImports);
+                 const options = view.filter((e) => !e.tournament || e.id === calendarEntryId);
+                 if (view.length === 0) return null;
+                 return (
+-                  <div style={{ marginBottom: 14 }}>
+-                    <label>Αγωνιστική ημερολογίου (σεζόν {sn(seasonYear)})</label>
++                  <div className="setup-field">
++                    <label>Αγωνιστική ημερολογίου</label>
+                     <select
+                       value={calendarEntryId || ""}
+                       onChange={(e) => applyCalendarEntry(view.find((x) => x.id === e.target.value) || null, seasonYear)}
+-                      style={{ width: "100%", maxWidth: 520, fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
++                      style={selectStyle}
+                     >
+                       <option value="">Χωρίς αγωνιστική (έκτακτο ή δοκιμαστικό τουρνουά)</option>
+                       {options.map((e) => (
+@@ -8744,76 +8762,82 @@ export default function TournamentManager() {
+                   </div>
+                 );
+               })()}
+-              <div className="row" style={{ marginBottom: 14 }}>
+-                <div className="field">
+-                  <label>Tournament name (optional)</label>
+-                  <input type="text" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} placeholder="e.g. 14th National Championship" />
++              <p className="setup-dateline">
++                {dateLong} · σεζόν {sn(seasonYear)} ·{" "}
++                <button type="button" className="history-link" onClick={() => setShowSetupDate((v) => !v)}>{showSetupDate ? "κλείσιμο" : "αλλαγή"}</button>
++              </p>
++              {showSetupDate && (
++                <div className="setup-two">
++                  <div className="setup-field">
++                    <label>Ημερομηνία</label>
++                    <input
++                      type="date"
++                      required
++                      value={isoToLocalYMD(createdAt)}
++                      onChange={(e) => {
++                        if (!e.target.value) return;
++                        const nextIso = withLocalDate(createdAt, e.target.value);
++                        setCreatedAt(nextIso);
++                      }}
++                    />
++                  </div>
++                  <div className="setup-field">
++                    <label>Σεζόν</label>
++                    {renderSeasonSelect(competitionId, seasonYear, setSeasonYear)}
++                  </div>
+                 </div>
+-                <div style={{ width: 110 }}>
+-                  <label>Rounds</label>
++              )}
++              <div className="setup-field">
++                <label>Όνομα τουρνουά</label>
++                <input type="text" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} placeholder="π.χ. 14ο Πανελλήνιο Πρωτάθλημα" />
++              </div>
++              <div className="setup-two">
++                <div className="setup-field">
++                  <label>Γύροι</label>
+                   <input type="number" min={3} max={9} value={totalRounds} onChange={(e) => setTotalRounds(Math.max(3, Math.min(9, Number(e.target.value) || 5)))} />
+                 </div>
+-                <div style={{ width: 130 }}>
+-                  <label>Match length</label>
++                <div className="setup-field">
++                  <label>Μήκος αγώνα (πόντοι)</label>
+                   <input type="number" min={1} max={25} value={matchLength} onChange={(e) => setMatchLength(Math.max(1, Math.min(25, Number(e.target.value) || 7)))} />
+                 </div>
+-                <div style={{ width: 160 }}>
+-                  <label>Ημερομηνία</label>
+-                  <input
+-                    type="date"
+-                    required
+-                    value={isoToLocalYMD(createdAt)}
+-                    onChange={(e) => {
+-                      if (!e.target.value) return;
+-                      const nextIso = withLocalDate(createdAt, e.target.value);
+-                      setCreatedAt(nextIso);
+-                    }}
+-                  />
+-                </div>
+-                <div style={{ width: 160 }}>
+-                  <label>Σεζόν</label>
+-                  {renderSeasonSelect(competitionId, seasonYear, setSeasonYear)}
+-                </div>
+               </div>
+-              <div className="row" style={{ marginBottom: 14 }}>
+-                <div style={{ width: 220 }}>
+-                  <label>Διοργάνωση</label>
+-                  <select
+-                    value={competitionId}
+-                    onChange={(e) => { setCompetitionId(e.target.value); setSeasonYear(currentSeasonId(sysState, e.target.value, controlSeasons)); }}
+-                    style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+-                  >
+-                    {competitionsFrom(sysState).filter((c) => canEditCompetition(c.id) || c.id === competitionId).map((c) => (
+-                      <option key={c.id} value={c.id}>{competitionLabel(sysState, c)}</option>
+-                    ))}
+-                  </select>
+-                </div>
+-                <div className="field">
+-                  <label>Σύλλογος της διοργάνωσης</label>
+-                  <div style={{ padding: "9px 0", fontSize: 15, color: "var(--muted)" }}>
+-                    {(() => {
+-                      const c = competitionById(competitionId);
+-                      return c && c.ownerClubId ? clubDisplay(sysState, c.ownerClubId, "—") : "—";
+-                    })()}
+-                  </div>
+-                </div>
++              <div className="setup-field">
++                <label>Διοργάνωση</label>
++                <select
++                  value={competitionId}
++                  onChange={(e) => { setCompetitionId(e.target.value); setSeasonYear(currentSeasonId(sysState, e.target.value, controlSeasons)); }}
++                  style={selectStyle}
++                >
++                  {competitionsFrom(sysState).filter((c) => canEditCompetition(c.id) || c.id === competitionId).map((c) => (
++                    <option key={c.id} value={c.id}>{competitionLabel(sysState, c)}</option>
++                  ))}
++                </select>
++                <span className="cal-note">Σύλλογος: {comp && comp.ownerClubId ? clubDisplay(sysState, comp.ownerClubId, "—") : "—"}</span>
+               </div>
+               {(!countsTowardRatings({ isOfficial: true, competitionId }) || !countsTowardStandings({ isOfficial: true, competitionId })) && (
+-                <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
++                <p className="field-warning" style={{ marginTop: -4, marginBottom: 12 }}>
+                   Αυτή η διοργάνωση {[
+                     !countsTowardRatings({ isOfficial: true, competitionId }) && "δεν μετράει στην Πανελλήνια Κατάταξη ELO",
+                     !countsTowardStandings({ isOfficial: true, competitionId }) && "δεν έχει Βαθμολογία σεζόν",
+                   ].filter(Boolean).join(" και ")}· το τουρνουά καταγράφεται κανονικά.
+                 </p>
+               )}
+-
+-              <label className="live-toggle" style={{ marginBottom: 14 }} title="Only Official days are included in the ELO and Season Standings (and in their Recompute)">
++              <label className="setup-check" title="Μόνο οι επίσημες αγωνιστικές μετράνε σε ELO και Βαθμολογία (και στο Recompute τους)">
+                 <input type="checkbox" checked={isOfficial} onChange={(e) => setIsOfficial(e.target.checked)} />
+-                Official League day (counts toward ELO &amp; Season Standings on recompute — leave unchecked for a test)
++                <span><strong>Επίσημη αγωνιστική</strong><small>Μετράει σε ELO και Βαθμολογία. Άφησέ το κενό για δοκιμαστικό τουρνουά.</small></span>
+               </label>
++              <label className="setup-check">
++                <input type="checkbox" checked={liveStandingsEnabled} onChange={(e) => setLiveStandingsEnabled(e.target.checked)} />
++                <span><strong>Ζωντανή ενημέρωση</strong><small>Η Βαθμολογία ενημερώνεται με κάθε αποτέλεσμα, η ELO με κάθε γύρο.</small></span>
++              </label>
++            </div>
+ 
+-              <label>Players</label>
+-              <div className="row" style={{ position: "relative", alignItems: "center" }}>
++            <div className="card setup-col">
++              <div className="setup-players-head">
++                <h2 className="profile-section-title" style={{ margin: 0 }}>Παίκτες</h2>
++                <span className="cal-note"><strong className="setup-count">{players.length}</strong> παίκτες{tFin.enabled ? ` · ${sideCount} στο side bet` : ""}</span>
++              </div>
++              <div className="row setup-add" style={{ position: "relative", alignItems: "center" }}>
+                 <div className="field" style={{ position: "relative" }}>
+                   <input
+                     type="text"
+@@ -8825,7 +8849,7 @@ export default function TournamentManager() {
+                     onFocus={() => setNameDropdownOpen(true)}
+                     onBlur={() => setTimeout(() => setNameDropdownOpen(false), 150)}
+                     onKeyDown={(e) => e.key === "Enter" && addPlayer()}
+-                    placeholder="Player name — type to search, or enter a new one"
++                    placeholder="Γράψε όνομα — αναζήτηση στο μητρώο ή νέος παίκτης"
+                     autoComplete="off"
+                   />
+                   {nameDropdownOpen && (() => {
+@@ -8853,68 +8877,91 @@ export default function TournamentManager() {
+                   })()}
+                 </div>
+                 {tFin.enabled && (
+-                <label className="live-toggle" style={{ margin: 0, whiteSpace: "nowrap" }} title="Include this player in the side bet, collected alongside the buy-in">
++                <label className="live-toggle" style={{ margin: 0, whiteSpace: "nowrap" }} title="Ο παίκτης μπαίνει και στο side bet">
+                   <input type="checkbox" checked={addToSideBet} onChange={(e) => setAddToSideBet(e.target.checked)} />
+                   Side bet
+                 </label>
+                 )}
+-                <button className="btn-secondary" onClick={addPlayer}>
+-                  <Plus size={16} /> Add
++                <button className="btn-primary" onClick={addPlayer}>
++                  <Plus size={16} /> Προσθήκη
+                 </button>
+               </div>
+-
+-              <div style={{ marginTop: 14 }}>
+-                <label>Bulk add (paste from Excel — one name per line)</label>
+-                <textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={"John Smith\nMaria Papas\nAlex Nikolaou"} rows={4} />
+-                <div style={{ marginTop: 8 }}>
+-                  <button className="btn-secondary" onClick={addPlayersBulk} disabled={!bulkText.trim()}>
+-                    <Plus size={16} /> Add All
+-                  </button>
++              <button type="button" className="history-link setup-paste-link" onClick={() => setShowSetupBulk((v) => !v)}>
++                {showSetupBulk ? "▾ Κλείσιμο επικόλλησης" : "▸ Επικόλληση λίστας από Excel"}
++              </button>
++              {showSetupBulk && (
++                <div className="setup-bulk">
++                  <textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={"Ένα όνομα ανά γραμμή"} rows={4} />
++                  <div style={{ marginTop: 8 }}>
++                    <button className="btn-secondary" onClick={addPlayersBulk} disabled={!bulkText.trim()}>
++                      <Plus size={16} /> Προσθήκη όλων
++                    </button>
++                  </div>
+                 </div>
+-              </div>
++              )}
+ 
+-              <p style={{ fontSize: 13, color: "var(--muted)", margin: "14px 0 6px 0" }}>
+-                <strong style={{ color: "var(--ink)" }}>{players.length}</strong> player{players.length === 1 ? "" : "s"} registered
+-                {tFin.enabled && (<>
+-                {" · "}
+-                <strong style={{ color: "var(--ink)" }}>{sideBets.find((b) => b.id === "default-sidebet")?.participantIds.length || 0}</strong> in the side bet
+-                </>)}
+-              </p>
+-              <div className="player-list">
+-                {players.map((p) => {
+-                  const inSideBet = sideBets.find((b) => b.id === "default-sidebet")?.participantIds.includes(p.id) || false;
++              <div className="setup-list">
++                {shown.map((p, i) => {
++                  const inSideBet = sideBet?.participantIds.includes(p.id) || false;
++                  const known = !!registry.players?.[normalizeName(p.name)];
+                   return (
+-                    <div className="player-chip" key={p.id}>
+-                      <span>{p.name}</span>
+-                      <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
+-                        {tFin.enabled && (
++                    <div className={`setup-row${i === 0 ? " just-added" : ""}`} key={p.id}>
++                      <span className="setup-row-n">{players.length - i}</span>
++                      <span className="setup-row-name">{p.name}</span>
++                      <span className={`setup-tag ${known ? "known" : "new"}`}>{known ? "Στο μητρώο" : "Νέος παίκτης"}</span>
++                      {tFin.enabled && (
+                         <label className="live-toggle" style={{ margin: 0 }}>
+                           <input type="checkbox" checked={inSideBet} onChange={() => toggleDefaultSideBetForPlayer(p.id)} />
+                           Side bet
+                         </label>
+-                        )}
+-                        <button className="btn-ghost" onClick={() => removePlayer(p.id)}>
+-                          <X size={15} />
+-                        </button>
+-                      </span>
++                      )}
++                      <button className="btn-ghost" onClick={() => removePlayer(p.id)} aria-label={`Αφαίρεση ${p.name}`}>
++                        <X size={15} />
++                      </button>
+                     </div>
+                   );
+                 })}
+-                {players.length === 0 && <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0 0" }}>No players added yet.</p>}
++                {players.length === 0 && <p className="cal-note" style={{ margin: 12 }}>Δεν έχουν προστεθεί ακόμη παίκτες.</p>}
+               </div>
+ 
+-              <div className="footer-actions">
+-                <button className="btn-primary" disabled={players.length < 3} onClick={startTournament}>
+-                  Start Tournament <ArrowRight size={16} />
++              <div className="setup-start">
++                <span className="cal-note">{players.length < 3 ? "Χρειάζονται τουλάχιστον 3 παίκτες." : "Ο τελευταίος που προστέθηκε εμφανίζεται πρώτος."}</span>
++                <button className="btn-primary" disabled={players.length < 3} onClick={() => setConfirmingStart(true)}>
++                  Έναρξη τουρνουά <ArrowRight size={16} />
+                 </button>
+-                {players.length > 0 && players.length < 3 && (
+-                  <span style={{ fontSize: 13, color: "var(--muted)", alignSelf: "center" }}>At least 3 players are needed.</span>
+-                )}
+               </div>
+             </div>
++            </div>
+           </div>
++
++          {confirmingStart && (
++            <div className="modal-overlay" onClick={() => setConfirmingStart(false)}>
++              <div className="modal-card start-confirm" role="dialog" aria-modal="true" aria-labelledby="start-confirm-title" onClick={(e) => e.stopPropagation()}>
++                <h2 id="start-confirm-title" className="profile-section-title">Έναρξη τουρνουά</h2>
++                <p style={{ margin: "0 0 12px", fontSize: 16 }}>
++                  Το τουρνουά <strong>«{tournamentName || "Backgammon Tournament"}»</strong> πρόκειται να ξεκινήσει με <strong>{players.length} παίκτες</strong>.
++                </p>
++                <dl className="start-summary">
++                  <dt>Γύροι</dt><dd>{totalRounds} · αγώνες στους {matchLength} πόντους</dd>
++                  <dt>Ημερομηνία</dt><dd>{dateLong} · σεζόν {sn(seasonYear)}</dd>
++                  {tFin.enabled && (<><dt>Side bet</dt><dd>{sideCount} παίκτες</dd></>)}
++                  <dt>Μετράει σε</dt><dd>{countsText}</dd>
++                  <dt>Ζωντανή ενημέρωση</dt><dd>{liveStandingsEnabled ? "Ναι" : "Όχι"}</dd>
++                  {players.length % 2 === 1 && (<><dt>Bye</dt><dd>Μονός αριθμός — ένας παίκτης θα πάρει bye στον 1ο γύρο</dd></>)}
++                </dl>
++                <p style={{ margin: "14px 0 0", fontSize: 16, fontWeight: 600 }}>Θέλετε να προχωρήσουμε στην κλήρωση του 1ου γύρου;</p>
++                <div className="start-actions">
++                  <button className="btn-secondary" onClick={() => setConfirmingStart(false)}>Όχι, επιστροφή</button>
++                  <button className="btn-primary" autoFocus onClick={() => { setConfirmingStart(false); startTournament(); }}>
++                    Ναι, κλήρωση 1ου γύρου
++                  </button>
++                </div>
++              </div>
++            </div>
++          )}
+         </>
+-      )}
++        );
++      })()}
+       {/* #endregion Οθόνη: Νέο τουρνουά (phase "setup") */}
+ 
+       {/* #region Οθόνη: Τουρνουά σε εξέλιξη (phase "tournament") */}
+diff --git a/src/config/build.js b/src/config/build.js
+index a57e7f5..0ead520 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-11-09.03";
++export const APP_BUILD_VERSION = "2026-11-09.04";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index c9a49c8..e302e0d 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -4,6 +4,7 @@
+ // audience: "all" = όλοι, "admin" = μόνο διαχειριστές.
+ export const CHANGELOG = [
+   { date: "2026-11-09", items: [
++    { text: "Νέο τουρνουά: ρυθμίσεις και παίκτες σε δύο στήλες, ο παίκτης που προστίθεται φαίνεται αμέσως στην κορυφή της λίστας, επιβεβαίωση με σύνοψη πριν από την κλήρωση του 1ου γύρου, «Ζωντανή ενημέρωση» ενεργή από την αρχή.", audience: "admin" },
+     { text: "Τουρνουά: νέα κεφαλίδα με μετρητές γύρου και αγώνων· δίπλα σε κάθε όνομα οι νίκες πριν από τον γύρο, με τους αγώνες των πρωτοπόρων πρώτους. Οι τίτλοι των στηλών μένουν ορατοί όταν κυλάς κατατάξεις και Βαθμολογία. Η καρτέλα παίκτη έγινε προφίλ, με ELO, θέση, στατιστικά και τους τελευταίους αγώνες.", audience: "all" },
+     { text: "Νέα εμφάνιση: πιο καθαρά χρώματα, γραμματοσειρά τίτλων με σωστά ελληνικά, νέα πλοήγηση με αναζήτηση παίκτη και κάτω μπάρα στο κινητό.", audience: "all" },
+     { text: "Τέλος τουρνουά με ζωντανή ενημέρωση: η ELO του τελευταίου γύρου γράφεται πριν εμφανιστεί «Το τουρνουά τελείωσε», οπότε ο έλεγχος δεν βγάζει πια ψευδή ασυμφωνία ELO/Βαθμολογίας· όσο τρέχει τουρνουά, η σύγκριση νικών περιμένει να ολοκληρωθεί.", audience: "admin" },
+diff --git a/src/styles/views.js b/src/styles/views.js
+index b3152c5..c1f56e5 100644
+--- a/src/styles/views.js
++++ b/src/styles/views.js
+@@ -24,11 +24,48 @@ export const VIEWS_CSS = `
+         .win-dot.w { background: #B08A2E; }
+         .pairings-order-note { margin: 6px 0 10px; font-size: 13px; color: var(--muted); }
+ 
+-        /* Σταθερή γραμμή τίτλων: ο πίνακας κυλάει μέσα στο πλαίσιό του */
+-        .table-scroll { max-height: calc(100vh - 150px); overflow: auto !important; }
++        /* Σταθερή γραμμή τίτλων (2026-11-09.04):
++           υπολογιστής (> 1100px) — κυλάει όλη η σελίδα και οι τίτλοι κολλάνε στην κορυφή της οθόνης
++           (ο πίνακας χωράει, άρα το πλαίσιο δεν χρειάζεται δική του κύλιση)·
++           κινητό/tablet — ο πίνακας κυλάει μέσα στο πλαίσιό του (και πλάγια). */
+         .table-scroll .std-table thead { position: sticky; top: 0; z-index: 3; }
+         .table-scroll .std-table thead th { background: var(--surface); box-shadow: inset 0 -1px 0 var(--border); }
+-        @media (max-width: 1100px) { .table-scroll { max-height: calc(100vh - 210px); } }
++        @media (min-width: 1101px) { .table-scroll { overflow: visible !important; } }
++        @media (max-width: 1100px) { .table-scroll { max-height: calc(100vh - 210px); overflow: auto !important; } }
++
++        /* Νέο τουρνουά (2026-11-09.04): ρυθμίσεις | παίκτες */
++        .setup-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
++        .setup-col { margin-bottom: 0; }
++        .setup-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; min-width: 0; }
++        .setup-field label { margin: 0; }
++        .setup-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
++        .setup-dateline { margin: -6px 0 14px; font-size: 14px; color: var(--muted); }
++        .setup-check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 12px; cursor: pointer; font-size: 15px; }
++        .setup-check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
++        .setup-check strong { display: block; }
++        .setup-check small { display: block; font-size: 13px; color: var(--muted); }
++        .setup-players-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
++        .setup-count { color: var(--ink); font-size: 18px; }
++        .setup-add { gap: 10px; }
++        .setup-paste-link { display: inline-block; margin: 8px 0 6px; font-size: 14px; font-weight: 600; }
++        .setup-bulk { border: 1px dashed var(--border); border-radius: 10px; padding: 12px; background: var(--bg); margin-bottom: 8px; }
++        .setup-list { border: 1px solid var(--border); border-radius: 12px; max-height: 440px; overflow-y: auto; margin-top: 8px; background: var(--surface); }
++        .setup-row { display: flex; align-items: center; gap: 12px; padding: 0 12px; min-height: 46px; border-bottom: 1px solid var(--border); }
++        .setup-row:last-child { border-bottom: none; }
++        .setup-row-n { width: 24px; text-align: right; font-size: 13px; color: var(--muted); }
++        .setup-row-name { flex: 1; min-width: 0; font-weight: 600; }
++        .setup-tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
++        .setup-tag.known { background: #E4F0EA; color: var(--win); }
++        .setup-tag.new { background: #F6EBD3; color: #8A6A1F; }
++        @keyframes setupFlash { from { background: #E4F0EA; } to { background: transparent; } }
++        .setup-row.just-added { animation: setupFlash 2.5s ease-out; }
++        .setup-start { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
++        .start-confirm { width: 540px; }
++        .start-summary { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; padding: 12px 16px; background: var(--bg); border-radius: 10px; font-size: 15px; }
++        .start-summary dt { color: var(--muted); }
++        .start-summary dd { margin: 0; }
++        .start-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
++        @media (max-width: 900px) { .setup-grid { grid-template-columns: 1fr; } }
+ 
+         /* Προφίλ παίκτη */
+         .profile-head { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; max-width: 1180px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 24px 28px; }
