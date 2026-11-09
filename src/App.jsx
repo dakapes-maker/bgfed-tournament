@@ -164,6 +164,10 @@ import { PlayersCount } from "./components/PlayersCount.jsx";
 import { CalendarPage } from "./components/CalendarPage.jsx";
 import { TopBar } from "./components/TopBar.jsx";
 import { BottomNav } from "./components/BottomNav.jsx";
+import { TournamentHeader } from "./components/TournamentHeader.jsx";
+import { WinDots } from "./components/WinDots.jsx";
+import { recordsBeforeRound, pairDisplayOrder } from "./lib/roundRecords.js";
+import { VIEWS_CSS } from "./styles/views.js";
 import { NAV_CSS } from "./styles/nav.js";
 import { MOBILE_CSS } from "./styles/mobile.js";
 import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
@@ -3320,6 +3324,9 @@ export default function TournamentManager() {
       : Array.from({ length: round }, (_, i) => i + 1);
 
   const roundData = getRoundData(selectedRound);
+  // 2026-11-09.03: record before the shown round (win dots) and display order.
+  const roundRecs = recordsBeforeRound(history, selectedRound);
+  const roundOrder = roundData ? pairDisplayOrder(roundData.pairs, roundRecs) : [];
 
   const filteredArchive = [...archive, ...importedCatalogue()]
     .filter((t) => (searchName ? t.name.toLowerCase().includes(searchName.toLowerCase()) : true))
@@ -3399,7 +3406,8 @@ export default function TournamentManager() {
         </tr>
       );
     }
-    roundData.pairs.forEach((pr, i) => {
+    roundOrder.forEach((i) => {
+      const pr = roundData.pairs[i];
       const p1 = byId[pr.p1];
       const p2 = byId[pr.p2];
       if (!p1 || !p2) return;
@@ -3415,7 +3423,7 @@ export default function TournamentManager() {
       rows.push(
         <tr key={`m${i}`} className={result ? "pl-decided" : ""}>
           <td className="cal-note">M{i + 1}-{selectedRound}</td>
-          <td className={`pl-name ${result && !isDoubleRet ? (result.winnerId === p1.id ? "pl-win" : "pl-lose") : isDoubleRet ? "pl-lose" : ""}`}>{p1.name}</td>
+          <td className={`pl-name ${result && !isDoubleRet ? (result.winnerId === p1.id ? "pl-win" : "pl-lose") : isDoubleRet ? "pl-lose" : ""}`}>{p1.name}<WinDots rec={roundRecs[p1.id]} /></td>
           <td className="pl-score">
             {isAdmin ? (
               <button className={`pl-score-btn ${open ? "active" : ""}`} onClick={() => setExpandedMatch(open ? null : i)} title="Καταχώρηση / αλλαγή αποτελέσματος">
@@ -3425,11 +3433,11 @@ export default function TournamentManager() {
             ) : result ? (
               isDoubleRet ? "Α.Α. – Α.Α." : `${s1} – ${s2}`
             ) : (
-              <span className="cal-note">εκκρεμεί</span>
+              <span className="cal-note">σε εξέλιξη</span>
             )}
           </td>
           <td className={`pl-name ${result && !isDoubleRet ? (result.winnerId === p2.id ? "pl-win" : "pl-lose") : isDoubleRet ? "pl-lose" : ""}`}>
-            {p2.name}
+            {p2.name}<WinDots rec={roundRecs[p2.id]} />
             {ret && <span className="cal-note"> · {byId[result.loserId]?.name} Α.Α.</span>}
           </td>
         </tr>
@@ -6390,6 +6398,7 @@ export default function TournamentManager() {
         @media (max-width: 520px) { .details-list { grid-template-columns: 1fr; gap: 2px; } .details-list dd { margin-bottom: 8px; } }
         .field-warning { font-size: 13px; color: #9a5b00; margin: 6px 0 0 0; }
         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        ${VIEWS_CSS}
         ${NAV_CSS}
         ${MOBILE_CSS}
       `}</style>
@@ -7207,7 +7216,7 @@ export default function TournamentManager() {
                 <p>{L.stEmpty(sn(seasonBrowseYear))}</p>
               </div>
             ) : (
-                <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+                <div className="card table-scroll" style={{ padding: 0, overflowX: "auto" }}>
                   <table className="std-table st-table">
                     <thead>
                       <tr>
@@ -7375,7 +7384,7 @@ export default function TournamentManager() {
                 );
               }
               return (
-                <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+                <div className="card table-scroll" style={{ padding: 0, overflowX: "auto" }}>
                   <table className="std-table elo-table">
                     <thead>
                       <tr>
@@ -7614,7 +7623,7 @@ export default function TournamentManager() {
         if (!p || !contactDraft) {
           return (
             <div className="content">
-              <div className="empty-state">Player not found.</div>
+              <div className="empty-state">Ο παίκτης δεν βρέθηκε.</div>
             </div>
           );
         }
@@ -7626,29 +7635,43 @@ export default function TournamentManager() {
         const pct = (w, l) => (w + l > 0 ? Math.round((w / (w + l)) * 100) : null);
         const strongPct = stats ? pct(stats.vsStrongerW, stats.vsStrongerL) : null;
         const weakPct = stats ? pct(stats.vsWeakerW, stats.vsWeakerL) : null;
+        // 2026-11-09.03: profile header — initials, name, registry no. / club, ELO and rank.
+        const initials = String(p.name || "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+        const clubName = p.clubId ? clubDisplay(sysState, p.clubId, "") : "";
+        const games = eloEntry ? eloEntry.games || 0 : 0;
+        const winPct = eloEntry && games ? Math.round(((eloEntry.wins || 0) / games) * 100) : null;
+        const recent = eloTimeline && eloTimeline.__ledger
+          ? [...(eloTimeline.__ledger[key] || [])].sort((x, y) => new Date(y.date) - new Date(x.date)).slice(0, 6)
+          : null;
         return (
           <>
             <div className="header">
-              <p className="eyebrow">
-                Player Registry{p.regNo ? ` · Αριθμός Μητρώου ${formatRegNo(p.regNo)}` : ""}
-                {isAdmin && registry.identityVersion === 2 ? <span style={{ opacity: 0.6 }}> · ID {key}</span> : null}
-              </p>
-              <h1>{formatNameForDisplay(p.name, nameDisplayMode)}</h1>
-              <div className="points-strip">
-                {Array.from({ length: 24 }).map((_, i) => (
-                  <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
-                ))}
+              <div className="profile-head">
+                <div className="profile-avatar" aria-hidden="true">{initials}</div>
+                <div className="profile-id">
+                  <p className="eyebrow">
+                    {[p.regNo ? `Αρ. Μητρώου ${formatRegNo(p.regNo)}` : null, clubName || null].filter(Boolean).join(" · ") || "Παίκτης"}
+                    {isAdmin && registry.identityVersion === 2 ? <span style={{ opacity: 0.6 }}> · ID {key}</span> : null}
+                  </p>
+                  <h1>{formatNameForDisplay(p.name, nameDisplayMode)}</h1>
+                </div>
+                {eloEntry && (
+                  <div className="profile-figures">
+                    <div className="profile-figure"><span>ELO</span><strong className="accent">{Math.round(eloEntry.rating)}</strong><small>{mainRanking.name}</small></div>
+                    <div className="profile-figure"><span>Θέση</span><strong>#{rank}</strong><small>πανελλήνια</small></div>
+                  </div>
+                )}
               </div>
             </div>
             <div className="content">
               <div className="detail-tabs">
                 {isAdmin && (
                   <button className={`detail-tab ${playerDetailTab === "contact" ? "active" : ""}`} onClick={() => setPlayerDetailTab("contact")}>
-                    Contact &amp; Membership
+                    Επικοινωνία και συνδρομή
                   </button>
                 )}
                 <button className={`detail-tab ${playerDetailTab === "stats" || !isAdmin ? "active" : ""}`} onClick={() => setPlayerDetailTab("stats")}>
-                  Playing Stats
+                  Στατιστικά αγώνων
                 </button>
               </div>
 
@@ -7818,41 +7841,41 @@ export default function TournamentManager() {
               )}
 
               {(playerDetailTab === "stats" || !isAdmin) && (
-                <div className="card">
-                  {eloEntry && (
-                    <div className="elo-snapshot">
-                      <div className="elo-snapshot-stat">
-                        <span className="finance-stat-label">ELO Rating</span>
-                        <span className="finance-stat-value">{Math.round(eloEntry.rating)}</span>
-                      </div>
-                      <div className="elo-snapshot-stat">
-                        <span className="finance-stat-label">Rank</span>
-                        <span className="finance-stat-value">#{rank}</span>
-                      </div>
-                      <div className="elo-snapshot-stat">
-                        <span className="finance-stat-label">Experience</span>
-                        <span className="finance-stat-value">{eloEntry.experience ?? eloEntry.games * 7}</span>
-                      </div>
-                      {stats && (
+                <>
+                {eloEntry && (
+                  <div className="profile-tiles">
+                    <div className="profile-tile">
+                      <div className="profile-tile-label">Αγώνες</div>
+                      <div className="profile-tile-value">{games}</div>
+                      <div className="profile-tile-sub">{mainRanking.name}</div>
+                    </div>
+                    <div className="profile-tile">
+                      <div className="profile-tile-label">Νίκες</div>
+                      <div className="profile-tile-value">{winPct !== null ? `${winPct}%` : "—"}</div>
+                      <div className="profile-tile-sub">{eloEntry.wins || 0} νίκες – {Math.max(0, games - (eloEntry.wins || 0))} ήττες</div>
+                    </div>
+                    <div className="profile-tile">
+                      <div className="profile-tile-label">Εμπειρία</div>
+                      <div className="profile-tile-value">{eloEntry.experience ?? games * 7}</div>
+                      <div className="profile-tile-sub">πόντοι αγώνων</div>
+                    </div>
+                    <div className="profile-tile">
+                      <div className="profile-tile-label">Απέναντι σε ισχυρότερους / ασθενέστερους</div>
+                      {stats ? (
                         <>
-                          <div className="elo-snapshot-stat">
-                            <span className="finance-stat-label">vs higher-rated</span>
-                            <span className="finance-stat-value" style={{ fontSize: 16 }}>
-                              {stats.vsStrongerW}W–{stats.vsStrongerL}L{strongPct !== null && <span style={{ color: "var(--muted)", fontFamily: "'Source Sans 3', sans-serif", fontSize: 12, fontWeight: 600 }}> ({strongPct}%)</span>}
-                            </span>
-                          </div>
-                          <div className="elo-snapshot-stat">
-                            <span className="finance-stat-label">vs lower-rated</span>
-                            <span className="finance-stat-value" style={{ fontSize: 16 }}>
-                              {stats.vsWeakerW}W–{stats.vsWeakerL}L{weakPct !== null && <span style={{ color: "var(--muted)", fontFamily: "'Source Sans 3', sans-serif", fontSize: 12, fontWeight: 600 }}> ({weakPct}%)</span>}
-                            </span>
-                          </div>
+                          <div className="profile-tile-sub" style={{ marginTop: 4 }}>Ισχυρότερους: {stats.vsStrongerW}–{stats.vsStrongerL}{strongPct !== null ? ` (${strongPct}%)` : ""}</div>
+                          <div className="profile-bar"><span style={{ width: `${strongPct || 0}%` }} /></div>
+                          <div className="profile-tile-sub">Ασθενέστερους: {stats.vsWeakerW}–{stats.vsWeakerL}{weakPct !== null ? ` (${weakPct}%)` : ""}</div>
+                          <div className="profile-bar ink"><span style={{ width: `${weakPct || 0}%` }} /></div>
                         </>
+                      ) : (
+                        <div className="profile-tile-sub">Φόρτωση…</div>
                       )}
                     </div>
-                  )}
-
-                  <p className="trend-chart-title" style={{ marginTop: 4 }}>Performance trend</p>
+                  </div>
+                )}
+                <div className="card">
+                  <h2 className="profile-section-title">Πορεία</h2>
                   {(() => {
                     // 5D: one ranking — the main one (stored in meta/elo).
                     const eloRows = eloTimeline ? eloTimeline[key] || [] : null;
@@ -7876,19 +7899,50 @@ export default function TournamentManager() {
                     );
                   })()}
 
-                  {eloTimeline && eloTimeline.__ledger && (eloTimeline.__ledger[key] || []).length > 0 && (
-                    <details className="ledger" style={{ marginTop: 14 }}>
+                </div>
+
+                {recent && recent.length > 0 && (
+                  <div className="card">
+                    <h2 className="profile-section-title">Τελευταίοι αγώνες</h2>
+                    <div style={{ overflowX: "auto" }}>
+                      <table className="recent-table">
+                        <thead>
+                          <tr><th>Τουρνουά</th><th>Αντίπαλος (ELO)</th><th>Αποτ.</th><th style={{ textAlign: "right" }}>ELO</th></tr>
+                        </thead>
+                        <tbody>
+                          {recent.map((r, i) => (
+                            <tr key={i}>
+                              <td>
+                                {r.matchlist ? r.tournamentName : (
+                                  <button className="history-link" onClick={() => (r.imported ? openImportPublic(r.tournamentId, { kind: "player", key }) : openTournamentFromPlayer(r.tournamentId, key))}>{r.imported ? r.tournamentName : shortTournamentLabel(r.tournamentName)}</button>
+                                )}
+                                <span className="cal-note" style={{ display: "block" }}>Γύρος {r.round} · {formatDate(r.date)}</span>
+                              </td>
+                              <td>{r.opponent} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
+                              <td><span className={`recent-res ${r.result === "win" ? "w" : "l"}`} title={r.ret ? "με Α.Α." : undefined}>{r.result === "win" ? "Ν" : "Η"}</span></td>
+                              <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                                {r.ret ? <span className="cal-note">Α.Α.</span> : <strong className={r.delta > 0 ? "pos" : r.delta < 0 ? "neg" : ""}>{`${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}`}</strong>}{" "}
+                                <span className="cal-note">→ {Math.round(r.ratingAfter)}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <details className="ledger" style={{ marginTop: 12 }}>
                       <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                        Πώς προέκυψε η ELO ({(eloTimeline.__ledger[key] || []).filter((r) => !r.ret).length} αγώνες)
+                        Όλοι οι αγώνες — πώς προέκυψε η ELO ({(eloTimeline.__ledger[key] || []).filter((r) => !r.ret).length} αγώνες)
                       </summary>
                       {renderEloLedger(key)}
                     </details>
-                  )}
+                  </div>
+                )}
 
-                  <label style={{ marginTop: 18, display: "block" }}>Tournament history</label>
-                  {!playerHistoryCache[key] && <p style={{ fontSize: 13, color: "var(--muted)" }}>Loading…</p>}
+                <div className="card">
+                  <h2 className="profile-section-title">Ιστορικό τουρνουά</h2>
+                  {!playerHistoryCache[key] && <p style={{ fontSize: 13, color: "var(--muted)" }}>Φόρτωση…</p>}
                   {playerHistoryCache[key] && playerHistoryCache[key].length === 0 && (
-                    <p style={{ fontSize: 13, color: "var(--muted)" }}>No tournaments recorded yet.</p>
+                    <p style={{ fontSize: 13, color: "var(--muted)" }}>Δεν υπάρχουν ακόμη τουρνουά.</p>
                   )}
                   {playerHistoryCache[key] && new Set([...playerHistoryCache[key].map((h) => h.competitionId), ...playerMatchlistGroups(importDocs, key).map((g) => g.competitionId)]).size > 1 && (
                     <div className="round-pills" style={{ margin: "6px 0 8px 0" }}>
@@ -7917,7 +7971,7 @@ export default function TournamentManager() {
                             )}{" "}
                             <span style={{ color: "var(--muted)" }}>({formatDate(h.date)})</span>
                           </span>
-                          <strong>{h.imported ? (h.positionLabel && h.positionLabel.includes("–") ? `θέσεις ${h.positionLabel}` : h.position ? `${h.position}η θέση` : "—") : `${h.points} pts`}</strong>
+                          <strong>{h.imported ? (h.positionLabel && h.positionLabel.includes("–") ? `θέσεις ${h.positionLabel}` : h.position ? `${h.position}η θέση` : "—") : `${h.points} β.`}</strong>
                         </div>
                       ))}
                     </div>
@@ -7934,6 +7988,7 @@ export default function TournamentManager() {
                     }}
                   />
                 </div>
+                </>
               )}
             </div>
           </>
@@ -8866,18 +8921,19 @@ export default function TournamentManager() {
       {/* TOURNAMENT */}
       {phase === "tournament" && (
         <>
-          <div className="header">
-            <p className="eyebrow">Swiss System</p>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-              <h1>{tournamentName || "Backgammon Tournament"}</h1>
-              <span className="round-tag">Round {round} of {totalRounds}</span>
-            </div>
-            <div className="points-strip">
-              {Array.from({ length: 24 }).map((_, i) => (
-                <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
-              ))}
-            </div>
-          </div>
+          <TournamentHeader
+            live
+            name={tournamentName || "Backgammon Tournament"}
+            meta={[createdAt ? formatDate(createdAt) : null, `${players.length} παίκτες`, `Swiss, ${totalRounds} γύροι`, `αγώνες στους ${matchLength} πόντους`].filter(Boolean).join(" · ")}
+            counters={[
+              { label: "Γύρος", value: round, of: totalRounds },
+              (() => {
+                const prs = (currentPairings && currentPairings.pairs) || [];
+                const done = prs.filter((p) => p.result).length;
+                return { label: "Αγώνες γύρου", value: done, of: prs.length, bar: prs.length ? done / prs.length : 0 };
+              })(),
+            ]}
+          />
           <div className="content" style={{ maxWidth: 1600 }}>
             {notice && (
               <div className="notice">
@@ -8889,8 +8945,8 @@ export default function TournamentManager() {
             {renderBackToPlayer()}
 
             <div className="tabs">
-              <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Pairings</button>
-              <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Standings</button>
+              <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Ζευγαρώματα</button>
+              <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Κατάταξη</button>
               <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
               {isAdmin && tFin.enabled && (
                 <>
@@ -8922,7 +8978,7 @@ export default function TournamentManager() {
                       className={`round-pill ${selectedRound === r ? "active" : ""}`}
                       onClick={() => { setSelectedRound(r); setConfirmingRedraw(false); }}
                     >
-                      Round {r}
+                      Γύρος {r}
                     </button>
                   ))}
                 </div>
@@ -8935,6 +8991,7 @@ export default function TournamentManager() {
                     <List size={14} /> Λίστα
                   </button>
                 </div>
+                {selectedRound > 1 && <p className="pairings-order-note">Δίπλα σε κάθε όνομα οι νίκες (●) και ήττες (○) πριν από αυτόν τον γύρο· πρώτα οι αγώνες με τις περισσότερες νίκες.</p>}
 
                 {pairingsLayout === "list" ? (
                   renderPairingsList(true)
@@ -8953,7 +9010,8 @@ export default function TournamentManager() {
                     <div className="match-row-tag">Αυτόματο ρεπό</div>
                   </div>
                 )}
-                {roundData && roundData.pairs.map((pr, i) => {
+                {roundData && roundOrder.map((i) => {
+                  const pr = roundData.pairs[i];
                   const p1 = byId[pr.p1];
                   const p2 = byId[pr.p2];
                   if (!p1 || !p2) return null;
@@ -8981,14 +9039,14 @@ export default function TournamentManager() {
                         {!result && <span>Πρόβλεψη ELO {p1Prob}%-{p2Prob}%</span>}
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p1.id ? "winner" : "loser") : ""}`}>
-                        <span>{p1.name}</span>
+                        <span>{p1.name}<WinDots rec={roundRecs[p1.id]} /></span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p1Score}</span>
                           {result && !isDoubleRet && result.winnerId === p1.id && <Check size={14} />}
                         </span>
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p2.id ? "winner" : "loser") : ""}`}>
-                        <span>{p2.name}</span>
+                        <span>{p2.name}<WinDots rec={roundRecs[p2.id]} /></span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p2Score}</span>
                           {result && !isDoubleRet && result.winnerId === p2.id && <Check size={14} />}
@@ -8998,7 +9056,7 @@ export default function TournamentManager() {
                       {result && !isDoubleRet && result.method === "retirement" && (
                         <div className="match-row-tag">{byId[result.loserId]?.name} αποχώρησε (Α.Α.)</div>
                       )}
-                      {!result && !canEdit && <div className="match-row-tag">Εκκρεμεί</div>}
+                      {!result && !canEdit && <div className="match-row-tag">Σε εξέλιξη</div>}
 
                       {canEdit && isExpanded && (
                         <div className="match-expand" onClick={(e) => e.stopPropagation()}>
@@ -9082,18 +9140,11 @@ export default function TournamentManager() {
       {/* FINISHED */}
       {phase === "finished" && (
         <>
-          <div className="header">
-            <p className="eyebrow">Swiss System</p>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
-              <h1>{tournamentName || "Backgammon Tournament"}</h1>
-              <span className="round-tag">Completed</span>
-            </div>
-            <div className="points-strip">
-              {Array.from({ length: 24 }).map((_, i) => (
-                <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
-              ))}
-            </div>
-          </div>
+          <TournamentHeader
+            name={tournamentName || "Backgammon Tournament"}
+            meta={[createdAt ? formatDate(createdAt) : null, `${players.length} παίκτες`, `Swiss, ${totalRounds} γύροι`, `αγώνες στους ${matchLength} πόντους`].filter(Boolean).join(" · ")}
+            counters={[{ label: "Γύροι", value: totalRounds, of: totalRounds }, { label: "Παίκτες", value: players.length, of: players.length }]}
+          />
           <div className="content" style={{ maxWidth: 1600 }}>
             {notice && (
               <div className="notice">
@@ -9134,8 +9185,8 @@ export default function TournamentManager() {
             {renderBackToPlayer()}
 
             <div className="tabs">
-              <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Pairings</button>
-              <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Standings</button>
+              <button className={`tab ${view === "pairings" ? "active" : ""}`} onClick={() => setView("pairings")}>Ζευγαρώματα</button>
+              <button className={`tab ${view === "standings" ? "active" : ""}`} onClick={() => setView("standings")}>Κατάταξη</button>
               <button className={`tab ${view === "details" ? "active" : ""}`} onClick={() => setView("details")}>Στοιχεία</button>
               {isAdmin && tFin.enabled && (
                 <>
@@ -9156,7 +9207,7 @@ export default function TournamentManager() {
                       className={`round-pill ${selectedRound === r ? "active" : ""}`}
                       onClick={() => setSelectedRound(r)}
                     >
-                      Round {r}
+                      Γύρος {r}
                     </button>
                   ))}
                 </div>
@@ -9169,6 +9220,7 @@ export default function TournamentManager() {
                     <List size={14} /> Λίστα
                   </button>
                 </div>
+                {selectedRound > 1 && <p className="pairings-order-note">Δίπλα σε κάθε όνομα οι νίκες (●) και ήττες (○) πριν από αυτόν τον γύρο· πρώτα οι αγώνες με τις περισσότερες νίκες.</p>}
 
                 {pairingsLayout === "list" ? (
                   renderPairingsList(false)
@@ -9187,7 +9239,8 @@ export default function TournamentManager() {
                     <div className="match-row-tag">Αυτόματο ρεπό</div>
                   </div>
                 )}
-                {roundData && roundData.pairs.map((pr, i) => {
+                {roundData && roundOrder.map((i) => {
+                  const pr = roundData.pairs[i];
                   const p1 = byId[pr.p1];
                   const p2 = byId[pr.p2];
                   if (!p1 || !p2) return null;
@@ -9207,14 +9260,14 @@ export default function TournamentManager() {
                     >
                       <div className="match-compact-num">M{i + 1}-{selectedRound}</div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p1.id ? "winner" : "loser") : ""}`}>
-                        <span>{p1.name}</span>
+                        <span>{p1.name}<WinDots rec={roundRecs[p1.id]} /></span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p1Score}</span>
                           {result && !isDoubleRet && result.winnerId === p1.id && <Check size={14} />}
                         </span>
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p2.id ? "winner" : "loser") : ""}`}>
-                        <span>{p2.name}</span>
+                        <span>{p2.name}<WinDots rec={roundRecs[p2.id]} /></span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p2Score}</span>
                           {result && !isDoubleRet && result.winnerId === p2.id && <Check size={14} />}

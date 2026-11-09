@@ -59,7 +59,7 @@ export function StandingsTable({ standings, tiebreaks, L, totalRounds, sideBets,
     {tiebreaks && (
       <CriteriaNotice summary={L.ttSummary} moreLabel={L.critMore} lessLabel={L.critLess} definitions={L.ttDefs} closing={L.ttHowTo} />
     )}
-    <div className="card" style={{ padding: 0, overflowX: "auto" }}>
+    <div className="card table-scroll" style={{ padding: 0, overflowX: "auto" }}>
       <table className="std-table">
         <thead>
           <tr>
