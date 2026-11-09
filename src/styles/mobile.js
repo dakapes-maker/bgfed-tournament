@@ -4,32 +4,14 @@
 export const MOBILE_MENU_MAX = 900;
 
 export const MOBILE_CSS = `
-        /* Πάνω μπάρα: κουμπιά (υπολογιστής) ή μενού ☰ (στενή οθόνη) */
-        .topbar { position: relative; gap: 10px; }
-        .brand { min-width: 0; flex-wrap: wrap; }
-        .topbar-right { display: flex; align-items: center; gap: 14px; }
-        .topbar-nav { display: contents; }
-        .topbar-burger { display: none; position: relative; align-items: center; justify-content: center; width: 40px; height: 40px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--ink); padding: 0; }
-        .topbar-dot { position: absolute; top: -2px; right: -6px; width: 8px; height: 8px; border-radius: 50%; background: #c0392b; border: 1.5px solid var(--card-bg, #fff); }
-        .topbar-burger .topbar-dot { top: 4px; right: 4px; }
-        .topbar-panel, .topbar-scrim { display: none; }
+        /* Η πάνω μπάρα και η κάτω μπάρα του κινητού: styles/nav.js (2026-11-09.02). */
 
         /* Κατάταξη ELO: πτυσσόμενο πλαίσιο «How this is calculated» */
         .elo-howto { flex: 1; min-width: 0; }
         .elo-howto > summary { cursor: pointer; }
 
         @media (max-width: ${MOBILE_MENU_MAX}px) {
-          .topbar-nav { display: none; }
-          .topbar-burger { display: inline-flex; }
-          .topbar-build { display: none; }
           .account-email { display: none; }
-          .topbar-right { gap: 8px; flex-shrink: 0; }
-          .topbar-scrim.open { display: block; position: fixed; inset: 0; z-index: 140; background: rgba(0,0,0,0.15); }
-          .topbar-panel.open { display: block; position: absolute; top: 100%; left: 0; right: 0; z-index: 150; background: var(--surface); border-bottom: 1px solid var(--border); box-shadow: 0 10px 24px rgba(0,0,0,0.12); padding: 6px 0; max-height: calc(100vh - 70px); overflow-y: auto; }
-          .topbar-panel-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; padding: 0 20px; background: none; border: none; text-align: left; font-size: 16px; font-weight: 600; color: var(--ink); }
-          .topbar-panel-item:hover, .topbar-panel-item:active { background: var(--accent-soft); color: var(--accent); }
-          .topbar-panel-item .topbar-dot { position: static; display: inline-block; margin-left: -4px; }
-          .topbar-panel-sep { height: 1px; background: var(--border); margin: 6px 0; }
 
           /* Πεδία 16px: κάτω από αυτό το iPhone κάνει zoom όταν πατάς στο πεδίο */
           .app input[type="text"], .app input[type="number"], .app input[type="date"], .app input[type="email"],
@@ -85,8 +67,6 @@ export const MOBILE_CSS = `
           .retire-row { flex-direction: column; align-items: stretch; gap: 4px; }
           .retire-row button { justify-content: flex-start; min-height: 40px; }
 
-          .topbar { padding: 10px 14px; }
-          .brand { font-size: 12px; }
           .header { padding: 18px 14px 0 14px; }
           .content { padding: 18px 14px 48px 14px; }
           h1 { font-size: 24px; }

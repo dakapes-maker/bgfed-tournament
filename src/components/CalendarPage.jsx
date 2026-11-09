@@ -102,7 +102,7 @@ export function CalendarPage({ sys, archive, imports, onOpenTournament }) {
         const [y, m] = g.key.split("-").map(Number);
         return (
           <section key={g.key} style={{ marginBottom: 22 }}>
-            <h3 style={{ fontFamily: "'Fraunces', serif", fontSize: 18, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--accent)", borderBottom: "2px solid var(--accent)", paddingBottom: 4, margin: "0 0 8px 0" }}>
+            <h3 style={{ fontFamily: "'Literata', Georgia, serif", fontSize: 18, letterSpacing: 0.5, textTransform: "uppercase", color: "var(--accent)", borderBottom: "2px solid var(--accent)", paddingBottom: 4, margin: "0 0 8px 0" }}>
               {MONTHS[m - 1]} {y}
             </h3>
             {g.rows.map((i) => {

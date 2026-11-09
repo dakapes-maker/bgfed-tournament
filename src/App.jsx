@@ -29,6 +29,9 @@ import {
   LayoutGrid,
   List,
   FileSpreadsheet,
+  Home,
+  MoreHorizontal,
+  Globe,
 } from "lucide-react";
 import {
   loadUserDocStrict,
@@ -160,6 +163,8 @@ import { CriteriaNotice } from "./components/CriteriaNotice.jsx";
 import { PlayersCount } from "./components/PlayersCount.jsx";
 import { CalendarPage } from "./components/CalendarPage.jsx";
 import { TopBar } from "./components/TopBar.jsx";
+import { BottomNav } from "./components/BottomNav.jsx";
+import { NAV_CSS } from "./styles/nav.js";
 import { MOBILE_CSS } from "./styles/mobile.js";
 import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
 import { PlayerTrendCharts } from "./components/charts.jsx";
@@ -6038,16 +6043,17 @@ export default function TournamentManager() {
     <div className="app">
       {/* #region Στυλ (CSS) */}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Source+Sans+3:wght@400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,500;7..72,600;7..72,700&family=Source+Sans+3:wght@400;500;600;700&display=swap');
 
         :root {
-          --bg: #F4ECDD;
-          --surface: #FFFCF5;
-          --ink: #1E140A;
-          --muted: #6E5D48;
-          --accent: #7C2D2D;
-          --accent-soft: #F1DED2;
-          --border: #D8C4A0;
+          /* 2026-11-09.02: νέο ύφος (canvas «Οπτική ανανέωση») */
+          --bg: #F6F2EA;
+          --surface: #FFFDF9;
+          --ink: #1D1A17;
+          --muted: #5E5650;
+          --accent: #7B1E2B;
+          --accent-soft: #F3E6E3;
+          --border: #E3DACB;
           --win: #1F5C34;
           --loss: #7A3B3B;
         }
@@ -6072,8 +6078,8 @@ export default function TournamentManager() {
 
         .header { padding: 24px 28px 0 28px; }
         .eyebrow { font-size: 13px; color: var(--muted); margin: 0 0 4px 0; }
-        h1 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 30px; margin: 0; line-height: 1.15; }
-        .round-tag { font-family: 'Fraunces', serif; font-size: 16px; color: var(--accent); }
+        h1 { font-family: 'Literata', Georgia, serif; font-weight: 700; font-size: 34px; margin: 0; line-height: 1.12; }
+        .round-tag { font-family: 'Literata', Georgia, serif; font-size: 16px; color: var(--accent); }
         .points-strip { display: flex; margin: 18px 0 0 0; height: 22px; overflow: hidden; }
         .point { width: 16px; height: 0; border-left: 8px solid transparent; border-right: 8px solid transparent; margin-right: 1px; flex-shrink: 0; }
         .point.down.a { border-top: 22px solid var(--accent); }
@@ -6082,7 +6088,7 @@ export default function TournamentManager() {
         .point.up.b { border-bottom: 22px solid var(--ink); opacity: 0.5; }
 
         .content { padding: 24px 28px 60px 28px; max-width: 1180px; margin: 0 auto; }
-        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; margin-bottom: 16px; }
+        .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 16px; }
 
         label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
         input[type="text"], input[type="number"], input[type="date"] {
@@ -6163,7 +6169,7 @@ export default function TournamentManager() {
         .finance-summary { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
         .finance-stat { flex: 1; min-width: 120px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
         .finance-stat-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
-        .finance-stat-value { font-family: 'Fraunces', serif; font-size: 22px; color: var(--accent); }
+        .finance-stat-value { font-family: 'Literata', Georgia, serif; font-size: 22px; color: var(--accent); }
         .finance-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
         .finance-row:last-child { border-bottom: none; }
         .prize-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--accent-soft); color: var(--accent); margin-right: 8px; }
@@ -6173,7 +6179,7 @@ export default function TournamentManager() {
         .winners-col-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px 0; }
         @media (max-width: 600px) { .winners-columns { grid-template-columns: 1fr; } }
 
-        .wins-highlight { display: inline-block; min-width: 26px; font-family: 'Fraunces', serif; font-weight: 700; font-size: 16px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 2px 8px; }
+        .wins-highlight { display: inline-block; min-width: 26px; font-family: 'Literata', Georgia, serif; font-weight: 700; font-size: 16px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; padding: 2px 8px; }
         .buchholz-header { color: var(--muted); font-weight: 400; }
         .buchholz-cell { color: var(--muted); font-size: 13px; }
         .crit-col { background: var(--bg); padding-left: 6px; padding-right: 6px; }
@@ -6205,7 +6211,7 @@ export default function TournamentManager() {
         .match-compact.clickable:hover { background: var(--accent-soft); }
         .match-compact-num { font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 0.03em; margin-bottom: 2px; }
         .match-row-name { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; font-size: 16px; font-weight: 700; color: var(--ink); }
-        .match-row-score { font-family: 'Fraunces', serif; font-size: 15px; font-weight: 700; min-width: 18px; text-align: right; color: var(--muted); }
+        .match-row-score { font-family: 'Literata', Georgia, serif; font-size: 15px; font-weight: 700; min-width: 18px; text-align: right; color: var(--muted); }
         .match-row-name.winner .match-row-score { color: var(--win); }
         .match-row-name.loser .match-row-score { color: var(--loss); }
         .match-row-name.winner { color: var(--win); background: rgba(31, 92, 52, 0.14); border-radius: 5px; padding: 4px 8px; margin: 2px -4px; }
@@ -6214,7 +6220,7 @@ export default function TournamentManager() {
         .match-expand { margin-top: 8px; border-top: 1px dashed var(--border); padding-top: 8px; }
         .match-names { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 4px; }
         .match-name {
-          font-family: 'Fraunces', serif; font-weight: 700; font-size: 20px; text-align: center; flex: 1;
+          font-family: 'Literata', Georgia, serif; font-weight: 700; font-size: 20px; text-align: center; flex: 1;
           padding: 6px 10px; border-radius: 6px; background: rgba(255,255,255,0.5);
         }
         .match-name.winner { color: var(--accent); background: var(--accent-soft); }
@@ -6278,7 +6284,7 @@ export default function TournamentManager() {
 
         .winner-banner { text-align: center; padding: 30px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; }
         .winner-banner .trophy { color: var(--accent); margin-bottom: 8px; }
-        .winner-banner .name { font-family: 'Fraunces', serif; font-size: 30px; margin: 6px 0 2px 0; }
+        .winner-banner .name { font-family: 'Literata', Georgia, serif; font-size: 30px; margin: 6px 0 2px 0; }
         .winner-banner .sub { color: var(--muted); font-size: 14px; }
 
         .archive-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 2px; border-bottom: 1px solid var(--border); cursor: pointer; }
@@ -6296,7 +6302,7 @@ export default function TournamentManager() {
         .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
         .dashboard-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; text-align: left; color: var(--accent); cursor: pointer; transition: transform 0.12s ease, box-shadow 0.12s ease; }
         .dashboard-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.08); background: var(--accent-soft); }
-        .dashboard-card-title { font-family: 'Fraunces', serif; font-size: 19px; font-weight: 600; color: var(--ink); }
+        .dashboard-card-title { font-family: 'Literata', Georgia, serif; font-size: 19px; font-weight: 600; color: var(--ink); }
         .dashboard-card-desc { font-size: 13px; color: var(--muted); font-weight: 400; }
 
         .toast { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 30px; font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.25); z-index: 100; animation: toast-in 0.2s ease; }
@@ -6384,6 +6390,7 @@ export default function TournamentManager() {
         @media (max-width: 520px) { .details-list { grid-template-columns: 1fr; gap: 2px; } .details-list dd { margin-bottom: 8px; } }
         .field-warning { font-size: 13px; color: #9a5b00; margin: 6px 0 0 0; }
         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        ${NAV_CSS}
         ${MOBILE_CSS}
       `}</style>
       {/* #endregion Στυλ (CSS) */}
@@ -6514,38 +6521,81 @@ export default function TournamentManager() {
       {/* #endregion Ειδοποιήσεις, πλαίσια σφαλμάτων, διάλογοι επιβεβαίωσης */}
 
       {/* #region Πάνω μπάρα */}
-      {/* TOP BAR — components/TopBar.jsx (μενού ☰ σε στενή οθόνη) */}
-      <TopBar
-        title="HELLENIC BACKGAMMON PLATFORM"
-        buildVersion={APP_BUILD_VERSION}
-        onBack={phase !== "dashboard" ? () => (phase === "playerDetail" ? setPhase(playerDetailReturnPhase) : goHome()) : null}
-        items={[
-          { key: "about", icon: Info, label: L.navAbout, onClick: () => { setPhase("about"); dismissWhatsNew(); }, dot: hasUnseenUpdate },
-          { key: "archive", icon: Trophy, label: L.navTournaments, onClick: () => setPhase("archive") },
-          { key: "calendar", icon: CalendarDays, label: "Ημερολόγιο", onClick: () => setPhase("calendar") },
-          { key: "season", icon: TrendingUp, label: L.navSeason, onClick: () => setPhase("season") },
-          { key: "elo", icon: Award, label: L.navEloNational, onClick: () => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); } },
-          { key: "h2h", icon: Users, label: L.navStats, onClick: () => setPhase("h2h") },
-          ...(isAdminAny
-            ? [
-                { key: "players", icon: Users, label: L.navPlayers, onClick: () => setPhase("players") },
-                { key: "control", icon: Lock, label: L.navControl, onClick: () => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); } },
-              ]
-            : []),
-        ]}
-        langLabel={lang === "el" ? "EN" : "ΕΛ"}
-        onToggleLang={toggleLang}
-        right={
+      {/* TOP BAR — components/TopBar.jsx · κάτω μπάρα κινητού: components/BottomNav.jsx (2026-11-09.02) */}
+      {(() => {
+        const goArchive = () => setPhase("archive");
+        const goCalendar = () => setPhase("calendar");
+        const goSeason = () => setPhase("season");
+        const goElo = () => { setEloPool(PRIMARY_RANKING_ID); setEloLedgerOpen(null); setPhase("elo"); };
+        const goStats = () => setPhase("h2h");
+        const goAbout = () => { setPhase("about"); dismissWhatsNew(); };
+        const goPlayers = () => setPhase("players");
+        const goControl = () => { setControlTab(isSuper ? "overview" : "competitions"); setCompPageOpen(false); setPhase("control"); };
+        const navActive =
+          phase === "dashboard" ? "home"
+          : ["archive", "setup", "tournament", "finished", "imported", "trash"].includes(phase) ? "archive"
+          : phase;
+        const today = isoToLocalYMD(new Date().toISOString());
+        const liveToday = archive.some((t) => t.status === "In progress" && t.isOfficial && isoToLocalYMD(t.date) === today);
+        const searchPlayers = Object.entries(registry.players || {}).map(([key, p]) => ({ key, name: p.name })).filter((p) => p.name);
+        return (
           <>
-            {!inIframe && !authUser && (
-              <button className="btn-ghost" onClick={() => setShowLogin(true)} style={{ border: "1px solid var(--border)", borderRadius: 20 }}>
-                <Lock size={14} /> Σύνδεση
-              </button>
-            )}
-            {!inIframe && authUser && <AccountMenu email={authUser.email || authUser.uid} onSignOut={logoutAdmin} />}
+            <TopBar
+              title="Hellenic Backgammon Platform"
+              buildVersion={APP_BUILD_VERSION}
+              onHome={goHome}
+              onBack={phase !== "dashboard" ? () => (phase === "playerDetail" ? setPhase(playerDetailReturnPhase) : goHome()) : null}
+              active={navActive}
+              links={[
+                { key: "archive", label: L.navTournaments, onClick: goArchive, liveDot: liveToday },
+                { key: "calendar", label: "Ημερολόγιο", onClick: goCalendar },
+                { key: "season", label: L.navSeasonShort, onClick: goSeason },
+                { key: "elo", label: L.navEloShort, onClick: goElo },
+                { key: "h2h", label: L.navStats, onClick: goStats },
+                { key: "about", label: L.navAbout, onClick: goAbout, dot: hasUnseenUpdate },
+              ]}
+              admin={isAdminAny ? [
+                { key: "players", label: L.navPlayers, onClick: goPlayers },
+                { key: "control", label: L.navControl, onClick: goControl, primary: true },
+              ] : []}
+              players={searchPlayers}
+              onOpenPlayer={(key) => { if (registry.players?.[key]) openPlayerDetail(key); }}
+              langLabel={lang === "el" ? "EN" : "ΕΛ"}
+              onToggleLang={toggleLang}
+              right={
+                <>
+                  {!inIframe && !authUser && (
+                    <button className="btn-ghost" onClick={() => setShowLogin(true)} style={{ border: "1px solid var(--border)", borderRadius: 20 }}>
+                      <Lock size={14} /> Σύνδεση
+                    </button>
+                  )}
+                  {!inIframe && authUser && <AccountMenu email={authUser.email || authUser.uid} onSignOut={logoutAdmin} />}
+                </>
+              }
+            />
+            <BottomNav
+              active={navActive}
+              items={[
+                { key: "home", label: "Αρχική", icon: Home, onClick: goHome },
+                { key: "archive", label: L.navTournaments, icon: Trophy, onClick: goArchive, liveDot: liveToday },
+                { key: "season", label: L.navSeasonShort, icon: TrendingUp, onClick: goSeason },
+                { key: "elo", label: "ELO", icon: Award, onClick: goElo },
+              ]}
+              moreIcon={MoreHorizontal}
+              more={[
+                { key: "calendar", label: "Ημερολόγιο", icon: CalendarDays, onClick: goCalendar },
+                { key: "h2h", label: L.navStats, icon: Users, onClick: goStats },
+                { key: "about", label: L.navAbout, icon: Info, onClick: goAbout, dot: hasUnseenUpdate },
+                ...(isAdminAny ? [
+                  { key: "players", label: L.navPlayers, icon: Users, onClick: goPlayers },
+                  { key: "control", label: L.navControl, icon: Lock, onClick: goControl },
+                ] : []),
+                { key: "lang", label: lang === "el" ? "English" : "Ελληνικά", icon: Globe, onClick: toggleLang },
+              ]}
+            />
           </>
-        }
-      />
+        );
+      })()}
       {/* #endregion Πάνω μπάρα */}
 
       {/* #region Σύνδεση: διάλογος και μηνύματα λογαριασμού */}
@@ -6895,7 +6945,7 @@ export default function TournamentManager() {
                         <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>😲 Μεγαλύτερη ανατροπή</p>
                         {seasonStatsResult.biggestUpset ? (
                           <>
-                            <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>
+                            <p style={{ fontFamily: "'Literata', Georgia, serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>
                               {seasonStatsResult.biggestUpset.winner} <span style={{ fontSize: 15, color: "var(--muted)" }}>({seasonStatsResult.biggestUpset.winnerRatingBefore})</span>
                             </p>
                             <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 10px 0" }}>
@@ -6911,7 +6961,7 @@ export default function TournamentManager() {
                         <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>📈 Μεγαλύτερη άνοδος ELO</p>
                         {seasonStatsResult.mostImproved ? (
                           <>
-                            <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{seasonStatsResult.mostImproved.name}</p>
+                            <p style={{ fontFamily: "'Literata', Georgia, serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{seasonStatsResult.mostImproved.name}</p>
                             <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 10px 0" }}>
                               {seasonStatsResult.mostImproved.startRating} → <strong style={{ color: "var(--win)" }}>{seasonStatsResult.mostImproved.endRating}</strong>
                             </p>
@@ -6925,7 +6975,7 @@ export default function TournamentManager() {
                         <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>🎪 Τουρνουά με τις περισσότερες εκπλήξεις</p>
                         {seasonStatsResult.mostSurprisingTournament ? (
                           <>
-                            <p style={{ fontFamily: "'Fraunces', serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{seasonStatsResult.mostSurprisingTournament.name}</p>
+                            <p style={{ fontFamily: "'Literata', Georgia, serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{seasonStatsResult.mostSurprisingTournament.name}</p>
                             <p style={{ fontSize: 14, color: "var(--muted)", margin: 0 }}>
                               <strong style={{ color: "var(--ink)" }}>{seasonStatsResult.mostSurprisingTournament.rate}%</strong> των αγώνων ({seasonStatsResult.mostSurprisingTournament.upsets} από {seasonStatsResult.mostSurprisingTournament.matches})
                             </p>
@@ -6950,7 +7000,7 @@ export default function TournamentManager() {
       {recapText !== null && (
         <div className="modal-overlay" onClick={() => setRecapText(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 680, width: "92vw", maxHeight: "85vh", overflowY: "auto", padding: "28px 32px" }}>
-            <p style={{ margin: "0 0 4px 0", fontFamily: "'Fraunces', serif", fontSize: 20, fontWeight: 700, color: "var(--accent)" }}>Σύνοψη ανακοίνωσης</p>
+            <p style={{ margin: "0 0 4px 0", fontFamily: "'Literata', Georgia, serif", fontSize: 20, fontWeight: 700, color: "var(--accent)" }}>Σύνοψη ανακοίνωσης</p>
             <p style={{ margin: "0 0 16px 0", fontSize: 13, color: "var(--muted)" }}>Έτοιμο κείμενο copy/paste — για bgfed.gr, Facebook, ή όπου αλλού.</p>
             <textarea
               readOnly
@@ -7272,7 +7322,7 @@ export default function TournamentManager() {
                       setRankingDocs((s) => ({ ...s, [id]: d }));
                     }
                   }}
-                  style={{ fontFamily: "'Fraunces', serif", fontSize: 16, color: "var(--accent)", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 10px", background: "var(--surface)" }}
+                  style={{ fontFamily: "'Literata', Georgia, serif", fontSize: 16, color: "var(--accent)", border: "1px solid var(--border)", borderRadius: 7, padding: "4px 10px", background: "var(--surface)" }}
                 >
                   {eloRankingsFrom(sysState).filter((r) => r.id === PRIMARY_RANKING_ID || r.public || isSuper).map((r) => (
                     <option key={r.id} value={r.id}>{r.name}</option>

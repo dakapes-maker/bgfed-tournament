@@ -1,84 +1,91 @@
-import { useEffect, useState } from "react";
-import { ArrowLeft, Globe, Menu, X } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, Search, X } from "lucide-react";
+import { PlayerSearch } from "./PlayerSearch.jsx";
+
+/** Το σήμα: μπορντό τετράγωνο με δύο τρίγωνα ταμπλό. */
+export function BrandMark({ size = 34 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden="true">
+      <rect x="1" y="1" width="34" height="34" rx="8" fill="var(--accent)" />
+      <path d="M8 8 L13 22 L18 8 Z" fill="var(--bg)" />
+      <path d="M18 28 L23 14 L28 28 Z" fill="var(--bg)" opacity="0.7" />
+    </svg>
+  );
+}
 
 /**
- * Πάνω μπάρα της εφαρμογής. Σε υπολογιστή τα κουμπιά πλοήγησης φαίνονται
- * στη σειρά· σε στενή οθόνη (βλ. styles/mobile.js) μπαίνουν σε μενού ☰.
- * Τα ίδια `items` τροφοδοτούν και τις δύο προβολές.
+ * Πάνω μπάρα (build 2026-11-09.02). Υπολογιστής: σήμα + τίτλος, links με
+ * κείμενο (η τρέχουσα σελίδα μπορντό με γραμμή), αναζήτηση παίκτη, για
+ * διαχειριστή «Παίκτες» και «Διαχείριση», γλώσσα, σύνδεση/λογαριασμός.
+ * Σε στενή οθόνη (styles/nav.js) τα links και η γλώσσα πάνε στην κάτω μπάρα
+ * (BottomNav)· η αναζήτηση ανοίγει από τον φακό σε όλο το πλάτος.
  *
- * items: [{ key, icon, label, onClick, dot? }]
- * right: ό,τι μένει πάντα ορατό στη μπάρα (σύνδεση / λογαριασμός).
+ * links / admin: [{ key, label, onClick, dot?, liveDot? }] · active · players: [{ key, name }]
  */
-export function TopBar({ title, buildVersion, onBack, items, langLabel, onToggleLang, right }) {
-  const [open, setOpen] = useState(false);
-  const anyDot = items.some((it) => it.dot);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-
-  const choose = (fn) => { setOpen(false); fn(); };
+export function TopBar({ title, buildVersion, onBack, onHome, links, admin = [], active, langLabel, onToggleLang, right, players, onOpenPlayer }) {
+  const [searchOpen, setSearchOpen] = useState(false);
 
   return (
     <div className="topbar">
       <div className="brand">
         {onBack && (
-          <button className="btn-ghost" onClick={() => { setOpen(false); onBack(); }} style={{ marginRight: 4 }} aria-label="Πίσω">
-            <ArrowLeft size={15} />
+          <button className="btn-ghost topbar-back" onClick={onBack} aria-label="Πίσω">
+            <ArrowLeft size={18} />
           </button>
         )}
-        {title}
-        <span className="topbar-build" style={{ fontFamily: "'Source Sans 3', sans-serif", fontWeight: 400, fontSize: 11, color: "var(--muted)", marginLeft: 10, letterSpacing: 0 }}>
-          build {buildVersion}
-        </span>
+        <button type="button" className="brand-home" onClick={onHome} aria-label={`${title} — αρχική`}>
+          <BrandMark />
+          <span className="brand-title">{title}</span>
+        </button>
+        <span className="topbar-build">build {buildVersion}</span>
       </div>
+
+      <nav className="topbar-links" aria-label="Κύρια πλοήγηση">
+        {links.map((it) => (
+          <button
+            key={it.key}
+            type="button"
+            className={"nav-link" + (active === it.key ? " active" : "")}
+            aria-current={active === it.key ? "page" : undefined}
+            onClick={it.onClick}
+          >
+            {it.label}
+            {it.liveDot && <span className="nav-live" aria-label="σε εξέλιξη" />}
+            {it.dot && <span className="topbar-dot nav-dot" />}
+          </button>
+        ))}
+      </nav>
 
       <div className="topbar-right">
-        <div className="topbar-nav">
-          {items.map((it) => {
-            const Icon = it.icon;
-            return (
-              <button key={it.key} className="btn-ghost" onClick={it.onClick} style={it.dot !== undefined ? { position: "relative" } : undefined}>
-                <Icon size={14} /> {it.label}
-                {it.dot && <span className="topbar-dot" />}
-              </button>
-            );
-          })}
-          <button className="btn-ghost" onClick={onToggleLang} title="Switch language" style={{ fontWeight: 700, fontSize: 12, padding: "4px 10px", border: "1px solid var(--border)", borderRadius: 20 }}>
-            {langLabel}
-          </button>
-        </div>
-        {right}
-        <button
-          className="topbar-burger"
-          onClick={() => setOpen((v) => !v)}
-          aria-label="Μενού"
-          aria-expanded={open}
-        >
-          {open ? <X size={20} /> : <Menu size={20} />}
-          {!open && anyDot && <span className="topbar-dot" />}
+        <PlayerSearch players={players} onOpen={onOpenPlayer} className="topbar-search" />
+        <button type="button" className="topbar-search-btn" aria-label="Αναζήτηση παίκτη" onClick={() => setSearchOpen(true)}>
+          <Search size={20} />
         </button>
+        {admin.map((it) => (
+          <button
+            key={it.key}
+            type="button"
+            className={"topbar-admin" + (it.primary ? " primary" : "") + (active === it.key ? " active" : "")}
+            aria-current={active === it.key ? "page" : undefined}
+            onClick={it.onClick}
+          >
+            {it.label}
+          </button>
+        ))}
+        <button type="button" className="btn-ghost topbar-lang" onClick={onToggleLang} title="Switch language">
+          {langLabel}
+        </button>
+        {right}
       </div>
 
-      <div className={"topbar-scrim" + (open ? " open" : "")} onClick={() => setOpen(false)} />
-      <nav className={"topbar-panel" + (open ? " open" : "")} aria-hidden={!open}>
-        {items.map((it) => {
-          const Icon = it.icon;
-          return (
-            <button key={it.key} className="topbar-panel-item" onClick={() => choose(it.onClick)}>
-              <Icon size={18} /> {it.label}
-              {it.dot && <span className="topbar-dot" />}
-            </button>
-          );
-        })}
-        <div className="topbar-panel-sep" />
-        <button className="topbar-panel-item" onClick={() => choose(onToggleLang)}>
-          <Globe size={18} /> {langLabel === "EN" ? "English" : "Ελληνικά"}
-        </button>
-      </nav>
+      {searchOpen && (
+        <div className="search-overlay">
+          <PlayerSearch players={players} onOpen={onOpenPlayer} autoFocus onDone={() => setSearchOpen(false)} />
+          <button type="button" className="search-overlay-close" aria-label="Κλείσιμο αναζήτησης" onClick={() => setSearchOpen(false)}>
+            <X size={22} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
