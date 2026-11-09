@@ -284,6 +284,9 @@ export default function TournamentManager() {
   const [liveStandingsEnabled, setLiveStandingsEnabled] = useState(false);
   // 2026-11-09.04: new-tournament screen — paste box, date/season editor, start confirmation.
   const [showSetupBulk, setShowSetupBulk] = useState(false);
+  // Names (lower case) of players whose registry person was created while setting up this
+  // tournament — they are added to the registry at once, so the registry alone can't tell.
+  const [setupNewNames, setSetupNewNames] = useState(() => new Set());
   const [showSetupDate, setShowSetupDate] = useState(false);
   const [confirmingStart, setConfirmingStart] = useState(false);
   const [isOfficial, setIsOfficial] = useState(true); // Official League day — only these count in "Recompute from scratch"
@@ -934,6 +937,7 @@ export default function TournamentManager() {
     // 2026-11-09.04: «live update» is on by default for a new tournament
     // (decision of Giannis — it was easy to forget on the pairings screen).
     setLiveStandingsEnabled(true);
+    setSetupNewNames(new Set());
     setShowSetupBulk(false);
     setShowSetupDate(false);
     setConfirmingStart(false);
@@ -1027,6 +1031,7 @@ export default function TournamentManager() {
     if (!match) {
       const { key, entry } = registryWithNewPerson(typed);
       persistRegistry({ players: { ...registry.players, [key]: entry } });
+      setSetupNewNames((prev) => new Set(prev).add(canonicalName.toLowerCase()));
     }
     const newId = makeId();
     const updatedPlayers = [
@@ -1161,6 +1166,11 @@ export default function TournamentManager() {
 
     if (Object.keys(registryAdditions).length > 0) {
       persistRegistry({ players: { ...registry.players, ...registryAdditions } });
+      setSetupNewNames((prev) => {
+        const next = new Set(prev);
+        Object.values(registryAdditions).forEach((e) => next.add(String(e.name).toLowerCase()));
+        return next;
+      });
     }
 
     setPlayers((prev) => {
@@ -8903,7 +8913,7 @@ export default function TournamentManager() {
               <div className="setup-list">
                 {shown.map((p, i) => {
                   const inSideBet = sideBet?.participantIds.includes(p.id) || false;
-                  const known = !!registry.players?.[normalizeName(p.name)];
+                  const known = !setupNewNames.has(p.name.toLowerCase());
                   return (
                     <div className={`setup-row${i === 0 ? " just-added" : ""}`} key={p.id}>
                       <span className="setup-row-n">{players.length - i}</span>
