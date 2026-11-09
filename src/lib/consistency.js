@@ -1,5 +1,8 @@
 import { stripAccents } from "./persons.js";
 import { countsTowardRatings, countsTowardStandings } from "./competitions.js";
+// Same as LIVE_MARK_MAX_AGE_MS in liveSeason.js (kept here so this module
+// stays free of the database layer).
+const LIVE_MARK_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 /** "Backgammon Premier League 2026 - Ημέρα 7" -> "Ημέρα 7" (for compact lists). */
 export function shortTournamentLabel(name) {
@@ -9,7 +12,7 @@ export function shortTournamentLabel(name) {
 
 /** Compares what is stored (ELO, season standings) with the tournament
  * catalogue. Read-only: it never changes anything. */
-export function buildConsistencyReport({ elo, seasons, index, display, standingsImports = [] }) {
+export function buildConsistencyReport({ elo, seasons, index, display, standingsImports = [], now = Date.now() }) {
   const idx = new Map(index.map((t) => [t.id, t]));
   // 2026-10-24.01: imports with countsInStandings are season entries too
   // (counted apart; never compared with the ELO, which holds them as impWins).
@@ -23,7 +26,25 @@ export function buildConsistencyReport({ elo, seasons, index, display, standings
     winsMismatch: [], eloOnly: [], seasonOnly: [], lookalikes: [],
     unknownKeys: [], nameStale: [],
     seasonWrongYear: [], dateSeasonMismatch: [],
+    liveInProgress: [],
   };
+
+  // 2026-11-09.01: a tournament running with «live update» has its results
+  // in the season at once, but its ELO only per closed round — the wins
+  // differ by design until it ends. While one runs (a «live» mark of the
+  // season younger than LIVE_MARK_MAX_AGE_MS, tournament not «Completed»),
+  // the wins comparison is skipped. A forgotten tournament stops counting
+  // after 12 hours, so it never hides the comparison for good.
+  Object.values(seasons || {}).forEach((s) => {
+    Object.entries((s && s.live) || {}).forEach(([id, iso]) => {
+      const t = idx.get(id);
+      const at = Date.parse(iso);
+      if (t && t.status !== "Completed" && Number.isFinite(at) && now - at < LIVE_MARK_MAX_AGE_MS) {
+        if (!report.liveInProgress.some((x) => x.id === id)) report.liveInProgress.push({ id, name: t.name });
+      }
+    });
+  });
+  const compareWins = report.liveInProgress.length === 0;
 
   const applied = elo.appliedTournaments || {};
   Object.entries(applied).forEach(([id, a]) => {
@@ -72,7 +93,7 @@ export function buildConsistencyReport({ elo, seasons, index, display, standings
   // 5B.2α: a season is not tied to dates, so there is no date check.
 
   const eloPlayers = elo.players || {};
-  Object.entries(eloPlayers).forEach(([key, p]) => {
+  if (compareWins) Object.entries(eloPlayers).forEach(([key, p]) => {
     // 5D: the ELO also holds imported tournaments (impWins / impGames);
     // only the rest is comparable with the season standings.
     const games = (p.games ?? 0) - (p.impGames || 0);

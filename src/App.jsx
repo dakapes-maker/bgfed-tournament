@@ -864,6 +864,13 @@ export default function TournamentManager() {
     });
   }
 
+  // 2026-11-09.01: the ELO writes of a running tournament (one per closed
+  // round, read-change-write of the whole ELO) go through their own serial
+  // writer too — never two at once, so a slow write can't be overwritten by
+  // the next round's. The last round's close waits for it.
+  const eloWriterRef = useRef(null);
+  if (!eloWriterRef.current) eloWriterRef.current = createSerialWriter({ delay: 0 });
+
   function liveSeasonActive() {
     return liveStandingsEnabled && competitionHasStandings(competitionById(competitionId));
   }
@@ -1328,19 +1335,26 @@ export default function TournamentManager() {
     setHistory(newHistory);
 
     const eloRoundMatches = buildEloRoundMatches(currentPairings.pairs, byId);
+    let liveEloJob = null;
     if (liveStandingsEnabled && ratingsCount) {
       // Strict read: on a failed read nothing is written (writing onto an
       // empty stand-in would replace the whole ELO with this one round).
-      loadEloStrict()
-        .then((elo) => {
-          applyEloRoundBatch(elo, eloRoundMatches, matchLength);
-          markEloApplied(elo, tournamentId, tournamentName, "live");
-          return saveEloChecked(elo).then((ok) => {
-            if (ok) showFreshElo(elo);
-            return ok;
-          });
-        })
-        .catch(() => reportSaveFailure(`Κατάταξη ELO (γύρος ${round}) — η ELO δεν διαβάστηκε, δεν γράφτηκε τίποτα· τρέξε Recompute`));
+      // Serial (2026-11-09.01): after any earlier round's write still running.
+      liveEloJob = eloWriterRef.current.now(() =>
+        loadEloStrict()
+          .then((elo) => {
+            applyEloRoundBatch(elo, eloRoundMatches, matchLength);
+            markEloApplied(elo, tournamentId, tournamentName, "live");
+            return saveEloChecked(elo).then((ok) => {
+              if (ok) showFreshElo(elo);
+              return ok;
+            });
+          })
+          .catch(() => {
+            reportSaveFailure(`Κατάταξη ELO (γύρος ${round}) — η ELO δεν διαβάστηκε, δεν γράφτηκε τίποτα· τρέξε Recompute`);
+            return false;
+          })
+      );
     }
 
     // Retries once on failure — saveSeason now honestly reports success/failure
@@ -1357,6 +1371,9 @@ export default function TournamentManager() {
         : "";
 
     if (round >= totalRounds) {
+      // 2026-11-09.01: the last round's ELO is written before the tournament
+      // shows as finished, so the consistency check never reads it half-done.
+      if (liveEloJob) await liveEloJob;
       setPhase("finished");
       setCurrentPairings(null);
       await persistCurrent("finished", round, updatedPlayers, null, newHistory);
@@ -1418,6 +1435,8 @@ export default function TournamentManager() {
       }
     }
     setNotice(noticeMsg);
+    // 2026-11-09.01: fresh check once everything of the last round is written.
+    if (round >= totalRounds) refreshHealth();
   }
   // #endregion Τουρνουά & γύροι
 
