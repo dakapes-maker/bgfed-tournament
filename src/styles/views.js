@@ -24,11 +24,48 @@ export const VIEWS_CSS = `
         .win-dot.w { background: #B08A2E; }
         .pairings-order-note { margin: 6px 0 10px; font-size: 13px; color: var(--muted); }
 
-        /* Σταθερή γραμμή τίτλων: ο πίνακας κυλάει μέσα στο πλαίσιό του */
-        .table-scroll { max-height: calc(100vh - 150px); overflow: auto !important; }
+        /* Σταθερή γραμμή τίτλων (2026-11-09.04):
+           υπολογιστής (> 1100px) — κυλάει όλη η σελίδα και οι τίτλοι κολλάνε στην κορυφή της οθόνης
+           (ο πίνακας χωράει, άρα το πλαίσιο δεν χρειάζεται δική του κύλιση)·
+           κινητό/tablet — ο πίνακας κυλάει μέσα στο πλαίσιό του (και πλάγια). */
         .table-scroll .std-table thead { position: sticky; top: 0; z-index: 3; }
         .table-scroll .std-table thead th { background: var(--surface); box-shadow: inset 0 -1px 0 var(--border); }
-        @media (max-width: 1100px) { .table-scroll { max-height: calc(100vh - 210px); } }
+        @media (min-width: 1101px) { .table-scroll { overflow: visible !important; } }
+        @media (max-width: 1100px) { .table-scroll { max-height: calc(100vh - 210px); overflow: auto !important; } }
+
+        /* Νέο τουρνουά (2026-11-09.04): ρυθμίσεις | παίκτες */
+        .setup-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
+        .setup-col { margin-bottom: 0; }
+        .setup-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; min-width: 0; }
+        .setup-field label { margin: 0; }
+        .setup-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .setup-dateline { margin: -6px 0 14px; font-size: 14px; color: var(--muted); }
+        .setup-check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 12px; cursor: pointer; font-size: 15px; }
+        .setup-check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+        .setup-check strong { display: block; }
+        .setup-check small { display: block; font-size: 13px; color: var(--muted); }
+        .setup-players-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+        .setup-count { color: var(--ink); font-size: 18px; }
+        .setup-add { gap: 10px; }
+        .setup-paste-link { display: inline-block; margin: 8px 0 6px; font-size: 14px; font-weight: 600; }
+        .setup-bulk { border: 1px dashed var(--border); border-radius: 10px; padding: 12px; background: var(--bg); margin-bottom: 8px; }
+        .setup-list { border: 1px solid var(--border); border-radius: 12px; max-height: 440px; overflow-y: auto; margin-top: 8px; background: var(--surface); }
+        .setup-row { display: flex; align-items: center; gap: 12px; padding: 0 12px; min-height: 46px; border-bottom: 1px solid var(--border); }
+        .setup-row:last-child { border-bottom: none; }
+        .setup-row-n { width: 24px; text-align: right; font-size: 13px; color: var(--muted); }
+        .setup-row-name { flex: 1; min-width: 0; font-weight: 600; }
+        .setup-tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+        .setup-tag.known { background: #E4F0EA; color: var(--win); }
+        .setup-tag.new { background: #F6EBD3; color: #8A6A1F; }
+        @keyframes setupFlash { from { background: #E4F0EA; } to { background: transparent; } }
+        .setup-row.just-added { animation: setupFlash 2.5s ease-out; }
+        .setup-start { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+        .start-confirm { width: 540px; }
+        .start-summary { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; padding: 12px 16px; background: var(--bg); border-radius: 10px; font-size: 15px; }
+        .start-summary dt { color: var(--muted); }
+        .start-summary dd { margin: 0; }
+        .start-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+        @media (max-width: 900px) { .setup-grid { grid-template-columns: 1fr; } }
 
         /* Προφίλ παίκτη */
         .profile-head { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; max-width: 1180px; margin: 0 auto; background: var(--surface); border: 1px solid var(--border); border-radius: 18px; padding: 24px 28px; }

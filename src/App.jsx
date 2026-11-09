@@ -282,6 +282,13 @@ export default function TournamentManager() {
   const [confirmingFinish, setConfirmingFinish] = useState(false);
   const [seasonYear, setSeasonYear] = useState(new Date().getFullYear());
   const [liveStandingsEnabled, setLiveStandingsEnabled] = useState(false);
+  // 2026-11-09.04: new-tournament screen — paste box, date/season editor, start confirmation.
+  const [showSetupBulk, setShowSetupBulk] = useState(false);
+  // Names (lower case) of players whose registry person was created while setting up this
+  // tournament — they are added to the registry at once, so the registry alone can't tell.
+  const [setupNewNames, setSetupNewNames] = useState(() => new Set());
+  const [showSetupDate, setShowSetupDate] = useState(false);
+  const [confirmingStart, setConfirmingStart] = useState(false);
   const [isOfficial, setIsOfficial] = useState(true); // Official League day — only these count in "Recompute from scratch"
   const [competitionId, setCompetitionId] = useState(DEFAULT_COMPETITION_ID); // Build 2: which competition this tournament belongs to
   const [organisation, setOrganisation] = useState(""); // Build 2: organising club; new tournaments default to the home club
@@ -927,7 +934,13 @@ export default function TournamentManager() {
     setOrganisation(clubsActive(sysState) ? clubDisplay(sysState, startOwner, sysState.homeClub) : sysState.homeClub || "");
     setOrganisationClubId(clubsActive(sysState) ? startOwner : null);
     setCalendarEntryId(null);
-    setLiveStandingsEnabled(false);
+    // 2026-11-09.04: «live update» is on by default for a new tournament
+    // (decision of Giannis — it was easy to forget on the pairings screen).
+    setLiveStandingsEnabled(true);
+    setSetupNewNames(new Set());
+    setShowSetupBulk(false);
+    setShowSetupDate(false);
+    setConfirmingStart(false);
     setIsOfficial(true);
     setPlayers([]);
     // Prefill from the next open calendar day (current season, then next) of
@@ -1018,6 +1031,7 @@ export default function TournamentManager() {
     if (!match) {
       const { key, entry } = registryWithNewPerson(typed);
       persistRegistry({ players: { ...registry.players, [key]: entry } });
+      setSetupNewNames((prev) => new Set(prev).add(canonicalName.toLowerCase()));
     }
     const newId = makeId();
     const updatedPlayers = [
@@ -1152,6 +1166,11 @@ export default function TournamentManager() {
 
     if (Object.keys(registryAdditions).length > 0) {
       persistRegistry({ players: { ...registry.players, ...registryAdditions } });
+      setSetupNewNames((prev) => {
+        const next = new Set(prev);
+        Object.values(registryAdditions).forEach((e) => next.add(String(e.name).toLowerCase()));
+        return next;
+      });
     }
 
     setPlayers((prev) => {
@@ -8703,36 +8722,45 @@ export default function TournamentManager() {
           </div>
         </div>
       )}
-      {phase === "setup" && isAdmin && (
+      {phase === "setup" && isAdmin && (() => {
+        // 2026-11-09.04: two columns — settings | players (list right under the input, newest first).
+        const sideBet = sideBets.find((b) => b.id === "default-sidebet");
+        const sideCount = sideBet?.participantIds.length || 0;
+        const comp = competitionById(competitionId);
+        const compName = competitionName(competitionsFrom(sysState), competitionId);
+        const countsElo = isOfficial && countsTowardRatings({ isOfficial: true, competitionId });
+        const countsSt = isOfficial && countsTowardStandings({ isOfficial: true, competitionId });
+        const countsText = countsElo && countsSt ? `ELO και Βαθμολογία ${compName}` : countsElo ? "μόνο ELO" : countsSt ? `μόνο Βαθμολογία ${compName}` : "τίποτα (δοκιμαστικό ή εκτός κατάταξης)";
+        const dateLong = createdAt ? new Date(createdAt).toLocaleDateString("el-GR", { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+        const shown = [...players].reverse();
+        const selectStyle = { width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface)" };
+        return (
         <>
           <div className="header">
-            <p className="eyebrow">New Tournament</p>
-            <h1>Setup</h1>
-            <div className="points-strip">
-              {Array.from({ length: 24 }).map((_, i) => (
-                <div key={i} className={`point ${i % 2 === 0 ? "down" : "up"} ${i % 4 < 2 ? "a" : "b"}`} />
-              ))}
-            </div>
+            <p className="eyebrow">Διαχείριση</p>
+            <h1>Νέο τουρνουά</h1>
           </div>
-          <div className="content">
+          <div className="content" style={{ maxWidth: 1240 }}>
             {notice && (
               <div className="notice">
                 <Info size={16} style={{ flexShrink: 0, marginTop: 1 }} />
                 <span>{notice}</span>
               </div>
             )}
-            <div className="card">
+            <div className="setup-grid">
+            <div className="card setup-col">
+              <h2 className="profile-section-title">Ρυθμίσεις</h2>
               {(() => {
                 const view = buildCalendarView(sysState, seasonYear, archive, calendarImports);
                 const options = view.filter((e) => !e.tournament || e.id === calendarEntryId);
                 if (view.length === 0) return null;
                 return (
-                  <div style={{ marginBottom: 14 }}>
-                    <label>Αγωνιστική ημερολογίου (σεζόν {sn(seasonYear)})</label>
+                  <div className="setup-field">
+                    <label>Αγωνιστική ημερολογίου</label>
                     <select
                       value={calendarEntryId || ""}
                       onChange={(e) => applyCalendarEntry(view.find((x) => x.id === e.target.value) || null, seasonYear)}
-                      style={{ width: "100%", maxWidth: 520, fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
+                      style={selectStyle}
                     >
                       <option value="">Χωρίς αγωνιστική (έκτακτο ή δοκιμαστικό τουρνουά)</option>
                       {options.map((e) => (
@@ -8744,76 +8772,82 @@ export default function TournamentManager() {
                   </div>
                 );
               })()}
-              <div className="row" style={{ marginBottom: 14 }}>
-                <div className="field">
-                  <label>Tournament name (optional)</label>
-                  <input type="text" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} placeholder="e.g. 14th National Championship" />
-                </div>
-                <div style={{ width: 110 }}>
-                  <label>Rounds</label>
-                  <input type="number" min={3} max={9} value={totalRounds} onChange={(e) => setTotalRounds(Math.max(3, Math.min(9, Number(e.target.value) || 5)))} />
-                </div>
-                <div style={{ width: 130 }}>
-                  <label>Match length</label>
-                  <input type="number" min={1} max={25} value={matchLength} onChange={(e) => setMatchLength(Math.max(1, Math.min(25, Number(e.target.value) || 7)))} />
-                </div>
-                <div style={{ width: 160 }}>
-                  <label>Ημερομηνία</label>
-                  <input
-                    type="date"
-                    required
-                    value={isoToLocalYMD(createdAt)}
-                    onChange={(e) => {
-                      if (!e.target.value) return;
-                      const nextIso = withLocalDate(createdAt, e.target.value);
-                      setCreatedAt(nextIso);
-                    }}
-                  />
-                </div>
-                <div style={{ width: 160 }}>
-                  <label>Σεζόν</label>
-                  {renderSeasonSelect(competitionId, seasonYear, setSeasonYear)}
-                </div>
-              </div>
-              <div className="row" style={{ marginBottom: 14 }}>
-                <div style={{ width: 220 }}>
-                  <label>Διοργάνωση</label>
-                  <select
-                    value={competitionId}
-                    onChange={(e) => { setCompetitionId(e.target.value); setSeasonYear(currentSeasonId(sysState, e.target.value, controlSeasons)); }}
-                    style={{ width: "100%", fontFamily: "'Source Sans 3', sans-serif", fontSize: 15, padding: "9px 12px", border: "1px solid var(--border)", borderRadius: 7, background: "#fff" }}
-                  >
-                    {competitionsFrom(sysState).filter((c) => canEditCompetition(c.id) || c.id === competitionId).map((c) => (
-                      <option key={c.id} value={c.id}>{competitionLabel(sysState, c)}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Σύλλογος της διοργάνωσης</label>
-                  <div style={{ padding: "9px 0", fontSize: 15, color: "var(--muted)" }}>
-                    {(() => {
-                      const c = competitionById(competitionId);
-                      return c && c.ownerClubId ? clubDisplay(sysState, c.ownerClubId, "—") : "—";
-                    })()}
+              <p className="setup-dateline">
+                {dateLong} · σεζόν {sn(seasonYear)} ·{" "}
+                <button type="button" className="history-link" onClick={() => setShowSetupDate((v) => !v)}>{showSetupDate ? "κλείσιμο" : "αλλαγή"}</button>
+              </p>
+              {showSetupDate && (
+                <div className="setup-two">
+                  <div className="setup-field">
+                    <label>Ημερομηνία</label>
+                    <input
+                      type="date"
+                      required
+                      value={isoToLocalYMD(createdAt)}
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        const nextIso = withLocalDate(createdAt, e.target.value);
+                        setCreatedAt(nextIso);
+                      }}
+                    />
+                  </div>
+                  <div className="setup-field">
+                    <label>Σεζόν</label>
+                    {renderSeasonSelect(competitionId, seasonYear, setSeasonYear)}
                   </div>
                 </div>
+              )}
+              <div className="setup-field">
+                <label>Όνομα τουρνουά</label>
+                <input type="text" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} placeholder="π.χ. 14ο Πανελλήνιο Πρωτάθλημα" />
+              </div>
+              <div className="setup-two">
+                <div className="setup-field">
+                  <label>Γύροι</label>
+                  <input type="number" min={3} max={9} value={totalRounds} onChange={(e) => setTotalRounds(Math.max(3, Math.min(9, Number(e.target.value) || 5)))} />
+                </div>
+                <div className="setup-field">
+                  <label>Μήκος αγώνα (πόντοι)</label>
+                  <input type="number" min={1} max={25} value={matchLength} onChange={(e) => setMatchLength(Math.max(1, Math.min(25, Number(e.target.value) || 7)))} />
+                </div>
+              </div>
+              <div className="setup-field">
+                <label>Διοργάνωση</label>
+                <select
+                  value={competitionId}
+                  onChange={(e) => { setCompetitionId(e.target.value); setSeasonYear(currentSeasonId(sysState, e.target.value, controlSeasons)); }}
+                  style={selectStyle}
+                >
+                  {competitionsFrom(sysState).filter((c) => canEditCompetition(c.id) || c.id === competitionId).map((c) => (
+                    <option key={c.id} value={c.id}>{competitionLabel(sysState, c)}</option>
+                  ))}
+                </select>
+                <span className="cal-note">Σύλλογος: {comp && comp.ownerClubId ? clubDisplay(sysState, comp.ownerClubId, "—") : "—"}</span>
               </div>
               {(!countsTowardRatings({ isOfficial: true, competitionId }) || !countsTowardStandings({ isOfficial: true, competitionId })) && (
-                <p className="field-warning" style={{ marginTop: -6, marginBottom: 12 }}>
+                <p className="field-warning" style={{ marginTop: -4, marginBottom: 12 }}>
                   Αυτή η διοργάνωση {[
                     !countsTowardRatings({ isOfficial: true, competitionId }) && "δεν μετράει στην Πανελλήνια Κατάταξη ELO",
                     !countsTowardStandings({ isOfficial: true, competitionId }) && "δεν έχει Βαθμολογία σεζόν",
                   ].filter(Boolean).join(" και ")}· το τουρνουά καταγράφεται κανονικά.
                 </p>
               )}
-
-              <label className="live-toggle" style={{ marginBottom: 14 }} title="Only Official days are included in the ELO and Season Standings (and in their Recompute)">
+              <label className="setup-check" title="Μόνο οι επίσημες αγωνιστικές μετράνε σε ELO και Βαθμολογία (και στο Recompute τους)">
                 <input type="checkbox" checked={isOfficial} onChange={(e) => setIsOfficial(e.target.checked)} />
-                Official League day (counts toward ELO &amp; Season Standings on recompute — leave unchecked for a test)
+                <span><strong>Επίσημη αγωνιστική</strong><small>Μετράει σε ELO και Βαθμολογία. Άφησέ το κενό για δοκιμαστικό τουρνουά.</small></span>
               </label>
+              <label className="setup-check">
+                <input type="checkbox" checked={liveStandingsEnabled} onChange={(e) => setLiveStandingsEnabled(e.target.checked)} />
+                <span><strong>Ζωντανή ενημέρωση</strong><small>Η Βαθμολογία ενημερώνεται με κάθε αποτέλεσμα, η ELO με κάθε γύρο.</small></span>
+              </label>
+            </div>
 
-              <label>Players</label>
-              <div className="row" style={{ position: "relative", alignItems: "center" }}>
+            <div className="card setup-col">
+              <div className="setup-players-head">
+                <h2 className="profile-section-title" style={{ margin: 0 }}>Παίκτες</h2>
+                <span className="cal-note"><strong className="setup-count">{players.length}</strong> παίκτες{tFin.enabled ? ` · ${sideCount} στο side bet` : ""}</span>
+              </div>
+              <div className="row setup-add" style={{ position: "relative", alignItems: "center" }}>
                 <div className="field" style={{ position: "relative" }}>
                   <input
                     type="text"
@@ -8825,7 +8859,7 @@ export default function TournamentManager() {
                     onFocus={() => setNameDropdownOpen(true)}
                     onBlur={() => setTimeout(() => setNameDropdownOpen(false), 150)}
                     onKeyDown={(e) => e.key === "Enter" && addPlayer()}
-                    placeholder="Player name — type to search, or enter a new one"
+                    placeholder="Γράψε όνομα — αναζήτηση στο μητρώο ή νέος παίκτης"
                     autoComplete="off"
                   />
                   {nameDropdownOpen && (() => {
@@ -8853,68 +8887,91 @@ export default function TournamentManager() {
                   })()}
                 </div>
                 {tFin.enabled && (
-                <label className="live-toggle" style={{ margin: 0, whiteSpace: "nowrap" }} title="Include this player in the side bet, collected alongside the buy-in">
+                <label className="live-toggle" style={{ margin: 0, whiteSpace: "nowrap" }} title="Ο παίκτης μπαίνει και στο side bet">
                   <input type="checkbox" checked={addToSideBet} onChange={(e) => setAddToSideBet(e.target.checked)} />
                   Side bet
                 </label>
                 )}
-                <button className="btn-secondary" onClick={addPlayer}>
-                  <Plus size={16} /> Add
+                <button className="btn-primary" onClick={addPlayer}>
+                  <Plus size={16} /> Προσθήκη
                 </button>
               </div>
-
-              <div style={{ marginTop: 14 }}>
-                <label>Bulk add (paste from Excel — one name per line)</label>
-                <textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={"John Smith\nMaria Papas\nAlex Nikolaou"} rows={4} />
-                <div style={{ marginTop: 8 }}>
-                  <button className="btn-secondary" onClick={addPlayersBulk} disabled={!bulkText.trim()}>
-                    <Plus size={16} /> Add All
-                  </button>
+              <button type="button" className="history-link setup-paste-link" onClick={() => setShowSetupBulk((v) => !v)}>
+                {showSetupBulk ? "▾ Κλείσιμο επικόλλησης" : "▸ Επικόλληση λίστας από Excel"}
+              </button>
+              {showSetupBulk && (
+                <div className="setup-bulk">
+                  <textarea value={bulkText} onChange={(e) => setBulkText(e.target.value)} placeholder={"Ένα όνομα ανά γραμμή"} rows={4} />
+                  <div style={{ marginTop: 8 }}>
+                    <button className="btn-secondary" onClick={addPlayersBulk} disabled={!bulkText.trim()}>
+                      <Plus size={16} /> Προσθήκη όλων
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
-              <p style={{ fontSize: 13, color: "var(--muted)", margin: "14px 0 6px 0" }}>
-                <strong style={{ color: "var(--ink)" }}>{players.length}</strong> player{players.length === 1 ? "" : "s"} registered
-                {tFin.enabled && (<>
-                {" · "}
-                <strong style={{ color: "var(--ink)" }}>{sideBets.find((b) => b.id === "default-sidebet")?.participantIds.length || 0}</strong> in the side bet
-                </>)}
-              </p>
-              <div className="player-list">
-                {players.map((p) => {
-                  const inSideBet = sideBets.find((b) => b.id === "default-sidebet")?.participantIds.includes(p.id) || false;
+              <div className="setup-list">
+                {shown.map((p, i) => {
+                  const inSideBet = sideBet?.participantIds.includes(p.id) || false;
+                  const known = !setupNewNames.has(p.name.toLowerCase());
                   return (
-                    <div className="player-chip" key={p.id}>
-                      <span>{p.name}</span>
-                      <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                        {tFin.enabled && (
+                    <div className={`setup-row${i === 0 ? " just-added" : ""}`} key={p.id}>
+                      <span className="setup-row-n">{players.length - i}</span>
+                      <span className="setup-row-name">{p.name}</span>
+                      <span className={`setup-tag ${known ? "known" : "new"}`}>{known ? "Στο μητρώο" : "Νέος παίκτης"}</span>
+                      {tFin.enabled && (
                         <label className="live-toggle" style={{ margin: 0 }}>
                           <input type="checkbox" checked={inSideBet} onChange={() => toggleDefaultSideBetForPlayer(p.id)} />
                           Side bet
                         </label>
-                        )}
-                        <button className="btn-ghost" onClick={() => removePlayer(p.id)}>
-                          <X size={15} />
-                        </button>
-                      </span>
+                      )}
+                      <button className="btn-ghost" onClick={() => removePlayer(p.id)} aria-label={`Αφαίρεση ${p.name}`}>
+                        <X size={15} />
+                      </button>
                     </div>
                   );
                 })}
-                {players.length === 0 && <p style={{ color: "var(--muted)", fontSize: 14, margin: "8px 0 0 0" }}>No players added yet.</p>}
+                {players.length === 0 && <p className="cal-note" style={{ margin: 12 }}>Δεν έχουν προστεθεί ακόμη παίκτες.</p>}
               </div>
 
-              <div className="footer-actions">
-                <button className="btn-primary" disabled={players.length < 3} onClick={startTournament}>
-                  Start Tournament <ArrowRight size={16} />
+              <div className="setup-start">
+                <span className="cal-note">{players.length < 3 ? "Χρειάζονται τουλάχιστον 3 παίκτες." : "Ο τελευταίος που προστέθηκε εμφανίζεται πρώτος."}</span>
+                <button className="btn-primary" disabled={players.length < 3} onClick={() => setConfirmingStart(true)}>
+                  Έναρξη τουρνουά <ArrowRight size={16} />
                 </button>
-                {players.length > 0 && players.length < 3 && (
-                  <span style={{ fontSize: 13, color: "var(--muted)", alignSelf: "center" }}>At least 3 players are needed.</span>
-                )}
               </div>
             </div>
+            </div>
           </div>
+
+          {confirmingStart && (
+            <div className="modal-overlay" onClick={() => setConfirmingStart(false)}>
+              <div className="modal-card start-confirm" role="dialog" aria-modal="true" aria-labelledby="start-confirm-title" onClick={(e) => e.stopPropagation()}>
+                <h2 id="start-confirm-title" className="profile-section-title">Έναρξη τουρνουά</h2>
+                <p style={{ margin: "0 0 12px", fontSize: 16 }}>
+                  Το τουρνουά <strong>«{tournamentName || "Backgammon Tournament"}»</strong> πρόκειται να ξεκινήσει με <strong>{players.length} παίκτες</strong>.
+                </p>
+                <dl className="start-summary">
+                  <dt>Γύροι</dt><dd>{totalRounds} · αγώνες στους {matchLength} πόντους</dd>
+                  <dt>Ημερομηνία</dt><dd>{dateLong} · σεζόν {sn(seasonYear)}</dd>
+                  {tFin.enabled && (<><dt>Side bet</dt><dd>{sideCount} παίκτες</dd></>)}
+                  <dt>Μετράει σε</dt><dd>{countsText}</dd>
+                  <dt>Ζωντανή ενημέρωση</dt><dd>{liveStandingsEnabled ? "Ναι" : "Όχι"}</dd>
+                  {players.length % 2 === 1 && (<><dt>Bye</dt><dd>Μονός αριθμός — ένας παίκτης θα πάρει bye στον 1ο γύρο</dd></>)}
+                </dl>
+                <p style={{ margin: "14px 0 0", fontSize: 16, fontWeight: 600 }}>Θέλετε να προχωρήσουμε στην κλήρωση του 1ου γύρου;</p>
+                <div className="start-actions">
+                  <button className="btn-secondary" onClick={() => setConfirmingStart(false)}>Όχι, επιστροφή</button>
+                  <button className="btn-primary" autoFocus onClick={() => { setConfirmingStart(false); startTournament(); }}>
+                    Ναι, κλήρωση 1ου γύρου
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
-      )}
+        );
+      })()}
       {/* #endregion Οθόνη: Νέο τουρνουά (phase "setup") */}
 
       {/* #region Οθόνη: Τουρνουά σε εξέλιξη (phase "tournament") */}
