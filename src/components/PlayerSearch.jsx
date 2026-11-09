@@ -1,6 +1,7 @@
 import { useL } from "../config/langContext.js";
 import { useMemo, useRef, useState } from "react";
 import { Search } from "lucide-react";
+import { toLatinName } from "../lib/persons.js";
 
 /** Accent- and case-insensitive form for matching («Πασιαλής» ~ «πασιαλης»). */
 function fold(s) {
@@ -19,15 +20,15 @@ export function PlayerSearch({ players, onOpen, autoFocus = false, onDone, class
   const [hi, setHi] = useState(0);
   const blurTimer = useRef(null);
 
-  const indexed = useMemo(() => (players || []).map((p) => ({ ...p, f: fold(p.name) })), [players]);
+  const indexed = useMemo(() => (players || []).map((p) => ({ ...p, f: `${fold(p.name)} ${fold(toLatinName(p.name))}` })), [players]);
   const results = useMemo(() => {
     const tokens = fold(q).split(/\s+/).filter(Boolean);
     if (!tokens.length) return [];
     return indexed
       .filter((p) => tokens.every((t) => p.f.includes(t)))
       .sort((a, b) => {
-        const as = a.f.startsWith(tokens[0]) ? 0 : 1;
-        const bs = b.f.startsWith(tokens[0]) ? 0 : 1;
+        const as = a.f.split(" ").some((w) => w.startsWith(tokens[0])) ? 0 : 1;
+        const bs = b.f.split(" ").some((w) => w.startsWith(tokens[0])) ? 0 : 1;
         return as - bs || a.name.localeCompare(b.name, "el");
       })
       .slice(0, 8);
@@ -79,7 +80,7 @@ export function PlayerSearch({ players, onOpen, autoFocus = false, onDone, class
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => choose(p)}
               >
-                {p.name}
+                {L.pn ? L.pn(p.name) : p.name}
               </button>
             </li>
           ))}

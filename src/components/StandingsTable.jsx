@@ -44,7 +44,7 @@ export function StandingsTable({ standings, tiebreaks, L, totalRounds, sideBets,
   const showCols = !!tiebreaks;
   const critKeys = ["buchholz", "cut1", "median", "h2h"];
   const rounds = Array.from({ length: totalRounds || 0 }, (_, i) => i + 1);
-  const names = Object.fromEntries(standings.map((p) => [p.id, p.name]));
+  const names = Object.fromEntries(standings.map((p) => [p.id, L.pn ? L.pn(p.name) : p.name]));
   const nameOf = (id) => names[id] || "?";
   const inAnySideBet = (playerId) => (sideBets || []).some((b) => b.participantIds.includes(playerId));
   // 5B.4: side bets are financial information — only the admin sees them.
@@ -97,7 +97,7 @@ export function StandingsTable({ standings, tiebreaks, L, totalRounds, sideBets,
                 {p.tie && !p.shared && <span className="tie-mark" aria-label={L.ttBadge}>=</span>}
               </td>
               <td className="standings-name std-sticky-name" style={{ cursor: "pointer" }} onClick={() => onOpenPlayer && onOpenPlayer(normalizeName(p.name))}>
-                {p.name}
+                {L.pn ? L.pn(p.name) : p.name}
                 {p.withdrawn && <span className="withdrawn-note">{L.ttWithdrawnIn(p.withdrawnRound)}</span>}
               </td>
               {rounds.length > 0 && (

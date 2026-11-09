@@ -75,7 +75,7 @@ import {
   personSpellings,
   wordsOf,
   findLookalikePersons,
-  formatNameForDisplay,
+  formatNameForDisplay, toLatinName,
   stripAccents,
   nextRegNo,
   formatRegNo,
@@ -227,7 +227,10 @@ export default function TournamentManager() {
       return "el";
     }
   });
-  const L = useMemo(() => ({ ...TRANSLATIONS[lang], ...UI[lang], lang }), [lang]);
+  // 2026-11-09.07: L.pn(name) — the player's name for display: Latin letters
+  // (passport style, ΕΛΟΤ 743) when the language is English, else as stored.
+  const L = useMemo(() => ({ ...TRANSLATIONS[lang], ...UI[lang], lang, pn: (n) => (lang === "en" && n ? toLatinName(n) : n) }), [lang]);
+  const pn = L.pn;
   const dloc = lang === "en" ? "en-GB" : "el-GR";
   function toggleLang() {
     const next = lang === "el" ? "en" : "el";
@@ -3470,7 +3473,7 @@ export default function TournamentManager() {
                     <span className="cal-note"> · {formatDate(r.date)}</span>
                   </td>
                   <td>{r.round}</td>
-                  <td>{r.opponent} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
+                  <td>{pn(r.opponent)} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
                   <td>{r.ret ? (r.result === "win" ? `${L.wShort} (${L.retShort})` : `${L.lShort} (${L.retShort})`) : r.result === "win" ? L.winWord : L.lossWord}</td>
                   <td className={r.delta > 0 ? "pos" : r.delta < 0 ? "neg" : ""}>{r.ret ? "—" : `${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}`}</td>
                   <td>{Math.round(r.ratingAfter)}</td>
@@ -3494,7 +3497,7 @@ export default function TournamentManager() {
       rows.push(
         <tr key="bye" className="pl-decided">
           <td className="cal-note">BYE</td>
-          <td className="pl-name pl-win">{byId[roundData.bye]?.name}</td>
+          <td className="pl-name pl-win">{pn(byId[roundData.bye]?.name)}</td>
           <td className="pl-score">bye</td>
           <td className="pl-name cal-note">—</td>
         </tr>
@@ -3517,7 +3520,7 @@ export default function TournamentManager() {
       rows.push(
         <tr key={`m${i}`} className={result ? "pl-decided" : ""}>
           <td className="cal-note">M{i + 1}-{selectedRound}</td>
-          <td className={`pl-name ${result && !isDoubleRet ? (result.winnerId === p1.id ? "pl-win" : "pl-lose") : isDoubleRet ? "pl-lose" : ""}`}>{p1.name}<WinDots rec={roundRecs[p1.id]} /></td>
+          <td className={`pl-name ${result && !isDoubleRet ? (result.winnerId === p1.id ? "pl-win" : "pl-lose") : isDoubleRet ? "pl-lose" : ""}`}>{pn(p1.name)}<WinDots rec={roundRecs[p1.id]} /></td>
           <td className="pl-score">
             {isAdmin ? (
               <button className={`pl-score-btn ${open ? "active" : ""}`} onClick={() => setExpandedMatch(open ? null : i)} title="Καταχώρηση / αλλαγή αποτελέσματος">
@@ -3531,8 +3534,8 @@ export default function TournamentManager() {
             )}
           </td>
           <td className={`pl-name ${result && !isDoubleRet ? (result.winnerId === p2.id ? "pl-win" : "pl-lose") : isDoubleRet ? "pl-lose" : ""}`}>
-            {p2.name}<WinDots rec={roundRecs[p2.id]} />
-            {ret && <span className="cal-note"> · {byId[result.loserId]?.name} Α.Α.</span>}
+            {pn(p2.name)}<WinDots rec={roundRecs[p2.id]} />
+            {ret && <span className="cal-note"> · {pn(byId[result.loserId]?.name)} {L.retShort}</span>}
           </td>
         </tr>
       );
@@ -3895,10 +3898,10 @@ export default function TournamentManager() {
   function renderImportedName(doc, sourceName) {
     const key = doc.personMap ? doc.personMap[sourceName] : null;
     const person = key ? registry.players[key] : null;
-    if (!person) return sourceName;
-    if (person.guest) return <span>{person.name}<span className="cal-note"> · φιλοξ.</span></span>;
+    if (!person) return pn(sourceName);
+    if (person.guest) return <span>{pn(person.name)}<span className="cal-note"> · {L.guestShort}</span></span>;
     return (
-      <button className="history-link" onClick={() => openPlayerDetail(key)} title={L.playerCard}>{formatNameForDisplay(person.name, nameDisplayMode)}</button>
+      <button className="history-link" onClick={() => openPlayerDetail(key)} title={L.playerCard}>{pn(formatNameForDisplay(person.name, nameDisplayMode))}</button>
     );
   }
 
@@ -6905,7 +6908,7 @@ export default function TournamentManager() {
                                   style={{ borderTop: "1px solid var(--border)", cursor: "pointer" }}
                                   onClick={() => setH2hExpandedOpponent(h2hExpandedOpponent === r.name ? null : r.name)}
                                 >
-                                  <td style={{ padding: "6px", fontWeight: 700 }}>{r.name}</td>
+                                  <td style={{ padding: "6px", fontWeight: 700 }}>{pn(r.name)}</td>
                                   <td style={{ padding: "6px", textAlign: "center" }}>{r.total}</td>
                                   <td style={{ padding: "6px", textAlign: "center" }}>{r.wins}-{r.losses}</td>
                                   <td style={{ padding: "6px", textAlign: "center", fontWeight: 700, color: r.pct >= 50 ? "var(--win)" : "var(--loss)" }}>{r.pct}%</td>
@@ -6922,7 +6925,7 @@ export default function TournamentManager() {
                                               <td style={{ padding: "3px 6px", fontWeight: 700 }}>
                                                 {m.method === "double_retirement"
                                                   ? L.sDoubleRet
-                                                  : L.sWonBy(m.winner, m.method === "retirement")}
+                                                  : L.sWonBy(pn(m.winner), m.method === "retirement")}
                                               </td>
                                             </tr>
                                           ))}
@@ -6956,7 +6959,7 @@ export default function TournamentManager() {
                     <ol style={{ margin: 0, paddingLeft: 20 }}>
                       {statsResult.topWinStreaks.map((s, i) => (
                         <li key={i} style={{ marginBottom: 4 }}>
-                          <strong>{s.name}</strong> — {L.sWinsInRow(s.length)}
+                          <strong>{pn(s.name)}</strong> — {L.sWinsInRow(s.length)}
                           <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
                         </li>
                       ))}
@@ -6969,7 +6972,7 @@ export default function TournamentManager() {
                     <ol style={{ margin: 0, paddingLeft: 20 }}>
                       {statsResult.topParticipationStreaks.map((s, i) => (
                         <li key={i} style={{ marginBottom: 4 }}>
-                          <strong>{s.name}</strong> — {L.sDaysInRow(s.length)}
+                          <strong>{pn(s.name)}</strong> — {L.sDaysInRow(s.length)}
                           <span style={{ color: "var(--muted)", fontSize: 13 }}> ({new Date(s.startDate).toLocaleDateString("el-GR")} – {new Date(s.endDate).toLocaleDateString("el-GR")})</span>
                         </li>
                       ))}
@@ -6981,7 +6984,7 @@ export default function TournamentManager() {
                     <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>📈 {L.sLeadSeason}</p>
                     <ol style={{ margin: 0, paddingLeft: 20 }}>
                       {statsResult.standingsLeaders.map((s, i) => (
-                        <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {L.sDaysFirst(s.days)}</li>
+                        <li key={i} style={{ marginBottom: 4 }}><strong>{pn(s.name)}</strong> — {L.sDaysFirst(s.days)}</li>
                       ))}
                     </ol>
                   </div>
@@ -6989,7 +6992,7 @@ export default function TournamentManager() {
                     <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 8px 0" }}>⭐ {L.sLeadElo}</p>
                     <ol style={{ margin: 0, paddingLeft: 20 }}>
                       {statsResult.eloLeaders.map((s, i) => (
-                        <li key={i} style={{ marginBottom: 4 }}><strong>{s.name}</strong> — {L.sDaysFirst(s.days)}</li>
+                        <li key={i} style={{ marginBottom: 4 }}><strong>{pn(s.name)}</strong> — {L.sDaysFirst(s.days)}</li>
                       ))}
                     </ol>
                   </div>
@@ -7006,7 +7009,7 @@ export default function TournamentManager() {
                 <ol style={{ margin: 0, paddingLeft: 20 }}>
                   {statsResult.titles.map((tt, i) => (
                     <li key={i} style={{ marginBottom: 4 }}>
-                      <strong>{tt.name}</strong> — {L.sTitlesN(tt.count)}
+                      <strong>{pn(tt.name)}</strong> — {L.sTitlesN(tt.count)}
                       <span style={{ color: "var(--muted)", fontSize: 13 }}> ({tt.tournaments.map((x) => x.name).join(", ")})</span>
                     </li>
                   ))}
@@ -7051,10 +7054,10 @@ export default function TournamentManager() {
                         {seasonStatsResult.biggestUpset ? (
                           <>
                             <p style={{ fontFamily: "'Literata', Georgia, serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>
-                              {seasonStatsResult.biggestUpset.winner} <span style={{ fontSize: 15, color: "var(--muted)" }}>({seasonStatsResult.biggestUpset.winnerRatingBefore})</span>
+                              {pn(seasonStatsResult.biggestUpset.winner)} <span style={{ fontSize: 15, color: "var(--muted)" }}>({seasonStatsResult.biggestUpset.winnerRatingBefore})</span>
                             </p>
                             <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 10px 0" }}>
-                              {L.sBeat} <strong style={{ color: "var(--ink)" }}>{seasonStatsResult.biggestUpset.loser}</strong> ({seasonStatsResult.biggestUpset.loserRatingBefore})
+                              {L.sBeat} <strong style={{ color: "var(--ink)" }}>{pn(seasonStatsResult.biggestUpset.loser)}</strong> ({seasonStatsResult.biggestUpset.loserRatingBefore})
                             </p>
                             <p style={{ fontSize: 13, color: "var(--muted)", margin: 0 }}>
                               {L.sGap} <strong>{seasonStatsResult.biggestUpset.margin}</strong> {L.sEloPoints} — {seasonStatsResult.biggestUpset.tournamentName}
@@ -7066,7 +7069,7 @@ export default function TournamentManager() {
                         <p style={{ fontWeight: 700, fontSize: 13, textTransform: "uppercase", letterSpacing: "0.04em", color: "var(--accent)", margin: "0 0 10px 0" }}>📈 {L.sMostImproved}</p>
                         {seasonStatsResult.mostImproved ? (
                           <>
-                            <p style={{ fontFamily: "'Literata', Georgia, serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{seasonStatsResult.mostImproved.name}</p>
+                            <p style={{ fontFamily: "'Literata', Georgia, serif", fontWeight: 700, fontSize: 22, margin: "0 0 6px 0" }}>{pn(seasonStatsResult.mostImproved.name)}</p>
                             <p style={{ fontSize: 14, color: "var(--muted)", margin: "0 0 10px 0" }}>
                               {seasonStatsResult.mostImproved.startRating} → <strong style={{ color: "var(--win)" }}>{seasonStatsResult.mostImproved.endRating}</strong>
                             </p>
@@ -7341,7 +7344,7 @@ export default function TournamentManager() {
                               {rank}
                               {p.tie && <span className="tie-mark" title={tieExplanation(p, L, lang, rules.bestOf).join(" ")} aria-label={L.tieBadge}>=</span>}
                             </td>
-                            <td className="standings-name std-sticky-name" style={{ cursor: "pointer" }} onClick={() => openPlayerDetail(normalizeName(p.name))}>{p.name}</td>
+                            <td className="standings-name std-sticky-name" style={{ cursor: "pointer" }} onClick={() => openPlayerDetail(normalizeName(p.name))}>{pn(p.name)}</td>
                             <td>{p.eventsPlayed}</td>
                             <td><strong>{p.total}</strong></td>
                             <td>{p.sumAll}</td>
@@ -7502,7 +7505,7 @@ export default function TournamentManager() {
                         <tr>
                           <td className="rank std-sticky-rank">{i + 1}</td>
                           <td className="std-sticky-name" style={{ cursor: "pointer", fontWeight: 700 }} onClick={() => openPlayerDetail(normalizeName(p.name))}>
-                            {formatNameForDisplay(p.name, nameDisplayMode)}
+                            {pn(formatNameForDisplay(p.name, nameDisplayMode))}
                             {(() => {
                               const person = registry.players?.[p.key] || registry.players?.[pk];
                               const club = person && !person.guest ? clubDisplay(sysState, person.clubId, person.club) : "";
@@ -7537,7 +7540,7 @@ export default function TournamentManager() {
                           <tr className="ledger-row">
                             <td colSpan={7}>
                               <div className="st-expand-inner">
-                              <strong>Πώς προέκυψε η ELO — {formatNameForDisplay(p.name, nameDisplayMode)}</strong>
+                              <strong>{L.eloLedgerTitle} — {pn(formatNameForDisplay(p.name, nameDisplayMode))}</strong>
                               {renderEloLedger(pk)}
                               </div>
                             </td>
@@ -7600,8 +7603,7 @@ export default function TournamentManager() {
                 >
                   <option value="normal">Όπως καταχωρίστηκαν</option>
                   <option value="upper">ΚΕΦΑΛΑΙΑ</option>
-                  <option value="greeklish">Greeklish</option>
-                </select>
+                                  </select>
               </div>
               {clubsActive(sysState) && (
                 <div style={{ width: 200 }}>
@@ -7749,7 +7751,7 @@ export default function TournamentManager() {
                     {[p.regNo ? `${L.pRegNo} ${formatRegNo(p.regNo)}` : null, clubName || null].filter(Boolean).join(" · ") || L.thPlayer}
                     {isAdmin && registry.identityVersion === 2 ? <span style={{ opacity: 0.6 }}> · ID {key}</span> : null}
                   </p>
-                  <h1>{formatNameForDisplay(p.name, nameDisplayMode)}</h1>
+                  <h1>{pn(formatNameForDisplay(p.name, nameDisplayMode))}</h1>
                 </div>
                 {eloEntry && (
                   <div className="profile-figures">
@@ -8014,7 +8016,7 @@ export default function TournamentManager() {
                                 )}
                                 <span className="cal-note" style={{ display: "block" }}>{L.tRoundN(r.round)} · {new Date(r.date).toLocaleDateString(dloc)}</span>
                               </td>
-                              <td>{r.opponent} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
+                              <td>{pn(r.opponent)} <span className="cal-note">({Math.round(r.opponentRating)})</span></td>
                               <td><span className={`recent-res ${r.result === "win" ? "w" : "l"}`} title={r.ret ? L.retShort : undefined}>{r.result === "win" ? L.wShort : L.lShort}</span></td>
                               <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                                 {r.ret ? <span className="cal-note">{L.retShort}</span> : <strong className={r.delta > 0 ? "pos" : r.delta < 0 ? "neg" : ""}>{`${r.delta > 0 ? "+" : ""}${r.delta.toFixed(1)}`}</strong>}{" "}
@@ -8079,8 +8081,8 @@ export default function TournamentManager() {
                     nameOf={(k, n) => {
                       const q = k ? registry.players[k] : null;
                       if (!q) return n;
-                      if (q.guest) return <span>{q.name}<span className="cal-note"> · φιλοξ.</span></span>;
-                      return <button className="history-link" onClick={() => openPlayerDetail(k)} title={L.playerCard}>{formatNameForDisplay(q.name, nameDisplayMode)}</button>;
+                      if (q.guest) return <span>{pn(q.name)}<span className="cal-note"> · {L.guestShort}</span></span>;
+                      return <button className="history-link" onClick={() => openPlayerDetail(k)} title={L.playerCard}>{pn(formatNameForDisplay(q.name, nameDisplayMode))}</button>;
                     }}
                   />
                 </div>
@@ -8104,7 +8106,7 @@ export default function TournamentManager() {
         const eloRanked = Object.entries(eloData.players || {}).map(([key, p]) => ({ key, ...p })).sort((a, b) => b.rating - a.rating);
         const eloTop = eloRanked.slice(0, 5).map((p, i) => {
           const person = registry.players?.[p.key];
-          return { key: p.key, rank: i + 1, name: person ? person.name : p.name, rating: Math.round(p.rating), club: person && person.clubId ? clubDisplay(sysState, person.clubId, "") : "" };
+          return { key: p.key, rank: i + 1, name: pn(person ? person.name : p.name), rating: Math.round(p.rating), club: person && person.clubId ? clubDisplay(sysState, person.clubId, "") : "" };
         });
         const standings = comps.filter((c) => homeStandings[c.id]).map((c) => {
           const h = homeStandings[c.id];
@@ -8117,17 +8119,17 @@ export default function TournamentManager() {
           if (zones) parts.push(L.hZoneNote);
           return {
             id: c.id, label: c.name, seasonLabel: `${L.stSeason} ${sn(h.seasonId)}`, ruleLine: parts.join(" · "),
-            rows: h.rows.map((r) => ({ ...r, zone: zones && r.rank <= cutoff })),
+            rows: h.rows.map((r) => ({ ...r, name: pn(r.name), zone: zones && r.rank <= cutoff })),
           };
         });
-        const winnerFact = latest && latest.winner ? { label: L.hLastWinner, value: latest.winner, key: latest.winnerKey, sub: `${latest.name}` } : null;
+        const winnerFact = latest && latest.winner ? { label: L.hLastWinner, value: pn(latest.winner), key: latest.winnerKey, sub: `${latest.name}` } : null;
         const plRows = homeStandings[DEFAULT_COMPETITION_ID]?.rows || [];
-        const stFact = plRows[0] ? { label: L.hFirstStandings, value: plRows[0].name, key: plRows[0].key, sub: L.hPoints(plRows[0].total) } : null;
+        const stFact = plRows[0] ? { label: L.hFirstStandings, value: pn(plRows[0].name), key: plRows[0].key, sub: L.hPoints(plRows[0].total) } : null;
         const eloFact = eloTop[0] ? { label: L.hFirstElo, value: eloTop[0].name, key: eloTop[0].key, sub: `${eloTop[0].rating}` } : null;
         const fmt = (ymd) => (ymd ? new Date(`${ymd}T12:00:00`).toLocaleDateString(dloc, { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
         const hero =
           heroKind === "live" ? { kind: "live", ...homeLive }
-          : heroKind === "recent" ? { kind: "recent", id: latest.id, name: latest.name, dateLabel: new Date(`${latest.date}T12:00:00`).toLocaleDateString(dloc, { weekday: "long", day: "numeric", month: "long" }), players: latest.players, podium: latest.podium, next: upcoming[0] ? `${upcoming[0].title.replace(/^Backgammon /, "")} · ${fmt(upcoming[0].date).slice(0, 5)}` : null }
+          : heroKind === "recent" ? { kind: "recent", id: latest.id, name: latest.name, dateLabel: new Date(`${latest.date}T12:00:00`).toLocaleDateString(dloc, { weekday: "long", day: "numeric", month: "long" }), players: latest.players, podium: latest.podium.map((p) => ({ ...p, name: pn(p.name) })), next: upcoming[0] ? `${upcoming[0].title.replace(/^Backgammon /, "")} · ${fmt(upcoming[0].date).slice(0, 5)}` : null }
           : { kind: "next", entry: upcoming[0] || null, days: upcoming[0] ? daysBetween(today, upcoming[0].date) : null, facts: [winnerFact, stFact, eloFact].filter(Boolean) };
         const openPlayer = (k) => { if (k && registry.players?.[k]) openPlayerDetail(k); };
         return (
@@ -8139,7 +8141,7 @@ export default function TournamentManager() {
             activeComp={homeComp}
             onPickComp={setHomeComp}
             eloTop={eloTop}
-            recent={homeRecent.map((t) => ({ ...t, dateLabel: fmt(t.date) }))}
+            recent={homeRecent.map((t) => ({ ...t, winner: t.winner ? t.winner.split(" · ").map(pn).join(" · ") : t.winner, dateLabel: fmt(t.date) }))}
             onOpenTournament={(id, imported) => (imported ? openImportPublic(id) : openArchived(id))}
             onOpenPlayer={openPlayer}
             nav={{
@@ -9139,7 +9141,7 @@ export default function TournamentManager() {
                   <div className="match-compact decided">
                     <div className="match-compact-num">BYE</div>
                     <div className="match-row-name winner">
-                      <span>{byId[roundData.bye]?.name}</span>
+                      <span>{pn(byId[roundData.bye]?.name)}</span>
                       <Check size={14} />
                     </div>
                     <div className="match-row-name" style={{ color: "var(--muted)", fontStyle: "italic" }}>
@@ -9177,14 +9179,14 @@ export default function TournamentManager() {
                         {!result && <span>Πρόβλεψη ELO {p1Prob}%-{p2Prob}%</span>}
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p1.id ? "winner" : "loser") : ""}`}>
-                        <span>{p1.name}<WinDots rec={roundRecs[p1.id]} /></span>
+                        <span>{pn(p1.name)}<WinDots rec={roundRecs[p1.id]} /></span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p1Score}</span>
                           {result && !isDoubleRet && result.winnerId === p1.id && <Check size={14} />}
                         </span>
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p2.id ? "winner" : "loser") : ""}`}>
-                        <span>{p2.name}<WinDots rec={roundRecs[p2.id]} /></span>
+                        <span>{pn(p2.name)}<WinDots rec={roundRecs[p2.id]} /></span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p2Score}</span>
                           {result && !isDoubleRet && result.winnerId === p2.id && <Check size={14} />}
@@ -9192,7 +9194,7 @@ export default function TournamentManager() {
                       </div>
                       {isDoubleRet && <div className="match-row-tag">Και οι δύο Α.Α. — χωρίς νικητή</div>}
                       {result && !isDoubleRet && result.method === "retirement" && (
-                        <div className="match-row-tag">{byId[result.loserId]?.name} αποχώρησε (Α.Α.)</div>
+                        <div className="match-row-tag">{pn(byId[result.loserId]?.name)} {L.tRetiredTag}</div>
                       )}
                       {!result && !canEdit && <div className="match-row-tag">{L.tInProgress}</div>}
 
@@ -9293,7 +9295,7 @@ export default function TournamentManager() {
             <div className="winner-banner">
               <Trophy size={34} className="trophy" />
               <p className="sub">{L.tWinner}</p>
-              <p className="name">{standings[0]?.shared ? standings.filter((p) => p.rank === 1).map((p) => p.name).join(" · ") : standings[0]?.name}</p>
+              <p className="name">{standings[0]?.shared ? standings.filter((p) => p.rank === 1).map((p) => pn(p.name)).join(" · ") : pn(standings[0]?.name)}</p>
               {winnerTieLine(standings, L) && <p className="sub">{winnerTieLine(standings, L)}</p>}
             </div>
 
@@ -9368,7 +9370,7 @@ export default function TournamentManager() {
                   <div className="match-compact decided">
                     <div className="match-compact-num">BYE</div>
                     <div className="match-row-name winner">
-                      <span>{byId[roundData.bye]?.name}</span>
+                      <span>{pn(byId[roundData.bye]?.name)}</span>
                       <Check size={14} />
                     </div>
                     <div className="match-row-name" style={{ color: "var(--muted)", fontStyle: "italic" }}>
@@ -9398,14 +9400,14 @@ export default function TournamentManager() {
                     >
                       <div className="match-compact-num">M{i + 1}-{selectedRound}</div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p1.id ? "winner" : "loser") : ""}`}>
-                        <span>{p1.name}<WinDots rec={roundRecs[p1.id]} /></span>
+                        <span>{pn(p1.name)}<WinDots rec={roundRecs[p1.id]} /></span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p1Score}</span>
                           {result && !isDoubleRet && result.winnerId === p1.id && <Check size={14} />}
                         </span>
                       </div>
                       <div className={`match-row-name ${result ? (isDoubleRet ? "loser" : result.winnerId === p2.id ? "winner" : "loser") : ""}`}>
-                        <span>{p2.name}<WinDots rec={roundRecs[p2.id]} /></span>
+                        <span>{pn(p2.name)}<WinDots rec={roundRecs[p2.id]} /></span>
                         <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           <span className="match-row-score">{p2Score}</span>
                           {result && !isDoubleRet && result.winnerId === p2.id && <Check size={14} />}
@@ -9413,7 +9415,7 @@ export default function TournamentManager() {
                       </div>
                       {isDoubleRet && <div className="match-row-tag">Και οι δύο Α.Α. — χωρίς νικητή</div>}
                       {result && !isDoubleRet && result.method === "retirement" && (
-                        <div className="match-row-tag">{byId[result.loserId]?.name} αποχώρησε (Α.Α.)</div>
+                        <div className="match-row-tag">{pn(byId[result.loserId]?.name)} {L.tRetiredTag}</div>
                       )}
 
                       {canEdit && isExpanded && (

@@ -116,28 +116,63 @@ export function hasGreekLetters(s) {
   return /[Α-Ωα-ωΆΈΉΊΌΎΏάέήίόύώΪΫϊϋΐΰ]/.test(s);
 }
 
-export function toGreeklish(name) {
-  // Only transliterates Greek characters; anything else (e.g. a foreign
-  // guest player's Latin name) passes through unchanged.
+/* ---------------------------------------------------------------------- */
+/* Ονόματα σε λατινικά (build 2026-11-09.07): γραφή των διαβατηρίων       */
+/* (ΕΛΟΤ 743). Μία μετατροπή για όλη την εφαρμογή — αντικατέστησε την     */
+/* παλιά φωνητική «greeklish». Μόνο για εμφάνιση· η αντιστοίχιση ονομάτων  */
+/* στις εισαγωγές δεν τη χρησιμοποιεί.                                     */
+/* ---------------------------------------------------------------------- */
+const LATIN_SINGLE = {
+  α: "a", β: "v", γ: "g", δ: "d", ε: "e", ζ: "z", η: "i", θ: "th", ι: "i", κ: "k", λ: "l", μ: "m",
+  ν: "n", ξ: "x", ο: "o", π: "p", ρ: "r", σ: "s", ς: "s", τ: "t", υ: "y", φ: "f", χ: "ch", ψ: "ps", ω: "o",
+};
+// αυ/ευ/ηυ: v before a vowel or voiced consonant, f before a voiceless one or at the end.
+const VOICELESS = new Set(["θ", "κ", "ξ", "π", "σ", "ς", "τ", "φ", "χ", "ψ"]);
+
+function latinWord(word) {
+  // Keep the diaeresis (ϊ, ϋ) as a marker: it breaks a digraph (π.χ. «Ευΐα», «Ρωμαΐδης»).
+  const chars = [];
+  for (const ch of word.toLowerCase().normalize("NFD")) {
+    if (ch === "\u0308") { if (chars.length) chars[chars.length - 1] += "¨"; continue; }
+    if (/[\u0300-\u036f]/.test(ch)) continue;
+    chars.push(ch);
+  }
+  const base = (i) => (chars[i] || "").replace("¨", "");
+  const dia = (i) => (chars[i] || "").includes("¨");
+  let out = "";
+  for (let i = 0; i < chars.length; i++) {
+    const c = base(i), n = base(i + 1), start = i === 0;
+    if ((c === "α" || c === "ε" || c === "η") && n === "υ" && !dia(i + 1)) {
+      const after = base(i + 2);
+      out += LATIN_SINGLE[c] + (!after || VOICELESS.has(after) ? "f" : "v");
+      i += 1; continue;
+    }
+    if (c === "ο" && n === "υ" && !dia(i + 1)) { out += "ou"; i += 1; continue; }
+    if (c === "μ" && n === "π") { out += start ? "b" : "mp"; i += 1; continue; }
+    if (c === "ν" && n === "τ") { out += start ? "d" : "nt"; i += 1; continue; }
+    if (c === "γ" && n === "κ") { out += start ? "g" : "nk"; i += 1; continue; }
+    if (c === "γ" && (n === "γ" || n === "ξ" || n === "χ")) { out += "n"; continue; }
+    out += LATIN_SINGLE[c] ?? c;
+  }
+  return out;
+}
+
+/** «Ευαγγελίου Αυγουστίνος» → «Evangeliou Avgoustinos». Names already in
+ * Latin letters (e.g. a foreign guest) come back unchanged. */
+export function toLatinName(name) {
+  if (!name || !hasGreekLetters(name)) return name;
   return name
-    .split(/(\s+)/)
-    .map((word) => {
-      if (!hasGreekLetters(word)) return word;
-      // strip Greek tonos/diaeresis marks before mapping base letters
-      let w = word
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase();
-      GREEK_DIGRAPHS.forEach(([gr, la]) => {
-        w = w.split(gr).join(la);
-      });
-      let out = "";
-      for (const ch of w) out += GREEK_SINGLE[ch] ?? ch;
-      // capitalize each resulting word for readability
-      return out.charAt(0).toUpperCase() + out.slice(1);
+    .split(/(\s+|-)/)
+    .map((part) => {
+      if (!hasGreekLetters(part)) return part;
+      const w = latinWord(part);
+      return w.charAt(0).toUpperCase() + w.slice(1);
     })
     .join("");
 }
+
+/** Kept for older callers: the same single transliteration. */
+export const toGreeklish = toLatinName;
 
 export function formatNameForDisplay(name, mode) {
   if (mode === "upper") {

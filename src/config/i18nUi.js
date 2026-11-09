@@ -2,6 +2,8 @@
 // Οι οθόνες διαχείρισης είναι μόνο στα ελληνικά (απόφαση του Γιάννη) και δεν περνούν από εδώ.
 export const UI = {
   el: {
+    guestShort: "φιλοξ.",
+    tRetiredTag: "αποχώρησε (Α.Α.)",
     abChangelog: "Τι νέο υπάρχει",
     abContentNote: "Το αναλυτικό περιεχόμενο της σελίδας είναι προς το παρόν μόνο στα ελληνικά.",
     abFeatures: "Λειτουργικότητες",
@@ -226,6 +228,8 @@ export const UI = {
     winsBefore: (w, l) => `${w} ${w === 1 ? "νίκη" : "νίκες"} – ${l} ${l === 1 ? "ήττα" : "ήττες"} πριν από αυτόν τον γύρο`,
   },
   en: {
+    guestShort: "guest",
+    tRetiredTag: "retired",
     abChangelog: "What's new",
     abContentNote: "The detailed content of this page is currently in Greek only.",
     abFeatures: "Features",
