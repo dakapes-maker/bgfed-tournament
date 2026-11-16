@@ -1,0 +1,439 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 89dd112..4337f5f 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -2,7 +2,7 @@
+ 
+ **Hellenic Backgammon Platform** — εφαρμογή διαχείρισης τουρνουά, βαθμολογιών και Πανελλήνιας Κατάταξης ELO για τους συλλόγους backgammon της Ελλάδας, με την υποστήριξη της **Ελληνικής Ομοσπονδίας Backgammon**.
+ Ιδιοκτήτης ο Γιάννης (Πασιάλης)· διαχειριστές με προσωπικούς λογαριασμούς (Google ή email). Γλώσσα επικοινωνίας και UI: **Ελληνικά**.
+-Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-11-09.07`.
++Αυτό το αρχείο συνοψίζει τις αποφάσεις και τους κανόνες εργασίας που ισχύουν μέχρι το build `2026-11-16.01`.
+ Διάβασέ το ολόκληρο πριν από κάθε εργασία.
+ 
+ ---
+@@ -69,6 +69,7 @@ src/
+     privateContacts.js      ιδιωτικά στοιχεία παικτών: PRIVATE_FIELDS, mergeContacts, splitRegistry,
+                             stripPrivate, contactsSummary, contactsMismatches, moveContacts (μετάπτωση)
+     utils.js                formatDate, isEmbeddedOnFederationSite
++    busy.js                 ένδειξη εργασίας σε εξέλιξη: createBusyStore (run/phase/addTotal/tick, εκτός React state), busyFraction
+   data/
+   components/
+     ConfirmDialog.jsx, StandingsTable.jsx, ConsistencyReportView.jsx,
+@@ -85,6 +86,7 @@ src/
+     HomePage.jsx (νέα αρχική: κεφαλίδα, πλαίσιο τριών καταστάσεων, επόμενες αγωνιστικές, Βαθμολογίες, Κορυφή ELO, Τελευταία αποτελέσματα — μόνο εμφάνιση),
+     TournamentHeader.jsx (κεφαλίδα τουρνουά: κατάσταση, όνομα, στοιχεία, μετρητές), WinDots.jsx (κουκκίδες νικών πριν από τον γύρο),
+     PlayerSearch.jsx (αναζήτηση παίκτη χωρίς τόνους, έως 8 προτάσεις από το μητρώο → καρτέλα παίκτη),
++    BusyIndicator.jsx (μπάρα στην κορυφή + πλαίσιο κάτω δεξιά με κλεψύδρα και πρόοδο· BUSY_CSS· επιβεβαίωση στο κλείσιμο καρτέλας όσο τρέχει),
+   config/i18nUi.js          UI: λεξικό δημόσιας όψης (el/en)· config/langContext.js: LangContext, useL(), browserLang(), dateLocale()
+   styles/
+     views.js                VIEWS_CSS: κεφαλίδα τουρνουά, κουκκίδες, σταθερή γραμμή τίτλων (`table-scroll`), προφίλ παίκτη
+@@ -274,5 +276,7 @@ tests/firestore.rules.test.mjs   δοκιμές κανόνων (npm run test:rul
+   - **Ροή για τις επόμενες αγωνιστικές:** Export All Data → ανέβασμα αρχείου → «Πρωτάθλημα Τρικάλων / 2026-2027», διακόπτης «Μετράει στη Βαθμολογία» ενεργός, έλεγχος της στήλης «Ημερολόγιο» → Εισαγωγή όλων → επιβεβαίωση αντιστοίχισης (αυτόματο Recompute Βαθμολογίας) → Recompute ELO. **Όχι** τουρνουά της εφαρμογής για την ίδια αγωνιστική (πιάνει τη θέση στο Ημερολόγιο και δημιουργεί διπλά πρόσωπα).
+ - **Πλήθος παικτών στη σελίδα «Παίκτες»** (build `2026-10-24.04`, επίπεδο 1, σχέδιο `docs/plan-players-count-2026-10-24.md`): απευθείας στο `main`. Κάτω από τα φίλτρα γραμμή `components/PlayersCount.jsx`: «N παίκτες» ή, με φίλτρο συλλόγου/αναζήτηση, «M από N παίκτες · Σύλλογος: … · αναζήτηση: “…”»· N = όσοι φαίνονται χωρίς φίλτρο για τον ίδιο χρήστη (ο διακόπτης φιλοξενούμενων μετράει και στο N). Μηδέν αποτελέσματα: «Κανένας παίκτης δεν ταιριάζει στα φίλτρα». Κείμενα `pc…` στο `config/i18n.js`. Φίλτρα, ταξινόμηση, δεδομένα αμετάβλητα.
+ - **Βάση για κινητό** (builds `2026-11-06.01`–`.02`, επίπεδο 1): απευθείας στο `main`. Στο `.01` το `${MOBILE_CSS}` δεν μπήκε στο `<style>` (το import έμεινε αχρησιμοποίητο, το lint δεν το πιάνει — δεν έχει `no-unused-vars`), οπότε σε υπολογιστή φαίνονταν μαζί κουμπιά, ☰ και πάνελ· διορθώθηκε στο `.02`. **Έλεγχος για νέο CSS:** μετά το build, η κλάση πρέπει να υπάρχει στο `dist` (`grep -c <κλάση> dist/assets/*.js`). **Τουρνουά στο κινητό** (build `2026-11-06.03`, επίπεδο 1): στον `StandingsTable` (κλάσεις `std-table`, `std-sticky-rank`, `std-sticky-name`) Θέση και Παίκτης σταθερές αριστερά ≤ 600px, μικρότερα περιθώρια· **όλες οι στήλες κριτηρίων μένουν ορατές** (απόφαση 19/10)· ισχύει και στο ολοκληρωμένο τουρνουά. Κουμπιά της κάρτας αγώνα σε στήλη ≤ 600px· επιβεβαίωση Redraw αναδιπλώνεται· ο διακόπτης live ενημέρωσης μόνο για διαχειριστή. Η διάσπαση της οθόνης (§2.9) αναβλήθηκε: σχεδόν μόνο CSS. **Βαθμολογία στο κινητό** (build `2026-11-06.04`, επίπεδο 1): ίδιες κλάσεις sticky στον πίνακα Βαθμολογίας (`std-table st-table`), με τα χρώματα ζωνών πρόκρισης και στις σταθερές στήλες· ανάπτυγμα παίκτη μέσα στην οθόνη (`st-expand-inner`, sticky με `max-width: calc(100vw - 58px)`), γραμμές αγωνιστικών που αναδιπλώνονται (`st-entry`), υπόμνημα ζωνών με αναδίπλωση· όλες οι στήλες ορατές. **Κατάταξη ELO στο κινητό** (build `2026-11-06.05`, επίπεδο 1): ο πίνακας απέκτησε `overflowX: auto` (πριν έσπρωχνε όλη τη σελίδα), sticky Θέση/Παίκτης (`std-table elo-table`), «Πώς προέκυψε η ELO» μέσα στην οθόνη (`st-expand-inner`)· το πλαίσιο «How this is calculated» είναι `<details>` (`elo-howto`), κλειστό ≤ 600px κατά το άνοιγμα της σελίδας, ανοιχτό στον υπολογιστή. **Υπόλοιπες οθόνες για κινητό** (build `2026-11-06.06`, επίπεδο 1 — με απόφαση του Γιάννη **όλες μαζί σε ένα build**, ως εξαίρεση στο «ένα build = ένα πράγμα», επειδή είναι μόνο εμφάνιση): καρτέλα παίκτη (στοιχεία επικοινωνίας σε μία στήλη, καρτέλες με κύλιση, γραμμές ιστορικού με αναδίπλωση), αρχείο τουρνουά (φίλτρα σε όλο το πλάτος, στοιχεία κάτω από το όνομα), Ημερολόγιο (ο σύλλογος κάτω από τον τίτλο: `cal-row`, `cal-row-text`, `cal-club` στο `CalendarPage.jsx`), εισαγόμενο τουρνουά (λίστα αγώνων με κύλιση· Δέντρο και Excel κυλούσαν ήδη), Πίνακας Ελέγχου σε δύο στήλες· τα πεδία 16px με `!important` (υπερισχύουν και των inline μεγεθών, π.χ. αναζήτηση στα Στατιστικά). Στατιστικά και Σχετικά: χωρίς αλλαγή (χωρούσαν). **Ολοκληρώθηκε η προσαρμογή των δημόσιων οθονών στο κινητό.** Οι οθόνες διαχείρισης μένουν για υπολογιστή. Πάνω μπάρα σε `components/TopBar.jsx`· κάτω από 900px μενού ☰ (πάνελ με τις ίδιες επιλογές + ΕΛ/EN· κλείνει με επιλογή, πάτημα έξω, Esc· κόκκινη κουκκίδα «Σχετικά» και στο ☰)· σύνδεση/λογαριασμός μένουν στη μπάρα (χωρίς email στο κινητό)· «build …» κρυφό. Κανόνες στο `styles/mobile.js`. Υπολογιστής (> 900px) αμετάβλητος. **Επόμενα (ένα build η καθεμία):** τουρνουά σε εξέλιξη (ζευγαρώματα ως κάρτες, κατάταξη με λιγότερες στήλες), Βαθμολογία, Κατάταξη ELO, καρτέλα παίκτη, Ημερολόγιο.
++- **Ένδειξη εργασίας σε εξέλιξη** (build `2026-11-16.01`, επίπεδο 1): `exportAllData`, `recomputeEloAndSeasonFromScratch` (όλα τα scope, και όταν καλείται αυτόματα) και `recomputeRanking` τρέχουν μέσα σε `busy.run(...)` (`lib/busy.js`)· το σώμα τους είναι στα `exportAllDataRun` / `recomputeEloAndSeasonRun` / `recomputeRankingRun`, που παίρνουν `p` (`phase`, `addTotal`, `tick`). Πρόοδος = έγγραφα που διαβάζονται (στο Recompute κάθε **νέα** ανάγνωση του `loadStrict`· φάσεις «Recompute ELO» και «Recompute Βαθμολογίας»). Η πρόοδος ζει **εκτός React state** (`useSyncExternalStore`): ξαναζωγραφίζεται μόνο το `BusyIndicator`, όχι το `TournamentManager`· το `busyActive` αλλάζει μόνο στην αρχή/τέλος και απενεργοποιεί τα κουμπιά Export/Recompute. **Νέα μακρά εργασία → μέσα σε `busy.run`.** Υπολογισμοί, αναγνώσεις, εγγραφές: αμετάβλητα.
++- **Λάρισα (16/11, μόνο δεδομένα):** διοργάνωση «Πρωτάθλημα Λάρισας» (χωρίς Βαθμολογία, στην Πανελλήνια ELO), σεζόν «2026»· εισαγωγή 17 αγωνιστικών 2025-26 (DrawBoss, 371 αγώνες) με πακέτο + αποφάσεις αντιστοίχισης.
+ - **Εκκρεμότητες εκτός κώδικα:** ο admin του bgfed.gr να επιβεβαιώσει την ανάκληση του WordPress Application Password (βλ. §8).
+ - **Μικρά υπόλοιπα:** τα περισσότερα διορθώθηκαν στο Σ1 (`.13`). Μένει: το `eslint@9.39.5` δεν υποστηρίζεται πια (μόνο εργαλείο ελέγχου).
+diff --git a/src/App.jsx b/src/App.jsx
+index 6cdc252..66a0ea0 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -1,4 +1,4 @@
+-import React, { useState, useRef, useEffect, useMemo } from "react";
++import React, { useState, useRef, useEffect, useMemo, useSyncExternalStore } from "react";
+ import {
+   Trophy,
+   Plus,
+@@ -174,6 +174,8 @@ import { recordsBeforeRound, pairDisplayOrder } from "./lib/roundRecords.js";
+ import { VIEWS_CSS } from "./styles/views.js";
+ import { NAV_CSS } from "./styles/nav.js";
+ import { MOBILE_CSS } from "./styles/mobile.js";
++import BusyIndicator, { BUSY_CSS } from "./components/BusyIndicator.jsx";
++import { createBusyStore } from "./lib/busy.js";
+ import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
+ import { PlayerTrendCharts } from "./components/charts.jsx";
+ import { MoveToTrashControl, TrashRow } from "./components/trash.jsx";
+@@ -376,6 +378,13 @@ export default function TournamentManager() {
+   const [view, setView] = useState("pairings");
+   const [selectedRound, setSelectedRound] = useState(1);
+   const [notice, setNotice] = useState("");
++  // Background work indicator (2026-11-16.01): Export All Data, Recompute ELO,
++  // Recompute Βαθμολογίας. Progress lives outside React state (lib/busy.js);
++  // busyActive only flips at start/end and disables those buttons.
++  const busyRef = useRef(null);
++  if (!busyRef.current) busyRef.current = createBusyStore();
++  const busy = busyRef.current;
++  const busyActive = useSyncExternalStore(busy.subscribe, busy.isActive);
+   const [toast, setToast] = useState("");
+   const toastTimerRef = useRef(null);
+ 
+@@ -1551,37 +1560,61 @@ export default function TournamentManager() {
+ 
+   // #region Export / Import / Excel
+   async function exportAllData() {
+-    if (!isSuper) return; // Σ2: the full backup holds everyone's private details — super administrator only
++    if (!isSuper || busy.isActive()) return;
++    return busy.run("Export All Data", (p) => exportAllDataRun(p));
++  }
++
++  async function exportAllDataRun(p) { // Σ2: the full backup holds everyone's private details — super administrator only
+     // Every read is strict: a backup with a silently missing part is worse
+     // than no backup, because it would also reset the "last export" clock
+     // that the migrations rely on.
+     let registryData, privateContacts, eloData2, index, seasons, tournaments, trashList, trashedTournaments, sysNow, importsBackup;
+     try {
++      // Progress: 8 fixed documents, then each list's items as it is read.
++      p.phase("Export All Data · ανάγνωση βάσης", 8);
+       registryData = await loadRegistryStrict();
++      p.tick();
+       // Players' private details (5A): null before the move.
+       privateContacts = await loadContactsStrict();
++      p.tick();
+       eloData2 = await loadEloStrict();
++      p.tick();
+       index = await loadIndexStrict();
++      p.tick();
+       const years = await listSeasonYearsStrict();
++      p.tick();
++      p.addTotal(years.length + index.length);
+       seasons = {};
+       for (const y of years) {
+         seasons[y] = await loadSeasonStrict(y);
++        p.tick();
+       }
+       tournaments = {};
+       for (const t of index) {
+         tournaments[t.id] = await fetchTournamentDataStrict(t.id);
++        p.tick();
+       }
+       const trashDoc = await fetchTournamentDataStrict(SYS_TRASH_ID);
++      p.tick();
+       trashList = trashDoc && Array.isArray(trashDoc.list) ? trashDoc.list : [];
++      p.addTotal(trashList.length);
+       trashedTournaments = {};
+       for (const t of trashList) {
+         trashedTournaments[t.id] = await fetchTournamentDataStrict(t.id);
++        p.tick();
+       }
+       const sysDoc = await fetchTournamentDataStrict(SYS_STATE_ID);
++      p.tick();
+       sysNow = sysDoc && typeof sysDoc === "object" ? sysDoc : {};
+       const impDoc = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
++      p.tick();
+       importsBackup = { list: impDoc && Array.isArray(impDoc.list) ? impDoc.list : [], docs: {} };
+-      for (const t of importsBackup.list) importsBackup.docs[t.id] = await fetchTournamentDataStrict(t.id);
++      p.addTotal(importsBackup.list.length);
++      for (const t of importsBackup.list) {
++        importsBackup.docs[t.id] = await fetchTournamentDataStrict(t.id);
++        p.tick();
++      }
++      p.phase("Export All Data · δημιουργία αρχείου");
+     } catch {
+       reportSaveFailure("Export All Data — η βάση δεν διαβάστηκε πλήρως, ΔΕΝ κατέβηκε αρχείο. Δοκίμασε ξανά.");
+       return;
+@@ -2424,6 +2457,12 @@ export default function TournamentManager() {
+    * flagged Official (e.g. a test) is skipped entirely, whether or not it
+    * still exists in the archive — no need to delete it first. */
+   async function recomputeEloAndSeasonFromScratch(indexOverride, opts = {}) {
++    const sc = opts.scope || "all";
++    const label = sc === "elo" ? "Recompute ELO" : sc && typeof sc === "object" ? `Recompute Βαθμολογίας ${sn(Number(sc.season))}` : "Recompute ELO και Βαθμολογίας";
++    return busy.run(label, (p) => recomputeEloAndSeasonRun(indexOverride, opts, p));
++  }
++
++  async function recomputeEloAndSeasonRun(indexOverride, opts, p) {
+     // 5D.3: opts.scope — "all" (default; used after data changes such as a
+     // merge of persons), "elo" (only the main ELO ranking — Κατατάξεις ELO),
+     // or { season: id } (only that season's standings — competition page).
+@@ -2446,14 +2485,19 @@ export default function TournamentManager() {
+     // nothing at all is written.
+     const dataCache = {};
+     const loadStrict = async (id) => {
+-      if (!(id in dataCache)) dataCache[id] = await fetchTournamentDataStrict(id);
++      if (!(id in dataCache)) {
++        dataCache[id] = await fetchTournamentDataStrict(id);
++        p.tick();
++      }
+       return dataCache[id];
+     };
+     if (doElo) try {
+       const importsList = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
+       const importIds = (importsList && Array.isArray(importsList.list) ? importsList.list : []).map((x) => x.id);
++      const eloMembers = new Set(eloRankingsFrom(sysState)[0].competitionIds);
++      p.phase("Recompute ELO", importIds.length + catalogue.filter((t) => t.isOfficial && eloMembers.has(t.competitionId || DEFAULT_COMPETITION_ID)).length);
+       const built = await buildRankingElo({
+-        members: new Set(eloRankingsFrom(sysState)[0].competitionIds),
++        members: eloMembers,
+         catalogue, importIds, loadTournament: loadStrict, loadImport: loadStrict, registry,
+       });
+       elo = built.elo;
+@@ -2469,6 +2513,7 @@ export default function TournamentManager() {
+     const officialTournaments = !doSeasons ? [] : catalogue
+       .filter((t) => countsTowardStandings(t) && (seasonOnly === null || (Number(t.seasonYear) || seasonForDate(t.date)) === seasonOnly))
+       .sort((a, b) => new Date(a.date) - new Date(b.date));
++    if (doSeasons) p.phase(seasonOnly !== null ? `Recompute Βαθμολογίας ${sn(seasonOnly)}` : "Recompute Βαθμολογίας", officialTournaments.filter((t) => !(t.id in dataCache)).length);
+     for (const t of officialTournaments) {
+       // Strict read: if any official tournament cannot be read, stop and
+       // write nothing — a rebuild without it would silently drop its matches.
+@@ -2509,6 +2554,7 @@ export default function TournamentManager() {
+       }
+       const counting = (lst && Array.isArray(lst.list) ? lst.list : [])
+         .filter((it) => importCountsInStandings(it) && importSeason(it) && (seasonOnly === null || importSeason(it) === seasonOnly));
++      p.addTotal(counting.filter((it) => !(it.id in dataCache)).length);
+       for (const it of counting) {
+         let d;
+         try {
+@@ -5089,7 +5135,7 @@ export default function TournamentManager() {
+                 {!exportFresh && (
+                   <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+                     <span>Για την εφαρμογή χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
+-                    <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
++                    <button className="btn-secondary" onClick={exportAllData} disabled={busyActive}><Download size={15} /> Export τώρα</button>
+                   </div>
+                 )}
+                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+@@ -5197,7 +5243,7 @@ export default function TournamentManager() {
+         </p>
+         <ol className="close-steps">
+           <li className={exportFresh ? "done" : ""}>
+-            Πλήρες backup: {exportFresh ? `✓ ${formatDate(sysState.lastExportAt)}` : isSuper ? <button className="btn-secondary" onClick={exportAllData}><Download size={14} /> Export All Data</button> : <span className="cal-note">ζήτησε από τον υπερ-διαχειριστή να κάνει Export (ισχύει 24 ώρες)</span>}
++            Πλήρες backup: {exportFresh ? `✓ ${formatDate(sysState.lastExportAt)}` : isSuper ? <button className="btn-secondary" onClick={exportAllData} disabled={busyActive}><Download size={14} /> Export All Data</button> : <span className="cal-note">ζήτησε από τον υπερ-διαχειριστή να κάνει Export (ισχύει 24 ώρες)</span>}
+           </li>
+           <li className={excelDoneAt ? "done" : ""}>
+             Τελική Βαθμολογία σε Excel: {excelDoneAt ? "✓ κατέβηκε" : <button className="btn-secondary" onClick={async () => { await exportBaselineExcel(); setExcelDoneAt(new Date().toISOString()); }}><Download size={14} /> Εξαγωγή Excel</button>}
+@@ -5614,13 +5660,25 @@ export default function TournamentManager() {
+ 
+   /** Rebuilds an additional (non-main) ranking and stores it in eloRankings/{id}. */
+   async function recomputeRanking(r) {
++    if (busy.isActive()) return;
++    return busy.run(`Recompute «${r.name}»`, (p) => recomputeRankingRun(r, p));
++  }
++
++  async function recomputeRankingRun(r, p) {
+     setNotice(`Recompute κατάταξης «${r.name}»…`);
+     try {
+       const importsList = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
+       const importIds = (importsList && Array.isArray(importsList.list) ? importsList.list : []).map((x) => x.id);
++      const members = new Set(r.competitionIds);
++      p.phase(`Recompute «${r.name}»`, importIds.length + archive.filter((t) => t.isOfficial && members.has(t.competitionId || DEFAULT_COMPETITION_ID)).length);
++      const load = async (id) => {
++        const d = await fetchTournamentDataStrict(id);
++        p.tick();
++        return d;
++      };
+       const built = await buildRankingElo({
+-        members: new Set(r.competitionIds), catalogue: archive, importIds,
+-        loadTournament: (id) => fetchTournamentDataStrict(id), loadImport: (id) => fetchTournamentDataStrict(id), registry,
++        members, catalogue: archive, importIds,
++        loadTournament: load, loadImport: load, registry,
+       });
+       const doc = { ...built.elo, appliedTournaments: built.applied, appliedImports: built.appliedImports, builtFrom: { at: new Date().toISOString(), matches: built.matches, players: Object.keys(built.elo.players).length } };
+       setNotice("");
+@@ -5674,7 +5732,7 @@ export default function TournamentManager() {
+                 <td>{rankingMembersLabel(r)}</td>
+                 <td style={{ whiteSpace: "nowrap" }}>
+                   <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Επεξεργασία" onClick={() => setRankingDraft({ id: r.id, name: r.name, competitionIds: [...r.competitionIds], public: r.public })}><Pencil size={13} /></button>
+-                  <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Recompute κατάταξης" onClick={() => {
++                  <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Recompute κατάταξης" disabled={busyActive} onClick={() => {
+                     if (r.id === PRIMARY_RANKING_ID) {
+                       if (window.confirm(`Recompute της «${r.name}»: ξαναχτίζεται από την αρχή από τα επίσημα τουρνουά και τις εισαγωγές των διοργανώσεών της. Η Βαθμολογία δεν αλλάζει. Συνέχεια;`)) recomputeEloAndSeasonFromScratch(undefined, { scope: "elo" });
+                     } else recomputeRanking(r);
+@@ -6498,11 +6556,13 @@ export default function TournamentManager() {
+         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+         ${VIEWS_CSS}
+         ${NAV_CSS}
++        ${BUSY_CSS}
+         ${MOBILE_CSS}
+       `}</style>
+       {/* #endregion Στυλ (CSS) */}
+ 
+       {/* #region Ειδοποιήσεις, πλαίσια σφαλμάτων, διάλογοι επιβεβαίωσης */}
++      <BusyIndicator store={busy} />
+       {toast && (
+         <div className="toast">
+           <Check size={16} color="var(--win)" />
+@@ -8168,7 +8228,7 @@ export default function TournamentManager() {
+                       <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                         <AlertTriangle size={16} style={{ flexShrink: 0 }} /> {exportMsg}
+                       </span>
+-                      <button className="btn-secondary" onClick={exportAllData}>
++                      <button className="btn-secondary" onClick={exportAllData} disabled={busyActive}>
+                         <Download size={15} /> Export τώρα
+                       </button>
+                     </div>
+@@ -8407,7 +8467,7 @@ export default function TournamentManager() {
+                         </td>
+                         {competitionHasStandings(comp) && (
+                           <td>
+-                            <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Ξαναχτίζει τη Βαθμολογία αυτής της σεζόν από τα επίσημα τουρνουά της· η ELO δεν αλλάζει" onClick={() => {
++                            <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Ξαναχτίζει τη Βαθμολογία αυτής της σεζόν από τα επίσημα τουρνουά της· η ELO δεν αλλάζει" disabled={busyActive} onClick={() => {
+                               if (window.confirm(`Recompute της Βαθμολογίας της σεζόν ${s.name}: ξαναχτίζεται από τα επίσημα τουρνουά της (και τις εισαγωγές που μετράνε στη Βαθμολογία). Η ELO δεν αλλάζει. Συνέχεια;`)) recomputeEloAndSeasonFromScratch(undefined, { scope: { season: s.id } });
+                             }}><RefreshCw size={13} /> Recompute Βαθμολογίας</button>
+                           </td>
+@@ -8548,7 +8608,7 @@ export default function TournamentManager() {
+               <p className="control-sub">
+                 Πλήρες αντίγραφο όλων των δεδομένων σε αρχείο. Τελευταίο: {sysState.lastExportAt ? formatDate(sysState.lastExportAt) : "ποτέ"}.
+               </p>
+-              <button className="btn-secondary" onClick={exportAllData}>
++              <button className="btn-secondary" onClick={exportAllData} disabled={busyActive}>
+                 <Download size={15} /> Export All Data (πλήρες αντίγραφο ασφαλείας)
+               </button>
+             </div>
+diff --git a/src/components/BusyIndicator.jsx b/src/components/BusyIndicator.jsx
+new file mode 100644
+index 0000000..4e4ee7c
+--- /dev/null
++++ b/src/components/BusyIndicator.jsx
+@@ -0,0 +1,58 @@
++import React, { useEffect, useSyncExternalStore } from "react";
++import { Hourglass } from "lucide-react";
++import { busyFraction } from "../lib/busy.js";
++
++/* Background work indicator (build 2026-11-16.01): a thin bar at the top of
++ * the screen and a small box at the bottom right with an hourglass, what is
++ * running and its progress. Visible wherever the page is scrolled. While it
++ * runs, closing the tab asks for confirmation (an Export would be lost).
++ * Admin screens only — the texts are Greek (no dictionary, see CLAUDE.md). */
++export const BUSY_CSS = `
++  .busy-bar { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 2000; background: var(--accent-soft); overflow: hidden; pointer-events: none; }
++  .busy-bar-fill { height: 100%; background: var(--accent); transition: width .2s ease-out; }
++  .busy-bar-indet { position: absolute; top: 0; bottom: 0; width: 30%; background: var(--accent); animation: busy-slide 1.1s ease-in-out infinite; }
++  @keyframes busy-slide { 0% { left: -30%; } 100% { left: 100%; } }
++  .busy-box { position: fixed; right: 16px; bottom: 16px; z-index: 2000; display: flex; align-items: center; gap: 10px; min-width: 220px; max-width: calc(100vw - 32px); background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 10px; padding: 10px 14px; box-shadow: 0 6px 20px rgba(0,0,0,.12); font-size: 13px; color: var(--ink); }
++  .busy-box-icon { color: var(--accent); flex-shrink: 0; animation: busy-turn 1.6s ease-in-out infinite; }
++  @keyframes busy-turn { 0%, 40% { transform: rotate(0deg); } 60%, 100% { transform: rotate(180deg); } }
++  .busy-box-text { flex: 1; min-width: 0; }
++  .busy-box-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
++  .busy-box-count { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; margin-top: 2px; }
++  .busy-box-track { height: 4px; border-radius: 2px; background: var(--accent-soft); margin-top: 6px; overflow: hidden; position: relative; }
++  @media (max-width: 1100px) { .busy-box { bottom: 80px; } }
++  @media (prefers-reduced-motion: reduce) { .busy-bar-indet, .busy-box-icon { animation: none; } .busy-bar-indet { left: 0; width: 100%; opacity: .5; } }
++  @media print { .busy-bar, .busy-box { display: none; } }
++`;
++
++export default function BusyIndicator({ store }) {
++  const s = useSyncExternalStore(store.subscribe, store.getSnapshot);
++  const active = !!s;
++
++  useEffect(() => {
++    if (!active) return undefined;
++    const onLeave = (e) => {
++      e.preventDefault();
++      e.returnValue = "";
++    };
++    window.addEventListener("beforeunload", onLeave);
++    return () => window.removeEventListener("beforeunload", onLeave);
++  }, [active]);
++
++  if (!s) return null;
++  const f = busyFraction(s);
++  const pct = f === null ? null : Math.round(f * 100);
++  const bar = (cls) => (f === null ? <div className="busy-bar-indet" /> : <div className={cls} style={{ width: `${pct}%` }} />);
++  return (
++    <>
++      <div className="busy-bar" role="presentation">{bar("busy-bar-fill")}</div>
++      <div className="busy-box" role="status" aria-live="polite">
++        <Hourglass size={18} className="busy-box-icon" aria-hidden="true" />
++        <div className="busy-box-text">
++          <div className="busy-box-label">{s.label}…</div>
++          <div className="busy-box-count">{f === null ? "Σε εξέλιξη" : `${Math.min(s.done, s.total)} / ${s.total} · ${pct}%`}</div>
++          <div className="busy-box-track">{bar("busy-bar-fill")}</div>
++        </div>
++      </div>
++    </>
++  );
++}
+diff --git a/src/config/build.js b/src/config/build.js
+index 5f0b48c..a2fe4f2 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-11-09.07";
++export const APP_BUILD_VERSION = "2026-11-16.01";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index 8458b95..47663d5 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -3,6 +3,9 @@
+ // τεχνικά builds δεν καταγράφονται.
+ // audience: "all" = όλοι, "admin" = μόνο διαχειριστές.
+ export const CHANGELOG = [
++  { date: "2026-11-16", items: [
++    { text: "Export All Data, Recompute ELO και Recompute Βαθμολογίας δείχνουν πρόοδο: μπάρα που γεμίζει στην κορυφή της οθόνης και πλαίσιο κάτω δεξιά με κλεψύδρα, τι τρέχει και πόσα έχουν γίνει. Όσο τρέχουν, τα κουμπιά τους είναι ανενεργά, και το κλείσιμο της καρτέλας ζητά επιβεβαίωση.", audience: "admin" },
++  ]},
+   { date: "2026-11-09", items: [
+     { text: "Στα αγγλικά τα ονόματα των παικτών εμφανίζονται με λατινικά γράμματα, όπως στα διαβατήρια (π.χ. Evangeliou, Xylas)· η αναζήτηση παίκτη βρίσκει και με τις δύο γραφές.", audience: "all" },
+     { text: "Γλώσσα: όλη η δημόσια όψη αλλάζει πλέον σωστά σε Αγγλικά/Ελληνικά (μενού, αρχική, τουρνουά, βαθμολογίες, ELO, προφίλ, ημερολόγιο, στατιστικά)· ανοίγει στα αγγλικά αν ο browser είναι στα αγγλικά. Η καρτέλα «Ζευγαρώματα» λέγεται τώρα «Αγώνες».", audience: "all" },
+diff --git a/src/lib/busy.js b/src/lib/busy.js
+new file mode 100644
+index 0000000..73fc5e6
+--- /dev/null
++++ b/src/lib/busy.js
+@@ -0,0 +1,61 @@
++/* Background work indicator (build 2026-11-16.01).
++ *
++ * A tiny store outside React state: progress ticks re-render only the
++ * indicator (useSyncExternalStore), never the whole TournamentManager.
++ * The App reads `isActive` (changes twice per run) to disable the buttons.
++ *
++ *   const busy = createBusyStore();
++ *   await busy.run("Export All Data", async (p) => {
++ *     p.phase("Ανάγνωση τουρνουά", 40);   // new label, counter from 0 of 40
++ *     p.addTotal(5);                       // the total grows as lists are read
++ *     p.tick();                            // one more item done
++ *   });
++ *
++ * Runs may nest (e.g. a season recompute inside another flow): the inner
++ * run shows its own label and the outer one's is restored when it ends. */
++export function createBusyStore() {
++  let state = null; // { label, done, total } | null
++  let depth = 0;
++  const subs = new Set();
++  const set = (s) => {
++    state = s;
++    subs.forEach((f) => f());
++  };
++  return {
++    subscribe(f) {
++      subs.add(f);
++      return () => subs.delete(f);
++    },
++    getSnapshot: () => state,
++    isActive: () => state !== null,
++    async run(label, fn) {
++      const saved = state;
++      depth += 1;
++      set({ label, done: 0, total: 0 });
++      const progress = {
++        phase(l, total = 0) {
++          set({ label: l, done: 0, total });
++        },
++        addTotal(n) {
++          if (state && n > 0) set({ ...state, total: state.total + n });
++        },
++        tick() {
++          if (state) set({ ...state, done: state.done + 1 });
++        },
++      };
++      try {
++        return await fn(progress);
++      } finally {
++        depth -= 1;
++        set(depth === 0 ? null : saved);
++      }
++    },
++  };
++}
++
++/** Fraction 0..1 for the bar, or null when the total is not known yet
++ * (the bar then runs as an animation). */
++export function busyFraction(s) {
++  if (!s || !s.total) return null;
++  return Math.max(0, Math.min(1, s.done / s.total));
++}
