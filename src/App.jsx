@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useSyncExternalStore } from "react";
 import {
   Trophy,
   Plus,
@@ -174,6 +174,8 @@ import { recordsBeforeRound, pairDisplayOrder } from "./lib/roundRecords.js";
 import { VIEWS_CSS } from "./styles/views.js";
 import { NAV_CSS } from "./styles/nav.js";
 import { MOBILE_CSS } from "./styles/mobile.js";
+import BusyIndicator, { BUSY_CSS } from "./components/BusyIndicator.jsx";
+import { createBusyStore } from "./lib/busy.js";
 import { ConsistencyReportView } from "./components/ConsistencyReportView.jsx";
 import { PlayerTrendCharts } from "./components/charts.jsx";
 import { MoveToTrashControl, TrashRow } from "./components/trash.jsx";
@@ -376,6 +378,13 @@ export default function TournamentManager() {
   const [view, setView] = useState("pairings");
   const [selectedRound, setSelectedRound] = useState(1);
   const [notice, setNotice] = useState("");
+  // Background work indicator (2026-11-16.01): Export All Data, Recompute ELO,
+  // Recompute Βαθμολογίας. Progress lives outside React state (lib/busy.js);
+  // busyActive only flips at start/end and disables those buttons.
+  const busyRef = useRef(null);
+  if (!busyRef.current) busyRef.current = createBusyStore();
+  const busy = busyRef.current;
+  const busyActive = useSyncExternalStore(busy.subscribe, busy.isActive);
   const [toast, setToast] = useState("");
   const toastTimerRef = useRef(null);
 
@@ -1551,37 +1560,61 @@ export default function TournamentManager() {
 
   // #region Export / Import / Excel
   async function exportAllData() {
-    if (!isSuper) return; // Σ2: the full backup holds everyone's private details — super administrator only
+    if (!isSuper || busy.isActive()) return;
+    return busy.run("Export All Data", (p) => exportAllDataRun(p));
+  }
+
+  async function exportAllDataRun(p) { // Σ2: the full backup holds everyone's private details — super administrator only
     // Every read is strict: a backup with a silently missing part is worse
     // than no backup, because it would also reset the "last export" clock
     // that the migrations rely on.
     let registryData, privateContacts, eloData2, index, seasons, tournaments, trashList, trashedTournaments, sysNow, importsBackup;
     try {
+      // Progress: 8 fixed documents, then each list's items as it is read.
+      p.phase("Export All Data · ανάγνωση βάσης", 8);
       registryData = await loadRegistryStrict();
+      p.tick();
       // Players' private details (5A): null before the move.
       privateContacts = await loadContactsStrict();
+      p.tick();
       eloData2 = await loadEloStrict();
+      p.tick();
       index = await loadIndexStrict();
+      p.tick();
       const years = await listSeasonYearsStrict();
+      p.tick();
+      p.addTotal(years.length + index.length);
       seasons = {};
       for (const y of years) {
         seasons[y] = await loadSeasonStrict(y);
+        p.tick();
       }
       tournaments = {};
       for (const t of index) {
         tournaments[t.id] = await fetchTournamentDataStrict(t.id);
+        p.tick();
       }
       const trashDoc = await fetchTournamentDataStrict(SYS_TRASH_ID);
+      p.tick();
       trashList = trashDoc && Array.isArray(trashDoc.list) ? trashDoc.list : [];
+      p.addTotal(trashList.length);
       trashedTournaments = {};
       for (const t of trashList) {
         trashedTournaments[t.id] = await fetchTournamentDataStrict(t.id);
+        p.tick();
       }
       const sysDoc = await fetchTournamentDataStrict(SYS_STATE_ID);
+      p.tick();
       sysNow = sysDoc && typeof sysDoc === "object" ? sysDoc : {};
       const impDoc = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
+      p.tick();
       importsBackup = { list: impDoc && Array.isArray(impDoc.list) ? impDoc.list : [], docs: {} };
-      for (const t of importsBackup.list) importsBackup.docs[t.id] = await fetchTournamentDataStrict(t.id);
+      p.addTotal(importsBackup.list.length);
+      for (const t of importsBackup.list) {
+        importsBackup.docs[t.id] = await fetchTournamentDataStrict(t.id);
+        p.tick();
+      }
+      p.phase("Export All Data · δημιουργία αρχείου");
     } catch {
       reportSaveFailure("Export All Data — η βάση δεν διαβάστηκε πλήρως, ΔΕΝ κατέβηκε αρχείο. Δοκίμασε ξανά.");
       return;
@@ -2424,6 +2457,12 @@ export default function TournamentManager() {
    * flagged Official (e.g. a test) is skipped entirely, whether or not it
    * still exists in the archive — no need to delete it first. */
   async function recomputeEloAndSeasonFromScratch(indexOverride, opts = {}) {
+    const sc = opts.scope || "all";
+    const label = sc === "elo" ? "Recompute ELO" : sc && typeof sc === "object" ? `Recompute Βαθμολογίας ${sn(Number(sc.season))}` : "Recompute ELO και Βαθμολογίας";
+    return busy.run(label, (p) => recomputeEloAndSeasonRun(indexOverride, opts, p));
+  }
+
+  async function recomputeEloAndSeasonRun(indexOverride, opts, p) {
     // 5D.3: opts.scope — "all" (default; used after data changes such as a
     // merge of persons), "elo" (only the main ELO ranking — Κατατάξεις ELO),
     // or { season: id } (only that season's standings — competition page).
@@ -2446,14 +2485,19 @@ export default function TournamentManager() {
     // nothing at all is written.
     const dataCache = {};
     const loadStrict = async (id) => {
-      if (!(id in dataCache)) dataCache[id] = await fetchTournamentDataStrict(id);
+      if (!(id in dataCache)) {
+        dataCache[id] = await fetchTournamentDataStrict(id);
+        p.tick();
+      }
       return dataCache[id];
     };
     if (doElo) try {
       const importsList = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
       const importIds = (importsList && Array.isArray(importsList.list) ? importsList.list : []).map((x) => x.id);
+      const eloMembers = new Set(eloRankingsFrom(sysState)[0].competitionIds);
+      p.phase("Recompute ELO", importIds.length + catalogue.filter((t) => t.isOfficial && eloMembers.has(t.competitionId || DEFAULT_COMPETITION_ID)).length);
       const built = await buildRankingElo({
-        members: new Set(eloRankingsFrom(sysState)[0].competitionIds),
+        members: eloMembers,
         catalogue, importIds, loadTournament: loadStrict, loadImport: loadStrict, registry,
       });
       elo = built.elo;
@@ -2469,6 +2513,7 @@ export default function TournamentManager() {
     const officialTournaments = !doSeasons ? [] : catalogue
       .filter((t) => countsTowardStandings(t) && (seasonOnly === null || (Number(t.seasonYear) || seasonForDate(t.date)) === seasonOnly))
       .sort((a, b) => new Date(a.date) - new Date(b.date));
+    if (doSeasons) p.phase(seasonOnly !== null ? `Recompute Βαθμολογίας ${sn(seasonOnly)}` : "Recompute Βαθμολογίας", officialTournaments.filter((t) => !(t.id in dataCache)).length);
     for (const t of officialTournaments) {
       // Strict read: if any official tournament cannot be read, stop and
       // write nothing — a rebuild without it would silently drop its matches.
@@ -2509,6 +2554,7 @@ export default function TournamentManager() {
       }
       const counting = (lst && Array.isArray(lst.list) ? lst.list : [])
         .filter((it) => importCountsInStandings(it) && importSeason(it) && (seasonOnly === null || importSeason(it) === seasonOnly));
+      p.addTotal(counting.filter((it) => !(it.id in dataCache)).length);
       for (const it of counting) {
         let d;
         try {
@@ -5089,7 +5135,7 @@ export default function TournamentManager() {
                 {!exportFresh && (
                   <div className="notice" style={{ borderColor: "var(--accent)", background: "var(--accent-soft)", color: "var(--ink)", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
                     <span>Για την εφαρμογή χρειάζεται <strong>Export All Data των τελευταίων 24 ωρών</strong>.</span>
-                    <button className="btn-secondary" onClick={exportAllData}><Download size={15} /> Export τώρα</button>
+                    <button className="btn-secondary" onClick={exportAllData} disabled={busyActive}><Download size={15} /> Export τώρα</button>
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
@@ -5197,7 +5243,7 @@ export default function TournamentManager() {
         </p>
         <ol className="close-steps">
           <li className={exportFresh ? "done" : ""}>
-            Πλήρες backup: {exportFresh ? `✓ ${formatDate(sysState.lastExportAt)}` : isSuper ? <button className="btn-secondary" onClick={exportAllData}><Download size={14} /> Export All Data</button> : <span className="cal-note">ζήτησε από τον υπερ-διαχειριστή να κάνει Export (ισχύει 24 ώρες)</span>}
+            Πλήρες backup: {exportFresh ? `✓ ${formatDate(sysState.lastExportAt)}` : isSuper ? <button className="btn-secondary" onClick={exportAllData} disabled={busyActive}><Download size={14} /> Export All Data</button> : <span className="cal-note">ζήτησε από τον υπερ-διαχειριστή να κάνει Export (ισχύει 24 ώρες)</span>}
           </li>
           <li className={excelDoneAt ? "done" : ""}>
             Τελική Βαθμολογία σε Excel: {excelDoneAt ? "✓ κατέβηκε" : <button className="btn-secondary" onClick={async () => { await exportBaselineExcel(); setExcelDoneAt(new Date().toISOString()); }}><Download size={14} /> Εξαγωγή Excel</button>}
@@ -5614,13 +5660,25 @@ export default function TournamentManager() {
 
   /** Rebuilds an additional (non-main) ranking and stores it in eloRankings/{id}. */
   async function recomputeRanking(r) {
+    if (busy.isActive()) return;
+    return busy.run(`Recompute «${r.name}»`, (p) => recomputeRankingRun(r, p));
+  }
+
+  async function recomputeRankingRun(r, p) {
     setNotice(`Recompute κατάταξης «${r.name}»…`);
     try {
       const importsList = await fetchTournamentDataStrict(SYS_IMPORTS_ID);
       const importIds = (importsList && Array.isArray(importsList.list) ? importsList.list : []).map((x) => x.id);
+      const members = new Set(r.competitionIds);
+      p.phase(`Recompute «${r.name}»`, importIds.length + archive.filter((t) => t.isOfficial && members.has(t.competitionId || DEFAULT_COMPETITION_ID)).length);
+      const load = async (id) => {
+        const d = await fetchTournamentDataStrict(id);
+        p.tick();
+        return d;
+      };
       const built = await buildRankingElo({
-        members: new Set(r.competitionIds), catalogue: archive, importIds,
-        loadTournament: (id) => fetchTournamentDataStrict(id), loadImport: (id) => fetchTournamentDataStrict(id), registry,
+        members, catalogue: archive, importIds,
+        loadTournament: load, loadImport: load, registry,
       });
       const doc = { ...built.elo, appliedTournaments: built.applied, appliedImports: built.appliedImports, builtFrom: { at: new Date().toISOString(), matches: built.matches, players: Object.keys(built.elo.players).length } };
       setNotice("");
@@ -5674,7 +5732,7 @@ export default function TournamentManager() {
                 <td>{rankingMembersLabel(r)}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Επεξεργασία" onClick={() => setRankingDraft({ id: r.id, name: r.name, competitionIds: [...r.competitionIds], public: r.public })}><Pencil size={13} /></button>
-                  <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Recompute κατάταξης" onClick={() => {
+                  <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Recompute κατάταξης" disabled={busyActive} onClick={() => {
                     if (r.id === PRIMARY_RANKING_ID) {
                       if (window.confirm(`Recompute της «${r.name}»: ξαναχτίζεται από την αρχή από τα επίσημα τουρνουά και τις εισαγωγές των διοργανώσεών της. Η Βαθμολογία δεν αλλάζει. Συνέχεια;`)) recomputeEloAndSeasonFromScratch(undefined, { scope: "elo" });
                     } else recomputeRanking(r);
@@ -6498,11 +6556,13 @@ export default function TournamentManager() {
         @keyframes toast-in { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
         ${VIEWS_CSS}
         ${NAV_CSS}
+        ${BUSY_CSS}
         ${MOBILE_CSS}
       `}</style>
       {/* #endregion Στυλ (CSS) */}
 
       {/* #region Ειδοποιήσεις, πλαίσια σφαλμάτων, διάλογοι επιβεβαίωσης */}
+      <BusyIndicator store={busy} />
       {toast && (
         <div className="toast">
           <Check size={16} color="var(--win)" />
@@ -8168,7 +8228,7 @@ export default function TournamentManager() {
                       <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
                         <AlertTriangle size={16} style={{ flexShrink: 0 }} /> {exportMsg}
                       </span>
-                      <button className="btn-secondary" onClick={exportAllData}>
+                      <button className="btn-secondary" onClick={exportAllData} disabled={busyActive}>
                         <Download size={15} /> Export τώρα
                       </button>
                     </div>
@@ -8407,7 +8467,7 @@ export default function TournamentManager() {
                         </td>
                         {competitionHasStandings(comp) && (
                           <td>
-                            <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Ξαναχτίζει τη Βαθμολογία αυτής της σεζόν από τα επίσημα τουρνουά της· η ELO δεν αλλάζει" onClick={() => {
+                            <button className="btn-ghost" style={{ padding: "2px 6px" }} title="Ξαναχτίζει τη Βαθμολογία αυτής της σεζόν από τα επίσημα τουρνουά της· η ELO δεν αλλάζει" disabled={busyActive} onClick={() => {
                               if (window.confirm(`Recompute της Βαθμολογίας της σεζόν ${s.name}: ξαναχτίζεται από τα επίσημα τουρνουά της (και τις εισαγωγές που μετράνε στη Βαθμολογία). Η ELO δεν αλλάζει. Συνέχεια;`)) recomputeEloAndSeasonFromScratch(undefined, { scope: { season: s.id } });
                             }}><RefreshCw size={13} /> Recompute Βαθμολογίας</button>
                           </td>
@@ -8548,7 +8608,7 @@ export default function TournamentManager() {
               <p className="control-sub">
                 Πλήρες αντίγραφο όλων των δεδομένων σε αρχείο. Τελευταίο: {sysState.lastExportAt ? formatDate(sysState.lastExportAt) : "ποτέ"}.
               </p>
-              <button className="btn-secondary" onClick={exportAllData}>
+              <button className="btn-secondary" onClick={exportAllData} disabled={busyActive}>
                 <Download size={15} /> Export All Data (πλήρες αντίγραφο ασφαλείας)
               </button>
             </div>
