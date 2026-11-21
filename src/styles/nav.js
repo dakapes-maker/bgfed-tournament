@@ -13,8 +13,8 @@ export const NAV_CSS = `
         .topbar-back { padding: 6px; }
         .topbar-build { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 4px; }
 
-        .topbar-links { display: flex; align-items: center; gap: 20px; flex: 1; flex-wrap: wrap; }
-        .nav-link { position: relative; display: inline-flex; align-items: center; gap: 6px; border: none; background: none; padding: 12px 0; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); border-bottom: 2px solid transparent; cursor: pointer; }
+        .topbar-links { display: flex; align-items: center; gap: 20px; flex: 1 1 auto; flex-wrap: nowrap; }
+        .nav-link { position: relative; display: inline-flex; white-space: nowrap; align-items: center; gap: 6px; border: none; background: none; padding: 12px 0; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); border-bottom: 2px solid transparent; cursor: pointer; }
         .nav-link:hover { color: var(--accent); }
         .nav-link.active { color: var(--accent); font-weight: 700; border-bottom-color: var(--accent); }
         .nav-live { width: 8px; height: 8px; border-radius: 50%; background: var(--win); display: inline-block; }
@@ -22,7 +22,7 @@ export const NAV_CSS = `
         .nav-dot { top: 6px; right: -10px; }
 
         .topbar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
-        .topbar-admin { height: 38px; padding: 0 12px; border: none; background: none; border-radius: 999px; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer; }
+        .topbar-admin { white-space: nowrap; height: 38px; padding: 0 12px; border: none; background: none; border-radius: 999px; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer; }
         .topbar-admin:hover, .topbar-admin.active { color: var(--accent); }
         .topbar-admin.primary { background: var(--accent-soft); color: var(--accent); font-weight: 700; padding: 0 16px; }
         .topbar-lang { border: 1px solid var(--border) !important; border-radius: 999px !important; font-weight: 700 !important; font-size: 13px !important; padding: 4px 12px !important; }
@@ -44,11 +44,25 @@ export const NAV_CSS = `
 
         .bottom-nav, .more-sheet, .more-sheet-scrim { display: none; }
 
-        @media (max-width: 1350px) {
-          .topbar-build { display: none; }
+        /* Λάπτοπ (build 2026-11-21.01): η μπάρα μένει σε μία γραμμή. Κάτω από
+           1800px κρύβονται build και email και η αναζήτηση γίνεται φακός· κάτω
+           από 1280px πιο σφιχτά links και «Αποσύνδεση» μόνο με εικονίδιο. */
+        @media (max-width: 1800px) {
+          .topbar { gap: 20px; padding: 10px 22px; }
+          .topbar-build, .account-email { display: none; }
           .topbar-links { gap: 16px; }
-          .topbar-search { width: 170px; }
-          .account-email { display: none; }
+          .topbar-search { display: none; }
+          .topbar-search-btn { display: inline-flex; width: 40px; height: 40px; }
+        }
+        @media (max-width: 1280px) {
+          .topbar { gap: 14px; padding: 8px 16px; }
+          .brand-title { font-size: 16px; }
+          .topbar-links { gap: 12px; }
+          .nav-link { font-size: 14px; }
+          .topbar-right { gap: 6px; }
+          .topbar-admin { font-size: 14px; padding: 0 10px; }
+          .topbar-admin.primary { padding: 0 12px; }
+          .account-signout-label { display: none; }
         }
 
         @media (max-width: ${NAV_MAX}px) {

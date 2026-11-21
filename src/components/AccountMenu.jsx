@@ -8,8 +8,8 @@ export function AccountMenu({ email, onSignOut }) {
       <span className="account-email" style={{ fontSize: 12, color: "var(--muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={email}>
         {email}
       </span>
-      <button className="btn-ghost" onClick={onSignOut} title="Αποσύνδεση">
-        <LogOut size={14} /> Αποσύνδεση
+      <button className="btn-ghost account-signout" onClick={onSignOut} title="Αποσύνδεση" aria-label="Αποσύνδεση">
+        <LogOut size={14} /> <span className="account-signout-label">Αποσύνδεση</span>
       </button>
     </span>
   );
