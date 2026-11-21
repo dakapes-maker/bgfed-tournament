@@ -1,0 +1,96 @@
+diff --git a/src/components/AccountMenu.jsx b/src/components/AccountMenu.jsx
+index ec172de..7debdd3 100644
+--- a/src/components/AccountMenu.jsx
++++ b/src/components/AccountMenu.jsx
+@@ -8,8 +8,8 @@ export function AccountMenu({ email, onSignOut }) {
+       <span className="account-email" style={{ fontSize: 12, color: "var(--muted)", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={email}>
+         {email}
+       </span>
+-      <button className="btn-ghost" onClick={onSignOut} title="Αποσύνδεση">
+-        <LogOut size={14} /> Αποσύνδεση
++      <button className="btn-ghost account-signout" onClick={onSignOut} title="Αποσύνδεση" aria-label="Αποσύνδεση">
++        <LogOut size={14} /> <span className="account-signout-label">Αποσύνδεση</span>
+       </button>
+     </span>
+   );
+diff --git a/src/config/build.js b/src/config/build.js
+index a2fe4f2..d5c7856 100644
+--- a/src/config/build.js
++++ b/src/config/build.js
+@@ -1,7 +1,7 @@
+ // Bumped by hand on every code change sent in chat — compare this to what
+ // Claude states in its reply to confirm a "Publish" actually picked up the
+ // latest version, independent of claude.ai's own artifact-version UI.
+-export const APP_BUILD_VERSION = "2026-11-16.01";
++export const APP_BUILD_VERSION = "2026-11-21.01";
+ 
+ // Shown to everyone (admins and visitors) as a "What's New" popup the first
+ // time their browser sees a given build. Newest entry first. Keep entries
+diff --git a/src/config/changelog.js b/src/config/changelog.js
+index 47663d5..fddc05c 100644
+--- a/src/config/changelog.js
++++ b/src/config/changelog.js
+@@ -3,6 +3,9 @@
+ // τεχνικά builds δεν καταγράφονται.
+ // audience: "all" = όλοι, "admin" = μόνο διαχειριστές.
+ export const CHANGELOG = [
++  { date: "2026-11-21", items: [
++    { text: "Λάπτοπ: η πάνω μπάρα μένει σε μία γραμμή και σε οθόνες 1100–1800px — η αναζήτηση παίκτη ανοίγει από τον φακό και τα links του μενού δεν στοιβάζονται πια το ένα κάτω από το άλλο.", audience: "all" },
++  ]},
+   { date: "2026-11-16", items: [
+     { text: "Export All Data, Recompute ELO και Recompute Βαθμολογίας δείχνουν πρόοδο: μπάρα που γεμίζει στην κορυφή της οθόνης και πλαίσιο κάτω δεξιά με κλεψύδρα, τι τρέχει και πόσα έχουν γίνει. Όσο τρέχουν, τα κουμπιά τους είναι ανενεργά, και το κλείσιμο της καρτέλας ζητά επιβεβαίωση.", audience: "admin" },
+   ]},
+diff --git a/src/styles/nav.js b/src/styles/nav.js
+index 550946f..5b04151 100644
+--- a/src/styles/nav.js
++++ b/src/styles/nav.js
+@@ -13,8 +13,8 @@ export const NAV_CSS = `
+         .topbar-back { padding: 6px; }
+         .topbar-build { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+ 
+-        .topbar-links { display: flex; align-items: center; gap: 20px; flex: 1; flex-wrap: wrap; }
+-        .nav-link { position: relative; display: inline-flex; align-items: center; gap: 6px; border: none; background: none; padding: 12px 0; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); border-bottom: 2px solid transparent; cursor: pointer; }
++        .topbar-links { display: flex; align-items: center; gap: 20px; flex: 1 1 auto; flex-wrap: nowrap; }
++        .nav-link { position: relative; display: inline-flex; white-space: nowrap; align-items: center; gap: 6px; border: none; background: none; padding: 12px 0; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); border-bottom: 2px solid transparent; cursor: pointer; }
+         .nav-link:hover { color: var(--accent); }
+         .nav-link.active { color: var(--accent); font-weight: 700; border-bottom-color: var(--accent); }
+         .nav-live { width: 8px; height: 8px; border-radius: 50%; background: var(--win); display: inline-block; }
+@@ -22,7 +22,7 @@ export const NAV_CSS = `
+         .nav-dot { top: 6px; right: -10px; }
+ 
+         .topbar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+-        .topbar-admin { height: 38px; padding: 0 12px; border: none; background: none; border-radius: 999px; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer; }
++        .topbar-admin { white-space: nowrap; height: 38px; padding: 0 12px; border: none; background: none; border-radius: 999px; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer; }
+         .topbar-admin:hover, .topbar-admin.active { color: var(--accent); }
+         .topbar-admin.primary { background: var(--accent-soft); color: var(--accent); font-weight: 700; padding: 0 16px; }
+         .topbar-lang { border: 1px solid var(--border) !important; border-radius: 999px !important; font-weight: 700 !important; font-size: 13px !important; padding: 4px 12px !important; }
+@@ -44,11 +44,25 @@ export const NAV_CSS = `
+ 
+         .bottom-nav, .more-sheet, .more-sheet-scrim { display: none; }
+ 
+-        @media (max-width: 1350px) {
+-          .topbar-build { display: none; }
++        /* Λάπτοπ (build 2026-11-21.01): η μπάρα μένει σε μία γραμμή. Κάτω από
++           1800px κρύβονται build και email και η αναζήτηση γίνεται φακός· κάτω
++           από 1280px πιο σφιχτά links και «Αποσύνδεση» μόνο με εικονίδιο. */
++        @media (max-width: 1800px) {
++          .topbar { gap: 20px; padding: 10px 22px; }
++          .topbar-build, .account-email { display: none; }
+           .topbar-links { gap: 16px; }
+-          .topbar-search { width: 170px; }
+-          .account-email { display: none; }
++          .topbar-search { display: none; }
++          .topbar-search-btn { display: inline-flex; width: 40px; height: 40px; }
++        }
++        @media (max-width: 1280px) {
++          .topbar { gap: 14px; padding: 8px 16px; }
++          .brand-title { font-size: 16px; }
++          .topbar-links { gap: 12px; }
++          .nav-link { font-size: 14px; }
++          .topbar-right { gap: 6px; }
++          .topbar-admin { font-size: 14px; padding: 0 10px; }
++          .topbar-admin.primary { padding: 0 12px; }
++          .account-signout-label { display: none; }
+         }
+ 
+         @media (max-width: ${NAV_MAX}px) {
