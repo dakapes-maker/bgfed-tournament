@@ -196,3 +196,18 @@ export function stripAccents(s) {
   return String(s).normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+/** Μορφή για αναζήτηση: χωρίς τόνους/διαλυτικά, πεζά (build 2026-11-22.01). */
+export function foldSearch(s) {
+  return stripAccents(String(s || "")).toLowerCase();
+}
+
+/** Αναζήτηση χωρίς τόνους και κεφαλαία: κάθε λέξη του query πρέπει να υπάρχει
+ * στο κείμενο (με οποιαδήποτε σειρά). latin: true → ταιριάζει και η λατινική
+ * γραφή του ονόματος («Papoutsis» βρίσκει «Παπουτσής»). Κενό query → true. */
+export function matchesSearch(text, query, { latin = false } = {}) {
+  const tokens = foldSearch(query).split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const hay = foldSearch(text) + (latin ? " " + foldSearch(toLatinName(String(text || ""))) : "");
+  return tokens.every((t) => hay.includes(t));
+}
+

@@ -34,7 +34,7 @@ export const VIEWS_CSS = `
         @media (max-width: 1100px) { .table-scroll { max-height: calc(100vh - 210px); overflow: auto !important; } }
 
         /* Νέο τουρνουά (2026-11-09.04): ρυθμίσεις | παίκτες */
-        .setup-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
+        .setup-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 20px; align-items: start; }
         .setup-col { margin-bottom: 0; }
         .setup-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; min-width: 0; }
         .setup-field label { margin: 0; }
@@ -42,20 +42,24 @@ export const VIEWS_CSS = `
         .setup-dateline { margin: -6px 0 14px; font-size: 14px; color: var(--muted); }
         .setup-check { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 12px; cursor: pointer; font-size: 15px; }
         .setup-check input { width: 18px; height: 18px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
-        .setup-check strong { display: block; }
+        .setup-check strong { display: inline; }
         .setup-check small { display: block; font-size: 13px; color: var(--muted); }
+        .setup-info { display: inline-flex; vertical-align: -2px; color: var(--muted); cursor: help; }
+        .setup-nameline { margin: 0 0 14px; font-size: 15px; }
+        .setup-label-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+        .setup-label-row .cal-note { font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .setup-players-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 12px; }
         .setup-count { color: var(--ink); font-size: 18px; }
         .setup-add { gap: 10px; }
         .setup-paste-link { display: inline-block; margin: 8px 0 6px; font-size: 14px; font-weight: 600; }
         .setup-bulk { border: 1px dashed var(--border); border-radius: 10px; padding: 12px; background: var(--bg); margin-bottom: 8px; }
-        .setup-list { border: 1px solid var(--border); border-radius: 12px; max-height: 440px; overflow-y: auto; margin-top: 8px; background: var(--surface); }
-        .setup-row { display: flex; align-items: center; gap: 12px; padding: 0 12px; min-height: 46px; border-bottom: 1px solid var(--border); }
+        .setup-list { border: 1px solid var(--border); border-radius: 12px; max-height: max(320px, calc(100vh - 330px)); overflow-y: auto; margin-top: 8px; background: var(--surface); }
+        .setup-row { display: flex; align-items: center; gap: 12px; padding: 0 12px; min-height: 40px; border-bottom: 1px solid var(--border); }
         .setup-row:last-child { border-bottom: none; }
         .setup-row-n { width: 24px; text-align: right; font-size: 13px; color: var(--muted); }
         .setup-row-name { flex: 1; min-width: 0; font-weight: 600; }
         .setup-tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
-        .setup-tag.known { background: #E4F0EA; color: var(--win); }
+        .setup-tag.known { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; background: #E4F0EA; color: var(--win); }
         .setup-tag.new { background: #F6EBD3; color: #8A6A1F; }
         @keyframes setupFlash { from { background: #E4F0EA; } to { background: transparent; } }
         .setup-row.just-added { animation: setupFlash 2.5s ease-out; }

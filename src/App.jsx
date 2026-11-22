@@ -76,7 +76,7 @@ import {
   wordsOf,
   findLookalikePersons,
   formatNameForDisplay, toLatinName,
-  stripAccents,
+  stripAccents, matchesSearch,
   nextRegNo,
   formatRegNo,
 } from "./lib/persons.js";
@@ -300,6 +300,7 @@ export default function TournamentManager() {
   // tournament — they are added to the registry at once, so the registry alone can't tell.
   const [setupNewNames, setSetupNewNames] = useState(() => new Set());
   const [showSetupDate, setShowSetupDate] = useState(false);
+  const [showSetupName, setShowSetupName] = useState(false);
   const [confirmingStart, setConfirmingStart] = useState(false);
   const [isOfficial, setIsOfficial] = useState(true); // Official League day — only these count in "Recompute from scratch"
   const [competitionId, setCompetitionId] = useState(DEFAULT_COMPETITION_ID); // Build 2: which competition this tournament belongs to
@@ -3473,7 +3474,7 @@ export default function TournamentManager() {
   const roundOrder = roundData ? pairDisplayOrder(roundData.pairs, roundRecs) : [];
 
   const filteredArchive = [...archive, ...importedCatalogue()]
-    .filter((t) => (searchName ? t.name.toLowerCase().includes(searchName.toLowerCase()) : true))
+    .filter((t) => (searchName ? matchesSearch(t.name, searchName) : true))
     .filter((t) => (dateFrom ? new Date(t.date) >= new Date(dateFrom) : true))
     .filter((t) => (dateTo ? new Date(t.date) <= new Date(dateTo + "T23:59:59") : true))
     .filter((t) => (archiveSeason ? (Number(t.seasonYear) || seasonForDate(t.date)) === Number(archiveSeason) : true))
@@ -6909,7 +6910,7 @@ export default function TournamentManager() {
                   const totalGames = h2hResult.rows.reduce((s, r) => s + r.total, 0);
                   const totalWins = h2hResult.rows.reduce((s, r) => s + r.wins, 0);
                   const overallPct = totalGames > 0 ? Math.round((totalWins / totalGames) * 1000) / 10 : 0;
-                  const filteredRows = h2hResult.rows.filter((r) => r.name.toLowerCase().includes(h2hSearch.toLowerCase()));
+                  const filteredRows = h2hResult.rows.filter((r) => matchesSearch(r.name, h2hSearch, { latin: true }));
                   const sortedRows = [...filteredRows].sort((a, b) => {
                     const cmp = h2hSortKey === "name" ? a.name.localeCompare(b.name, "el") : a[h2hSortKey] - b[h2hSortKey];
                     return h2hSortDir === "asc" ? cmp : -cmp;
@@ -7695,7 +7696,7 @@ export default function TournamentManager() {
                       if (!registrySearch) return true;
                       const num = registrySearch.trim().replace(/^#/, "");
                       if (/^\d+$/.test(num)) return p.regNo === Number(num);
-                      return p.name.toLowerCase().includes(registrySearch.toLowerCase());
+                      return matchesSearch(p.name, registrySearch, { latin: true });
                     })
                 .sort((a, b) => a[1].name.localeCompare(b[1].name, "en"));
               const currentYear = new Date().getFullYear();
@@ -8940,22 +8941,32 @@ export default function TournamentManager() {
                   </div>
                 </div>
               )}
-              <div className="setup-field">
-                <label>Όνομα τουρνουά</label>
-                <input type="text" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} placeholder="π.χ. 14ο Πανελλήνιο Πρωτάθλημα" />
-              </div>
+              {calendarEntryId && !showSetupName ? (
+                <p className="setup-nameline">
+                  <strong>{tournamentName || "—"}</strong>{" "}
+                  · <button type="button" className="history-link" onClick={() => setShowSetupName(true)}>αλλαγή ονόματος</button>
+                </p>
+              ) : (
+                <div className="setup-field">
+                  <label>Όνομα τουρνουά</label>
+                  <input type="text" value={tournamentName} onChange={(e) => setTournamentName(e.target.value)} placeholder="π.χ. 14ο Πανελλήνιο Πρωτάθλημα" />
+                </div>
+              )}
               <div className="setup-two">
                 <div className="setup-field">
                   <label>Γύροι</label>
                   <input type="number" min={3} max={9} value={totalRounds} onChange={(e) => setTotalRounds(Math.max(3, Math.min(9, Number(e.target.value) || 5)))} />
                 </div>
                 <div className="setup-field">
-                  <label>Μήκος αγώνα (πόντοι)</label>
+                  <label>Μήκος (πόντοι)</label>
                   <input type="number" min={1} max={25} value={matchLength} onChange={(e) => setMatchLength(Math.max(1, Math.min(25, Number(e.target.value) || 7)))} />
                 </div>
               </div>
               <div className="setup-field">
-                <label>Διοργάνωση</label>
+                <label className="setup-label-row">
+                  <span>Διοργάνωση</span>
+                  <span className="cal-note">Σύλλογος: {comp && comp.ownerClubId ? clubDisplay(sysState, comp.ownerClubId, "—") : "—"}</span>
+                </label>
                 <select
                   value={competitionId}
                   onChange={(e) => { setCompetitionId(e.target.value); setSeasonYear(currentSeasonId(sysState, e.target.value, controlSeasons)); }}
@@ -8965,7 +8976,6 @@ export default function TournamentManager() {
                     <option key={c.id} value={c.id}>{competitionLabel(sysState, c)}</option>
                   ))}
                 </select>
-                <span className="cal-note">Σύλλογος: {comp && comp.ownerClubId ? clubDisplay(sysState, comp.ownerClubId, "—") : "—"}</span>
               </div>
               {(!countsTowardRatings({ isOfficial: true, competitionId }) || !countsTowardStandings({ isOfficial: true, competitionId })) && (
                 <p className="field-warning" style={{ marginTop: -4, marginBottom: 12 }}>
@@ -8975,13 +8985,13 @@ export default function TournamentManager() {
                   ].filter(Boolean).join(" και ")}· το τουρνουά καταγράφεται κανονικά.
                 </p>
               )}
-              <label className="setup-check" title="Μόνο οι επίσημες αγωνιστικές μετράνε σε ELO και Βαθμολογία (και στο Recompute τους)">
+              <label className="setup-check" title="Μετράει σε ELO και Βαθμολογία (και στο Recompute τους). Άφησέ το κενό για δοκιμαστικό τουρνουά.">
                 <input type="checkbox" checked={isOfficial} onChange={(e) => setIsOfficial(e.target.checked)} />
-                <span><strong>Επίσημη αγωνιστική</strong><small>Μετράει σε ELO και Βαθμολογία. Άφησέ το κενό για δοκιμαστικό τουρνουά.</small></span>
+                <span><strong>Επίσημη αγωνιστική</strong> <span className="setup-info" aria-label="Μετράει σε ELO και Βαθμολογία. Άφησέ το κενό για δοκιμαστικό τουρνουά."><Info size={14} /></span></span>
               </label>
-              <label className="setup-check">
+              <label className="setup-check" title="Η Βαθμολογία ενημερώνεται με κάθε αποτέλεσμα, η ELO με κάθε γύρο.">
                 <input type="checkbox" checked={liveStandingsEnabled} onChange={(e) => setLiveStandingsEnabled(e.target.checked)} />
-                <span><strong>Ζωντανή ενημέρωση</strong><small>Η Βαθμολογία ενημερώνεται με κάθε αποτέλεσμα, η ELO με κάθε γύρο.</small></span>
+                <span><strong>Ζωντανή ενημέρωση</strong> <span className="setup-info" aria-label="Η Βαθμολογία ενημερώνεται με κάθε αποτέλεσμα, η ELO με κάθε γύρο."><Info size={14} /></span></span>
               </label>
             </div>
 
@@ -9008,7 +9018,7 @@ export default function TournamentManager() {
                   {nameDropdownOpen && (() => {
                     const options = Object.values(registry.players || {})
                       .map((p) => p.name)
-                      .filter((name) => name.toLowerCase().includes(newPlayerName.toLowerCase()))
+                      .filter((name) => matchesSearch(name, newPlayerName, { latin: true }))
                       .sort((a, b) => a.localeCompare(b, "en"));
                     if (options.length === 0) return null;
                     return (
@@ -9061,7 +9071,9 @@ export default function TournamentManager() {
                     <div className={`setup-row${i === 0 ? " just-added" : ""}`} key={p.id}>
                       <span className="setup-row-n">{players.length - i}</span>
                       <span className="setup-row-name">{p.name}</span>
-                      <span className={`setup-tag ${known ? "known" : "new"}`}>{known ? "Στο μητρώο" : "Νέος παίκτης"}</span>
+                      {known
+                        ? <span className="setup-tag known" title="Στο μητρώο" aria-label="Στο μητρώο"><Check size={14} /></span>
+                        : <span className="setup-tag new">Νέος παίκτης</span>}
                       {tFin.enabled && (
                         <label className="live-toggle" style={{ margin: 0 }}>
                           <input type="checkbox" checked={inSideBet} onChange={() => toggleDefaultSideBetForPlayer(p.id)} />
