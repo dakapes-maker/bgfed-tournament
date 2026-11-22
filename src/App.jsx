@@ -8906,7 +8906,7 @@ export default function TournamentManager() {
                       onChange={(e) => applyCalendarEntry(view.find((x) => x.id === e.target.value) || null, seasonYear)}
                       style={selectStyle}
                     >
-                      <option value="">Χωρίς αγωνιστική (έκτακτο ή δοκιμαστικό τουρνουά)</option>
+                      <option value="">Χωρίς αγωνιστική (έκτακτο/δοκιμαστικό)</option>
                       {options.map((e) => (
                         <option key={e.id} value={e.id}>
                           {(e.day ? `Ημέρα ${e.day}` : competitionName(competitionsFrom(sysState), e.competitionId))} — {formatYMD(e.effectiveDate)}
